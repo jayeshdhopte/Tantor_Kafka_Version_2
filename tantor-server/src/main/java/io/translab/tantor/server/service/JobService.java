@@ -116,6 +116,13 @@ public class JobService {
     }
 
     @Transactional
+    public void attachExternalServiceTask(UUID stepId, UUID taskId) {
+        JobStep step = getStep(stepId);
+        step.setExternalServiceTaskId(taskId);
+        jobStepRepository.save(step);
+    }
+
+    @Transactional
     public void completeStep(UUID stepId, String output) {
         finishStep(stepId, JobStepStatus.SUCCESS, output);
     }
@@ -159,6 +166,7 @@ public class JobService {
                 if (step.getStatus() != JobStepStatus.SUCCESS) {
                     step.setStatus(JobStepStatus.PENDING);
                     step.setAgentTaskId(null);
+                    step.setExternalServiceTaskId(null);
                     step.setStartTime(null);
                     step.setEndTime(null);
                     step.setRetryCount(step.getRetryCount() + 1);

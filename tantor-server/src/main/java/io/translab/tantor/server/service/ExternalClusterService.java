@@ -1380,7 +1380,8 @@ public class ExternalClusterService {
         agent.setAgentName(report.getAgentName());
         agent.setHostname(blankToDefault(report.getHostname(), extractHostFromBootstrap(report.getBootstrapServers())));
         agent.setIpAddresses(blankToDefault(report.getIpAddresses(), writeJson(List.of(extractHostFromBootstrap(report.getBootstrapServers())))));
-        agent.setVersion("tantor-discovery-agent");
+        agent.setVersion(blankToDefault(report.getAgentVersion(), "tantor-discovery-agent"));
+        agent.setCanDeployServices(report.isCanDeployServices());
         agent.setStatus(report.isRunning() ? "ONLINE" : "OFFLINE");
         agent.setCanExecuteTasks(report.isCanExecuteTasks());
         agent.setLastHeartbeat(OffsetDateTime.now());
@@ -2092,6 +2093,8 @@ public class ExternalClusterService {
         private String ipAddresses;
         private String lastSeen;
         private boolean canExecuteTasks;
+        private String agentVersion;
+        private boolean canDeployServices;
         private String listeners;
         private String advertisedListeners;
         private String processRoles;

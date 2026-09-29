@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -22,8 +23,56 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.*;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class DeploymentJobHandlerTest {
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void connectFailurePreservesKafkaAndMarksTheServiceFailed(boolean servicesOnly) throws Exception {
+        UUID clusterId = UUID.randomUUID();
+        Cluster cluster = new Cluster();
+        cluster.setId(clusterId);
+        cluster.setStatus("SUCCESS");
+        var assignment = new io.translab.tantor.server.domain.ClusterServiceAssignment();
+        assignment.setRole("kafka_connect");
+        var assignments = mock(ClusterServiceAssignmentRepository.class);
+        when(assignments.findByClusterIdAndRole(clusterId, "kafka_connect")).thenReturn(Optional.of(assignment));
+        var clusters = mock(ClusterRepository.class);
+        when(clusters.findById(clusterId)).thenReturn(Optional.of(cluster));
+        var mapper = new ObjectMapper();
+        Job job = new Job();
+        job.setId(UUID.randomUUID());
+        job.setRequestedBy("operator");
+        job.setPayload(mapper.writeValueAsString(Map.of("clusterId", clusterId, "servicesOnly", servicesOnly, "kafkaVersion", "3.9.0",
+                "kafkaConnect", Map.of("host_id", "host-1", "host_name", "connect.local", "rest_port", 18083,
+                        "working_dir", "/data/connect", "plugin_dir", "/opt/plugins"))));
+        JobStep step = new JobStep();
+        step.setId(UUID.randomUUID());
+        step.setStatus(JobStepStatus.PENDING);
+        step.setPayload("{\"operation\":\"install_connect\",\"host_id\":\"host-1\"}");
+        var jobs = mock(JobService.class);
+        when(jobs.getSteps(job.getId())).thenReturn(List.of(step));
+        var deployment = mock(DeploymentService.class);
+        UUID taskId = UUID.randomUUID();
+        when(deployment.dispatchSchemaTask(eq(clusterId), eq("host-1"), eq("INSTALL_CONNECT"), anyString(), anyString(), anyMap()))
+                .thenReturn(taskId);
+        var awaiter = mock(AgentTaskAwaiter.class);
+        when(awaiter.await(taskId)).thenThrow(new IllegalStateException("Connect start failed"));
+        var handler = new DeploymentJobHandler(jobs, deployment, awaiter, clusters, mock(HostRepository.class),
+                mapper, mock(PrometheusMonitoringService.class), mock(KafkaAdminService.class),
+                mock(DataServiceConnectionService.class), assignments);
+
+        assertThatThrownBy(() -> handler.execute(job)).hasMessageContaining("Connect start failed");
+        assertThat(cluster.getStatus()).isEqualTo(servicesOnly ? "SUCCESS" : "DEGRADED");
+        assertThat(assignment.getStatus()).isEqualTo("FAILED");
+        assertThat(assignment.getLastError()).contains("Connect start failed");
+        verify(deployment).dispatchSchemaTask(eq(clusterId), eq("host-1"), eq("INSTALL_CONNECT"), anyString(), anyString(),
+                argThat(parameters -> Integer.valueOf(18083).equals(parameters.get("rest_port"))
+                        && "/data/connect".equals(parameters.get("working_dir"))
+                        && "/opt/plugins".equals(parameters.get("plugin_dir"))));
+    }
 
     @Test
     void preservesRequestingUsernameOnAsynchronousClusterStatusUpdates() {

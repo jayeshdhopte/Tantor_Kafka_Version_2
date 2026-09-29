@@ -45,6 +45,9 @@ public class JobStep {
     @Column(name = "agent_task_id")
     private UUID agentTaskId;
 
+    @Column(name = "external_service_task_id")
+    private UUID externalServiceTaskId;
+
     @Column(columnDefinition = "TEXT")
     private String logs;
 

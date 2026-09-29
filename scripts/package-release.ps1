@@ -61,6 +61,7 @@ foreach ($componentName in $manifest.components.psobject.properties.name) {
             Write-Host "Warning: Source directory $sourceDir not found." -ForegroundColor Yellow
             continue
         }
+        $sourceDir = (Resolve-Path -LiteralPath $sourceDir).Path
         
         $files = Get-ChildItem -Path $sourceDir -File -Recurse
         foreach ($file in $files) {
@@ -94,8 +95,8 @@ if (-not (Test-Path (Join-Path $stagingDir "server/tantor-server-*.jar"))) {
 if (-not (Test-Path (Join-Path $stagingDir "ui/index.html"))) {
     throw "Missing UI index.html. Did you build the UI?"
 }
-if (-not (Test-Path (Join-Path $stagingDir "agent/tantor-agent-linux"))) {
-    throw "Missing tantor-agent-linux. Did you build the agent?"
+if (-not (Test-Path (Join-Path $stagingDir "agent/tantor-agent-linux-amd64"))) {
+    throw "Missing tantor-agent-linux-amd64. Did you build the internal agent?"
 }
 
 Write-Host "Copying manifest..."

@@ -51,36 +51,41 @@ if ($LASTEXITCODE -ne 0) { throw "Management Server verification failed." }
 # Restore original directory
 cd $PSScriptRoot
 
-# 4. Build Agent (Linux amd64)
-Write-Host "`n=== Building Tantor Agent (Linux) ===" -ForegroundColor Magenta
-if (Test-Path "$PSScriptRoot\go\bin\go.exe") {
-    cd "$PSScriptRoot\tantor-agent"
-    $env:GOOS="linux"
-    $env:GOARCH="amd64"
-    & "$PSScriptRoot\go\bin\go.exe" test ./...
-    if ($LASTEXITCODE -ne 0) { throw "Tantor Agent tests failed." }
-    & "$PSScriptRoot\go\bin\go.exe" build -o tantor-agent-linux cmd/agent/main.go
-    if ($LASTEXITCODE -ne 0) { throw "Tantor Agent build failed." }
-    Write-Host "Agent successfully compiled to: tantor-agent\tantor-agent-linux" -ForegroundColor Green
-    cd $PSScriptRoot
+# 4. Build both Linux agents from the checked-in sources.
+$GoCommand = if (Test-Path "$PSScriptRoot\go\bin\go.exe") {
+    "$PSScriptRoot\go\bin\go.exe"
 } else {
-    Write-Host "Go compiler not found in the 'go' directory. Skipping agent compilation." -ForegroundColor Yellow
+    $goOnPath = Get-Command go -ErrorAction SilentlyContinue
+    if ($goOnPath) { $goOnPath.Source } else { $null }
 }
+if (-not $GoCommand) { throw "Go 1.22+ is required to build the internal and discovery agents." }
+$previousGoOs = $env:GOOS
+$previousGoArch = $env:GOARCH
+try {
+    $env:GOOS = 'linux'
+    $env:GOARCH = 'amd64'
+    Write-Host "`n=== Building Tantor Internal Agent (Linux amd64 and arm64) ===" -ForegroundColor Magenta
+    Push-Location "$PSScriptRoot\internal-agent\source"
+    try {
+        foreach ($architecture in @('amd64', 'arm64')) {
+            $env:GOARCH = $architecture
+            & $GoCommand build -o "$PSScriptRoot\internal-agent\bin\tantor-agent-linux-$architecture" ./cmd/agent
+            if ($LASTEXITCODE -ne 0) { throw "Tantor Internal Agent $architecture build failed." }
+        }
+    } finally { Pop-Location }
 
-# 5. Build Discovery Agent (Linux amd64)
-Write-Host "`n=== Building Tantor Discovery Agent (Linux) ===" -ForegroundColor Magenta
-if (Test-Path "$PSScriptRoot\go\bin\go.exe") {
-    cd "$PSScriptRoot\tantor-discovery-agent"
-    $env:GOOS="linux"
-    $env:GOARCH="amd64"
-    & "$PSScriptRoot\go\bin\go.exe" test ./...
-    if ($LASTEXITCODE -ne 0) { throw "Tantor Discovery Agent tests failed." }
-    & "$PSScriptRoot\go\bin\go.exe" build -o tantor-discovery-agent-linux .
-    if ($LASTEXITCODE -ne 0) { throw "Tantor Discovery Agent build failed." }
-    Write-Host "Discovery agent successfully compiled to: tantor-discovery-agent\tantor-discovery-agent-linux" -ForegroundColor Green
-    cd $PSScriptRoot
-} else {
-    Write-Host "Go compiler not found in the 'go' directory. Skipping discovery agent compilation." -ForegroundColor Yellow
+    Write-Host "`n=== Building Tantor Discovery Agent (Linux amd64 and arm64) ===" -ForegroundColor Magenta
+    Push-Location "$PSScriptRoot\tantor-discovery-agent"
+    try {
+        foreach ($architecture in @('amd64', 'arm64')) {
+            $env:GOARCH = $architecture
+            & $GoCommand build -o "tantor-discovery-agent-linux-$architecture" .
+            if ($LASTEXITCODE -ne 0) { throw "Tantor Discovery Agent $architecture build failed." }
+        }
+    } finally { Pop-Location }
+} finally {
+    $env:GOOS = $previousGoOs
+    $env:GOARCH = $previousGoArch
 }
 
 Write-Host "`nBuild Complete!" -ForegroundColor Green

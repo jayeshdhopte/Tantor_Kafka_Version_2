@@ -5,8 +5,11 @@ Tantor Kafka is a Kafka operations platform with:
 - `tantor-server`: Spring Boot management server on port `8443`
 - `tantor-artifact-repository`: Spring Boot artifact repository on port `8081`
 - `tantor-ui`: React/Vite frontend
-- `tantor-agent`: Go agent installed on Kafka hosts
+- `internal-agent/source`: Go agent source for managed Kafka hosts
 - `tantor-discovery-agent`: Go agent for external Kafka cluster discovery
+
+Schema Registry and Kafka Connect deployment from managed and external clusters
+is described in [Data service deployment](docs/data-service-deployment.md).
 
 The server uses Flyway migrations to create and update the PostgreSQL schema.
 
@@ -138,8 +141,9 @@ This builds:
 
 - `tantor-artifact-repository/target/tantor-artifact-repository-1.0.0.jar`
 - `tantor-server/target/tantor-server-1.0.0.jar`
-- `tantor-agent/tantor-agent-linux`, when Go is available
-- `tantor-discovery-agent/tantor-discovery-agent-linux`, when Go is available
+- `internal-agent/bin/tantor-agent-linux-amd64`
+- `tantor-discovery-agent/tantor-discovery-agent-linux-amd64`
+- `tantor-discovery-agent/tantor-discovery-agent-linux-arm64`
 
 ## 5. Start Backend Locally
 

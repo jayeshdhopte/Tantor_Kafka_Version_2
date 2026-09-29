@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Network, RefreshCw, Trash2, ExternalLink, Plus } from 'lucide-react';
+import { Network, RefreshCw, Trash2, ExternalLink, Plus, MoreVertical } from 'lucide-react';
+import { AnchoredMenu } from '../components/AnchoredMenu';
+import { AddClusterServicesModal } from '../components/AddClusterServicesModal';
 import { usePermissions } from '../hooks/usePermissions';
 import { confirmAction, notifyAction } from '../components/confirmUtils';
 import { clusterStatusTone } from '../utils/clusterStatusTone';
@@ -54,6 +56,8 @@ export function Clusters() {
   const [clusters, setClusters] = useState<ClusterInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [showDeploymentModal, setShowDeploymentModal] = useState(false);
+  const [servicesCluster, setServicesCluster] = useState<ClusterInfo | null>(null);
+  const [servicesMenu, setServicesMenu] = useState<{ cluster: ClusterInfo; anchor: HTMLElement } | null>(null);
 
   const refreshClusterHealth = useCallback((items: ClusterInfo[]) => {
     items
@@ -439,6 +443,12 @@ export function Clusters() {
                                   >
                                     <Trash2 size={15} />
                                   </button>
+                                  {(cluster.mode === 'EXTERNAL' ? !['DELETED', 'DELETING'].includes(cluster.status) : cluster.status === 'SUCCESS') && <button
+                                    className="btn icon-only" title="Cluster options" aria-label={`Options for ${cluster.name}`}
+                                    aria-haspopup="menu" aria-expanded={servicesMenu?.cluster.id === cluster.id}
+                                    onClick={event => { const anchor = event.currentTarget; setServicesMenu(current => current?.cluster.id === cluster.id ? null : { cluster, anchor }); }}>
+                                    <MoreVertical size={17} />
+                                  </button>}
                                 </div>
                               ) : (
                                 <span className="heartbeat-text">View only</span>
@@ -456,6 +466,10 @@ export function Clusters() {
         )}
       </div>
 
+      {servicesMenu && <AnchoredMenu anchor={servicesMenu.anchor} className="cluster-services-menu" onClose={() => setServicesMenu(null)}>
+        <div role="menu"><button role="menuitem" autoFocus onClick={() => { setServicesCluster(servicesMenu.cluster); setServicesMenu(null); }}>Add services to this cluster</button></div>
+      </AnchoredMenu>}
+      {servicesCluster && <AddClusterServicesModal cluster={servicesCluster} onClose={() => setServicesCluster(null)} />}
       {showDeploymentModal && createPortal(
         <div className="cd-modal-overlay" onClick={() => setShowDeploymentModal(false)}>
           <div className="cd-deployment-modal" onClick={e => e.stopPropagation()}>

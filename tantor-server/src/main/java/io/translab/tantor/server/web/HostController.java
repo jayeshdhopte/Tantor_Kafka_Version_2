@@ -141,7 +141,7 @@ public class HostController {
         if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.HOST_PREREQUISITES)) {
             return unauthorized();
         }
-        return createSchemaHostTask(id, "SCHEMA_DIRECTORY_CANDIDATES", options);
+        return createDataServiceHostTask(id, "SCHEMA_DIRECTORY_CANDIDATES", options);
     }
 
     @PostMapping("/{id}/precheck-schema")
@@ -152,17 +152,43 @@ public class HostController {
         if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.HOST_PREREQUISITES)) {
             return unauthorized();
         }
-        return createSchemaHostTask(id, "PRECHECK_SCHEMA", options);
+        return createDataServiceHostTask(id, "PRECHECK_SCHEMA", options);
     }
 
-    private ResponseEntity<?> createSchemaHostTask(String id, String command, Map<String, Object> options) {
+    @PostMapping("/{id}/connect-directory-candidates")
+    public ResponseEntity<?> connectDirectoryCandidates(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable String id,
+            @RequestBody(required = false) Map<String, Object> options) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.HOST_PREREQUISITES)) {
+            return unauthorized();
+        }
+        return createDataServiceHostTask(id, "CONNECT_DIRECTORY_CANDIDATES", options);
+    }
+
+    @PostMapping("/{id}/precheck-connect")
+    public ResponseEntity<?> precheckConnect(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable String id,
+            @RequestBody Map<String, Object> options) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.HOST_PREREQUISITES)) {
+            return unauthorized();
+        }
+        return createDataServiceHostTask(id, "PRECHECK_CONNECT", options);
+    }
+
+    private ResponseEntity<?> createDataServiceHostTask(String id, String command, Map<String, Object> options) {
         Host host = hostRepository.findById(id).orElse(null);
         if (host == null) return ResponseEntity.notFound().build();
+        if ("PRECHECK_SCHEMA".equals(command) || "PRECHECK_CONNECT".equals(command)) {
+            String blocked = io.translab.tantor.server.service.DataServiceAgentSupport.precheckBlockReason(host.getAgentVersion());
+            if (blocked != null) return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", blocked));
+        }
         if (!"ONLINE".equalsIgnoreCase(hostStatusService.effectiveStatus(host))) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "Host must be ONLINE."));
         }
         try {
-            Task task = schemaHostTask(id, command, options);
+            Task task = dataServiceHostTask(id, command, options);
             taskRepository.save(task);
             return ResponseEntity.ok(Map.of("taskId", task.getId().toString()));
         } catch (Exception e) {
@@ -252,7 +278,7 @@ public class HostController {
         return task;
     }
 
-    private Task schemaHostTask(String hostId, String command, Map<String, Object> options) throws Exception {
+    private Task dataServiceHostTask(String hostId, String command, Map<String, Object> options) throws Exception {
         Task task = new Task();
         task.setHostId(hostId);
         task.setCommand(command);

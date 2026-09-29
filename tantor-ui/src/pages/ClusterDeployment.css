@@ -1754,6 +1754,12 @@ input:checked+.cd-toggle-slider:before {
   margin: 0;
 }
 
+.cd-role-menu-divider {
+  height: 1px;
+  background: var(--border-default);
+  margin: 0.25rem 0;
+}
+
 .cd-role-menu-wrap {
   position: relative;
   display: flex;

@@ -106,6 +106,15 @@ const artifactServiceOptions = [
     helper: 'JMX exporter jars are stored for Kafka monitoring deployments.',
   },
   {
+    value: 'KAFKA_CONNECT',
+    label: 'Kafka Connect',
+    versionPlaceholder: 'e.g. 8.1.1',
+    directoryPlaceholder: 'custom/kafka-connect (under configured repository root)',
+    fileLabel: 'Kafka Connect distribution (.tgz or .tar.gz)',
+    fileAccept: '.tgz,.tar.gz',
+    helper: 'Upload a Connect distribution for managed cluster deployment.',
+  },
+  {
     value: 'SCHEMA_REGISTRY',
     label: 'Schema Registry',
     versionPlaceholder: 'e.g. 7.6.0',
@@ -120,6 +129,7 @@ const artifactServiceLabels: Record<string, string> = {
   KAFKA: 'Kafka',
   KAFKA_EXPORTER: 'Kafka Exporter',
   JMX_EXPORTER: 'JMX Exporter',
+  KAFKA_CONNECT: 'Kafka Connect',
   SCHEMA_REGISTRY: 'Schema Registry',
 };
 
@@ -807,6 +817,11 @@ export function Artifacts() {
 
             <form onSubmit={handleUploadSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
               <div className="modal-body">
+                {uploadMsg && !uploadMsg.ok && (
+                  <div role="alert" className="upload-msg err" style={{ marginBottom: '1rem', whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
+                    {uploadMsg.text}
+                  </div>
+                )}
                 <div className="form-group">
                   <label>Service Type</label>
                   <select
@@ -849,7 +864,7 @@ export function Artifacts() {
                 </div>
 
                 <div className="form-group">
-                  <label>Binary File (.tgz or .jar)</label>
+                  <label>{selectedServiceOption.fileLabel}</label>
                   <div className="upload-dropzone" onClick={() => fileRef.current?.click()}>
                     <span className="upload-dropzone-icon-shell">
                       <Upload size={22} className="upload-dropzone-icon" />

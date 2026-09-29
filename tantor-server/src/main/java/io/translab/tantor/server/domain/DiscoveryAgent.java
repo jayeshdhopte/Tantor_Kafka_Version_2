@@ -36,6 +36,9 @@ public class DiscoveryAgent {
     @Column(name = "can_execute_tasks")
     private Boolean canExecuteTasks;
 
+    @Column(name = "can_deploy_services")
+    private Boolean canDeployServices = false;
+
     @Column(name = "cluster_id")
     private UUID clusterId;
 

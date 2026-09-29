@@ -19,9 +19,9 @@ import (
 )
 
 var (
-	version   = "1.0.0-prod.16-reporting.9"
-	commit    = "prod16-cluster-cleanup"
-	buildDate = "2026-09-24"
+	version   = "1.0.0-prod.16-reporting.9-dataservices.1"
+	commit    = "dataservices-prechecks"
+	buildDate = "2026-09-29"
 )
 
 func main() {

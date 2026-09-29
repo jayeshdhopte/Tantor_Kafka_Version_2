@@ -13,6 +13,7 @@ import (
 	"io.translab/tantor-agent/internal/client"
 	"io.translab/tantor-agent/internal/config"
 	"io.translab/tantor-agent/internal/deploy/connect"
+	"io.translab/tantor-agent/internal/deploy/dataservice"
 	"io.translab/tantor-agent/internal/deploy/kafka"
 	"io.translab/tantor-agent/internal/deploy/ksqldb"
 	"io.translab/tantor-agent/internal/deploy/monitoring"
@@ -51,6 +52,16 @@ func (e *Engine) Execute(ctx context.Context, t *api.Task) (*api.TaskResult, err
 		return e.installConnect(ctx, t)
 	case "INSTALL_SCHEMA":
 		return e.installSchema(ctx, t)
+	case "SCHEMA_DIRECTORY_CANDIDATES", "CONNECT_DIRECTORY_CANDIDATES":
+		return e.schemaDirectoryCandidates(ctx, t)
+	case "PRECHECK_SCHEMA":
+		return e.precheckSchema(ctx, t)
+	case "PRECHECK_CONNECT":
+		return e.precheckDataService(ctx, t, dataservice.Connect)
+	case "VERIFY_SCHEMA_REGISTRY":
+		return e.verifySchemaRegistry(ctx, t)
+	case "VERIFY_CONNECT":
+		return e.verifyDataService(ctx, t, dataservice.Connect, "connect_url")
 	case "INSTALL_KSQLDB":
 		return e.installKsql(ctx, t)
 	case "INSTALL_MONITORING":

@@ -25,9 +25,16 @@
     "agent": {
       "sources": [
         {
-          "directory": "tantor-agent",
+          "directory": "internal-agent/bin",
           "patterns": [
-            "^tantor-agent-linux$"
+            "^tantor-agent-linux-amd64$",
+            "^tantor-agent-linux-arm64$"
+          ]
+        },
+        {
+          "directory": "internal-agent",
+          "patterns": [
+            "^agent\\.sh$"
           ]
         },
         {
@@ -45,14 +52,14 @@
         {
           "directory": "tantor-discovery-agent",
           "patterns": [
-            "^tantor-discovery-agent-linux$"
+            "^tantor-discovery-agent-linux-amd64$",
+            "^tantor-discovery-agent-linux-arm64$"
           ]
         },
         {
           "directory": "tantor-discovery-agent",
           "patterns": [
-            "^install-discovery-agent\\.sh$",
-            "^deploy-discovery-agent\\.ps1$"
+            "^install-agent\\.sh$"
           ]
         }
       ]

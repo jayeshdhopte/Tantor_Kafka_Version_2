@@ -80,12 +80,24 @@ public class DeploymentJobHandler implements JobHandler {
             }
             try {
                 if (isSchemaOperation(payload)) markSchemaService(clusterId, "DEPLOYING", null);
+                if (isConnectOperation(payload)) markConnectService(clusterId, "DEPLOYING", null);
                 if (isBackendSchemaOperation(payload)) {
                     jobService.startStep(step.getId());
                     String output = executeBackendSchemaOperation(clusterId, jobPayload, payload);
                     jobService.completeStep(step.getId(), output);
                     if ("save_schema_connection".equals(operation(payload))) {
                         markSchemaService(clusterId, "ONLINE", null);
+                    }
+                    jobService.appendLog(job.getId(), step.getName() + " completed.");
+                    i++;
+                    continue;
+                }
+                if (isBackendConnectOperation(payload)) {
+                    jobService.startStep(step.getId());
+                    String output = executeBackendConnectOperation(clusterId, jobPayload, payload);
+                    jobService.completeStep(step.getId(), output);
+                    if ("save_connect_connection".equals(operation(payload))) {
+                        markConnectService(clusterId, "ONLINE", null);
                     }
                     jobService.appendLog(job.getId(), step.getName() + " completed.");
                     i++;
@@ -107,6 +119,9 @@ public class DeploymentJobHandler implements JobHandler {
                 jobService.failStep(step.getId(), e.getMessage());
                 if (isSchemaOperation(payload)) {
                     markSchemaService(clusterId, "FAILED", e.getMessage());
+                    saveClusterStatus(cluster, "DEGRADED", job);
+                } else if (isConnectOperation(payload)) {
+                    markConnectService(clusterId, "FAILED", e.getMessage());
                     saveClusterStatus(cluster, "DEGRADED", job);
                 } else {
                     saveClusterStatus(cluster, "FAILED", job);
@@ -243,6 +258,9 @@ public class DeploymentJobHandler implements JobHandler {
     }
 
     private void saveClusterStatus(Cluster cluster, String status, Job job) {
+        // Adding a data service does not change the existing Kafka deployment's status.
+        // Service status and errors are tracked on its assignment and deployment job.
+        if (Boolean.TRUE.equals(readMap(job.getPayload()).get("servicesOnly"))) return;
         applyJobActor(cluster, job);
         cluster.setStatus(status);
         clusterRepository.save(cluster);
@@ -278,6 +296,9 @@ public class DeploymentJobHandler implements JobHandler {
             case "precheck_schema" -> dispatchSchemaAgentTask(clusterId, jobPayload, "PRECHECK_SCHEMA");
             case "install_schema" -> dispatchSchemaAgentTask(clusterId, jobPayload, "INSTALL_SCHEMA");
             case "verify_schema" -> dispatchSchemaAgentTask(clusterId, jobPayload, "VERIFY_SCHEMA_REGISTRY");
+            case "precheck_connect" -> dispatchConnectAgentTask(clusterId, jobPayload, "PRECHECK_CONNECT");
+            case "install_connect" -> dispatchConnectAgentTask(clusterId, jobPayload, "INSTALL_CONNECT");
+            case "verify_connect" -> dispatchConnectAgentTask(clusterId, jobPayload, "VERIFY_CONNECT");
             case "deploy" -> deploymentService.deployKafkaToHost(
                     clusterId,
                     required(payload, "host_id"),
@@ -320,9 +341,36 @@ public class DeploymentJobHandler implements JobHandler {
         );
     }
 
+    @SuppressWarnings("unchecked")
+    private UUID dispatchConnectAgentTask(UUID clusterId, Map<String, Object> jobPayload, String command) {
+        Object configuration = jobPayload.get("kafkaConnect");
+        if (!(configuration instanceof Map<?, ?>)) {
+            throw new IllegalArgumentException("Kafka Connect job configuration is missing.");
+        }
+        Map<String, Object> connect = new java.util.LinkedHashMap<>((Map<String, Object>) configuration);
+        connect.put("kafka_version", stringValue(jobPayload, "kafkaVersion"));
+        connect.put("connect_url", "http://" + connect.get("host_name") + ":" + connect.get("rest_port"));
+        if ("PRECHECK_CONNECT".equals(command)) {
+            try {
+                kafkaAdminService.getAdminClient(clusterId).describeCluster().nodes().get();
+                connect.put("admin_api_verified", "true");
+            } catch (Exception e) {
+                throw new RuntimeException("Kafka Admin API is not responding: " + e.getMessage(), e);
+            }
+        }
+        return deploymentService.dispatchSchemaTask(clusterId, String.valueOf(connect.get("host_id")), command,
+                String.valueOf(connect.getOrDefault("artifact_url", "")),
+                String.valueOf(connect.getOrDefault("checksum", "")), connect);
+    }
+
     private boolean isBackendSchemaOperation(Map<String, Object> payload) {
         return "create_schema_topic".equals(operation(payload))
                 || "save_schema_connection".equals(operation(payload));
+    }
+
+    private boolean isBackendConnectOperation(Map<String, Object> payload) {
+        return "create_connect_topics".equals(operation(payload))
+                || "save_connect_connection".equals(operation(payload));
     }
 
     private void markSchemaService(UUID clusterId, String status, String error) {
@@ -333,9 +381,24 @@ public class DeploymentJobHandler implements JobHandler {
         });
     }
 
+    private void markConnectService(UUID clusterId, String status, String error) {
+        clusterServiceAssignmentRepository.findByClusterIdAndRole(clusterId, "kafka_connect").ifPresent(service -> {
+            service.setStatus(status);
+            service.setLastError(error);
+            clusterServiceAssignmentRepository.save(service);
+        });
+    }
+
     private boolean isSchemaOperation(Map<String, Object> payload) {
         return switch (operation(payload)) {
             case "precheck_schema", "create_schema_topic", "install_schema", "verify_schema", "save_schema_connection" -> true;
+            default -> false;
+        };
+    }
+
+    private boolean isConnectOperation(Map<String, Object> payload) {
+        return switch (operation(payload)) {
+            case "precheck_connect", "create_connect_topics", "install_connect", "verify_connect", "save_connect_connection" -> true;
             default -> false;
         };
     }
@@ -390,6 +453,64 @@ public class DeploymentJobHandler implements JobHandler {
         dataServiceConnectionService.saveConnection(clusterId, "SCHEMA_REGISTRY", request,
                 stringValue(jobPayload, "requestedBy"));
         return "Saved the default Schema Registry connection.";
+    }
+
+    @SuppressWarnings("unchecked")
+    private String executeBackendConnectOperation(UUID clusterId, Map<String, Object> jobPayload,
+                                                  Map<String, Object> payload) {
+        Object configuration = jobPayload.get("kafkaConnect");
+        if (!(configuration instanceof Map<?, ?>)) {
+            throw new IllegalArgumentException("Kafka Connect job configuration is missing.");
+        }
+        Map<String, Object> connect = (Map<String, Object>) configuration;
+        if ("create_connect_topics".equals(operation(payload))) {
+            int replicationFactor = Integer.parseInt(String.valueOf(connect.getOrDefault("replication_factor", 1)));
+            AdminClient admin = kafkaAdminService.getAdminClient(clusterId);
+            try {
+                List<String> existing = admin.listTopics(new ListTopicsOptions().listInternal(true)).names().get().stream().toList();
+                ensureCompactedTopic(admin, existing, String.valueOf(connect.get("offset_topic")), 25, replicationFactor);
+                ensureCompactedTopic(admin, existing, String.valueOf(connect.get("config_topic")), 1, replicationFactor);
+                ensureCompactedTopic(admin, existing, String.valueOf(connect.get("status_topic")), 5, replicationFactor);
+                return "Created or verified Kafka Connect internal topics with replication factor " + replicationFactor + ".";
+            } catch (Exception e) {
+                throw new RuntimeException("Unable to create or verify Kafka Connect internal topics: " + e.getMessage(), e);
+            }
+        }
+
+        SaveConnectionRequest request = new SaveConnectionRequest();
+        request.setConnectionName("Deployed Kafka Connect");
+        request.setProtocol("http");
+        request.setHost(String.valueOf(connect.get("host_name")));
+        request.setPort(Integer.parseInt(String.valueOf(connect.get("rest_port"))));
+        request.setIsDefault(true);
+        dataServiceConnectionService.saveConnection(clusterId, "KAFKA_CONNECT", request,
+                stringValue(jobPayload, "requestedBy"));
+        return "Saved the default Kafka Connect connection.";
+    }
+
+    private void ensureCompactedTopic(AdminClient admin, List<String> existing, String topic,
+                                      int partitions, int replicationFactor) throws Exception {
+        if (topic == null || topic.isBlank() || "null".equals(topic)) {
+            throw new IllegalArgumentException("Kafka Connect internal topic name is missing.");
+        }
+        if (!existing.contains(topic)) {
+            admin.createTopics(List.of(new NewTopic(topic, partitions, (short) replicationFactor)
+                    .configs(Map.of("cleanup.policy", "compact")))).all().get();
+            return;
+        }
+        var description = admin.describeTopics(List.of(topic)).allTopicNames().get().get(topic);
+        if (description.partitions().size() != partitions) {
+            throw new IllegalStateException("Existing topic " + topic + " has " + description.partitions().size()
+                    + " partitions; expected " + partitions + ".");
+        }
+        if (description.partitions().stream().anyMatch(partition -> partition.replicas().size() != replicationFactor)) {
+            throw new IllegalStateException("Existing topic " + topic + " does not use replication factor " + replicationFactor + ".");
+        }
+        ConfigResource resource = new ConfigResource(ConfigResource.Type.TOPIC, topic);
+        ConfigEntry cleanup = admin.describeConfigs(List.of(resource)).all().get().get(resource).get("cleanup.policy");
+        if (cleanup == null || !java.util.Arrays.asList(cleanup.value().split(",")).contains("compact")) {
+            throw new IllegalStateException("Existing topic " + topic + " must use cleanup.policy=compact.");
+        }
     }
 
     private String operation(Map<String, Object> payload) {

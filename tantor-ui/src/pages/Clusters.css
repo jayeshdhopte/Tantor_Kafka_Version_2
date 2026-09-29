@@ -2528,9 +2528,23 @@
 .clusters-surface .clusters-table th:nth-child(6),
 .clusters-surface .clusters-table td:nth-child(6) { width: 11%; }
 .clusters-surface .clusters-table th:nth-child(7),
-.clusters-surface .clusters-table td:nth-child(7) { width: 16%; }
+.clusters-surface .clusters-table td:nth-child(7) { width: calc(20% - 104px); }
 .clusters-surface .clusters-table th:nth-child(8),
-.clusters-surface .clusters-table td:nth-child(8) { width: 4%; }
+.clusters-surface .clusters-table td:nth-child(8) {
+  width: 104px;
+  padding-left: 8px;
+  padding-right: 20px;
+}
+
+.clusters-surface .cluster-menu-anchor {
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.clusters-surface .cluster-menu-anchor .btn.icon-only {
+  flex: 0 0 32px;
+  width: 32px;
+}
 
 .clusters-surface .cluster-title-text strong {
   color: #282F49 !important;

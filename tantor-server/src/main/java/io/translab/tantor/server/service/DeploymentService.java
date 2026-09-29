@@ -119,8 +119,10 @@ public class DeploymentService {
         if (hasText(agentArtifactUrl)) {
             task.setArtifactUrl(agentArtifactUrl);
             String resolvedChecksum = firstNonBlank(checksum, resolveArtifactChecksum(agentArtifactUrl).orElse(""));
-            if (("INSTALL_SCHEMA".equals(command) || "PRECHECK_SCHEMA".equals(command)) && !hasText(resolvedChecksum)) {
-                throw new IllegalArgumentException("Schema Registry artifact checksum is required.");
+            if (("INSTALL_SCHEMA".equals(command) || "PRECHECK_SCHEMA".equals(command)
+                    || "INSTALL_CONNECT".equals(command) || "PRECHECK_CONNECT".equals(command))
+                    && !hasText(resolvedChecksum)) {
+                throw new IllegalArgumentException("Data-service artifact checksum is required.");
             }
             task.setChecksum(resolvedChecksum);
         }

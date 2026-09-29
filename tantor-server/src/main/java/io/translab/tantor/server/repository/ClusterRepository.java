@@ -25,6 +25,10 @@ public interface ClusterRepository extends JpaRepository<Cluster, UUID> {
     @EntityGraph(attributePaths = "services")
     java.util.Optional<Cluster> findWithServicesById(UUID id);
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("select c from Cluster c where c.id = :id")
+    java.util.Optional<Cluster> findForServiceUpdate(@org.springframework.data.repository.query.Param("id") UUID id);
+
     @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true, flushAutomatically = true)
     @org.springframework.data.jpa.repository.Query(value = """
             WITH cleared_hosts AS (

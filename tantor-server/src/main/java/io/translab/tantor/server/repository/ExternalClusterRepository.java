@@ -10,6 +10,9 @@ import java.util.UUID;
 
 @Repository
 public interface ExternalClusterRepository extends JpaRepository<ExternalCluster, UUID> {
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("select c from ExternalCluster c where c.id = :id")
+    Optional<ExternalCluster> findForServiceUpdate(@org.springframework.data.repository.query.Param("id") UUID id);
     Optional<ExternalCluster> findByName(String name);
     Optional<ExternalCluster> findByKafkaClusterId(String kafkaClusterId);
     Optional<ExternalCluster> findByBootstrapServers(String bootstrapServers);

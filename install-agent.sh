@@ -13,9 +13,8 @@ fi
 TANTOR_USER="tantor"
 TANTOR_HOME="/srv/tantor"
 AGENT_BIN_URL=${AGENT_BIN_URL:-}
-SERVER_URL=${SERVER_URL:?SERVER_URL must be an HTTPS URL}
+SERVER_URL=${SERVER_URL:?SERVER_URL must be an HTTP or HTTPS URL}
 TANTOR_ENVIRONMENT=${TANTOR_ENVIRONMENT:?TANTOR_ENVIRONMENT must be development, sit, uat, or production}
-CERT_PATH="/etc/tantor/certs"
 AGENT_DATA_DIR="/var/lib/tantor/agent/data"
 AGENT_ARTIFACTS_DIR="/var/lib/tantor/agent/artifacts"
 AGENT_LOG_DIR="/var/log/tantor-agent"
@@ -23,19 +22,11 @@ AGENT_LOG_FILE="$AGENT_LOG_DIR/tantor-agent.log"
 
 echo "=== Tantor Agent Installer ==="
 
-case "$SERVER_URL" in https://*) ;; *) echo "SERVER_URL must use https://" >&2; exit 2 ;; esac
+case "$SERVER_URL" in http://*|https://*) ;; *) echo "SERVER_URL must use http:// or https://" >&2; exit 2 ;; esac
 case "$TANTOR_ENVIRONMENT" in development|sit|uat|production) ;; *) echo "Invalid TANTOR_ENVIRONMENT" >&2; exit 2 ;; esac
 if [ ! -f /srv/tantor-agent ]; then
   case "$AGENT_BIN_URL" in https://*) ;; *) echo "AGENT_BIN_URL must use https:// when no binary is pre-staged" >&2; exit 2 ;; esac
 fi
-
-mkdir -p "$CERT_PATH"
-for certificate_file in "$CERT_PATH/agent.crt" "$CERT_PATH/agent.key" "$CERT_PATH/ca.crt"; do
-    if [ ! -s "$certificate_file" ]; then
-        echo "Required pre-provisioned mTLS file is missing or empty: $certificate_file" >&2
-        exit 1
-    fi
-done
 
 # 1. Create tantor user
 if id "$TANTOR_USER" &>/dev/null; then
@@ -60,7 +51,7 @@ if [ -f "/srv/tantor-agent" ]; then
 else
     echo "Downloading agent from $AGENT_BIN_URL..."
     curl --fail --show-error --location --proto '=https' --proto-redir '=https' --tlsv1.2 \
-      --cacert "$CERT_PATH/ca.crt" -o "$TANTOR_HOME/bin/tantor-agent" "$AGENT_BIN_URL"
+      -o "$TANTOR_HOME/bin/tantor-agent" "$AGENT_BIN_URL"
 fi
 chmod +x $TANTOR_HOME/bin/tantor-agent
 chown -R $TANTOR_USER:$TANTOR_USER $TANTOR_HOME
@@ -72,9 +63,8 @@ touch "$AGENT_LOG_FILE"
 chown $TANTOR_USER:$TANTOR_USER "$AGENT_LOG_FILE"
 chmod 0640 "$AGENT_LOG_FILE"
 
-# 3. Configure certificates and agent config
-echo "Setting up certificates and configs..."
-mkdir -p $CERT_PATH
+# 3. Configure agent
+echo "Setting up agent config..."
 mkdir -p /etc/tantor/config
 
 HOST_ID="$(hostname)"
@@ -85,9 +75,6 @@ environment: "$TANTOR_ENVIRONMENT"
 agent:
   host_id: "$HOST_ID"
   server_url: "$SERVER_URL"
-  cert_file: "$CERT_PATH/agent.crt"
-  key_file: "$CERT_PATH/agent.key"
-  ca_cert: "$CERT_PATH/ca.crt"
   poll_interval_seconds: 15
   log_level: "INFO"
 
@@ -98,7 +85,6 @@ paths:
 EOF
 
 chown -R $TANTOR_USER:$TANTOR_USER /etc/tantor
-chmod 600 $CERT_PATH/agent.key
 
 # 4. Create systemd service
 echo "Creating systemd service..."
@@ -114,6 +100,7 @@ Group=$TANTOR_USER
 ExecStart=$TANTOR_HOME/bin/tantor-agent -config /etc/tantor/config/agent.yaml
 Restart=on-failure
 RestartSec=5s
+LimitNOFILE=1024000
 StandardOutput=append:$AGENT_LOG_FILE
 StandardError=append:$AGENT_LOG_FILE
 
@@ -139,7 +126,8 @@ chmod 0644 /etc/logrotate.d/tantor-agent
 # 5. Start Service & Register Host
 echo "Starting Tantor Agent..."
 systemctl daemon-reload
-systemctl enable --now tantor-agent
+systemctl enable tantor-agent
+systemctl restart tantor-agent
 systemctl status tantor-agent --no-pager | head -n 5
 
 echo "================================================="

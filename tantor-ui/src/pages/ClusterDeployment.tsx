@@ -1,3 +1,5 @@
+import { SchemaRegistryFields, KafkaConnectFields } from '../components/ServiceConfigurationFields';
+import { validateServicePath as validatePath, defaultSchemaRegistryConfig, defaultKafkaConnectConfig, type SchemaRegistryConfig, type KafkaConnectConfig } from '../components/serviceConfiguration';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -65,6 +67,7 @@ type KafkaVersionRaw = {
   attributes?: { scala_version?: string; release_date?: string };
   createdAt?: string;
   fileSizeBytes?: number;
+  serviceType?: string;
   fileName?: string;
   filename?: string;
 };
@@ -82,6 +85,9 @@ type KafkaVersionInfo = {
 type SchemaArtifact = {
   id: string;
   version: string;
+  serviceType?: string;
+  fileName?: string;
+  filename?: string;
   status?: string;
   sha256?: string;
   checksum?: string;
@@ -92,6 +98,7 @@ type RoleChoice = 'broker_controller' | 'broker' | 'controller' | 'separate' | '
 type FlowStage = 'details' | 'preview';
 type ConfigMode = 'default' | 'custom';
 type ConfigKind = 'server' | 'broker' | 'controller' | 'zookeeper';
+type AddonRole = 'schema_registry' | 'kafka_connect';
 type PrereqStatus = 'IDLE' | 'QUEUED' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'REBOOT_REQUIRED';
 
 type ServiceAssignment = {
@@ -121,7 +128,11 @@ type HostPortKey = keyof HostPorts;
 
 const DEFAULT_BROKER_JMX_PORT = 7071;
 const DEFAULT_CONTROLLER_JMX_PORT = 7072;
-const SCHEMA_REGISTRY_DEPLOYMENT_ENABLED = false;
+const SCHEMA_REGISTRY_DEPLOYMENT_ENABLED = true;
+const KAFKA_CONNECT_DEPLOYMENT_ENABLED = true;
+
+const isUnifiedKafkaArtifact = (artifact: SchemaArtifact) =>
+  (artifact.fileName || artifact.filename || '').toLowerCase().startsWith('tantor-unified-kafka-');
 
 type PropertyRow = {
   key: string;
@@ -371,14 +382,6 @@ function nodeAvailabilityMessage(host: Host): string {
   return status || 'Unavailable';
 }
 
-function validatePath(value: string, label: string): string {
-  if (!value.trim()) return `${label} is required.`;
-  if (!value.trim().startsWith('/')) return `${label} must be an absolute Linux path.`;
-  if (value.split('/').includes('..')) return `${label} cannot contain "..".`;
-  if (!/^\/[A-Za-z0-9/_\-.]{1,510}$/.test(value.trim())) return `${label} contains unsupported characters.`;
-  return '';
-}
-
 function serializeProperties(rows: PropertyRow[]): string {
   return rows
     .filter(row => row.key.trim() && !UI_ONLY_PROPERTY_KEYS.has(row.key.trim()) && String(row.value).trim())
@@ -431,25 +434,27 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   const [portCheckResults, setPortCheckResults] = useState<Record<string, PrereqResult>>({});
   const [hoveredPortCheckHostId, setHoveredPortCheckHostId] = useState<string | null>(null);
   const [numPartitions, setNumPartitions] = useState(1);
-  const [schemaEnabled, setSchemaEnabled] = useState(false);
-  const [schemaArtifactId, setSchemaArtifactId] = useState('');
-  const [schemaHostId, setSchemaHostId] = useState('');
-  const [schemaPort, setSchemaPort] = useState(8081);
-  const [schemaHeapSize, setSchemaHeapSize] = useState('1G');
-  const [schemaInstallDir, setSchemaInstallDir] = useState('/opt/tantor/schema-registry');
-  const [schemaConfigDir, setSchemaConfigDir] = useState('/opt/tantor/schema-registry/etc/schema-registry');
-  const [schemaLogDir, setSchemaLogDir] = useState('/var/log/tantor/schema-registry');
-  const [schemaWorkingDir, setSchemaWorkingDir] = useState('/var/lib/tantor/schema-registry');
-  const [schemaCompatibility, setSchemaCompatibility] = useState('BACKWARD');
-  const [schemaDirectoryCandidates, setSchemaDirectoryCandidates] = useState<string[]>([]);
-  const [schemaDiscovery, setSchemaDiscovery] = useState<PrereqResult>({ status: 'IDLE', logOutput: '', errorMsg: '' });
-  const [schemaCheck, setSchemaCheck] = useState<PrereqResult>({ status: 'IDLE', logOutput: '', errorMsg: '' });
+  const [connectArtifacts, setConnectArtifacts] = useState<SchemaArtifact[]>([]);
 
   const [nodeSearch, setNodeSearch] = useState('');
   const [nodeDropdownOpen, setNodeDropdownOpen] = useState(false);
 
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [rolesByHost, setRolesByHost] = useState<Record<string, RoleChoice>>({});
+  const [addonRolesByHost, setAddonRolesByHost] = useState<Record<string, AddonRole[]>>({});
+  const [schemaConfigsByHost, setSchemaConfigsByHost] = useState<Record<string, SchemaRegistryConfig>>({});
+  const [connectConfigsByHost, setConnectConfigsByHost] = useState<Record<string, KafkaConnectConfig>>({});
+  const [schemaChecksByHost, setSchemaChecksByHost] = useState<Record<string, PrereqResult>>({});
+  const [connectChecksByHost, setConnectChecksByHost] = useState<Record<string, PrereqResult>>({});
+  const addonCheckRevision = useRef(0);
+  const addonCheckInputs = JSON.stringify({ selectedNodeIds, rolesByHost, addonRolesByHost,
+    schemaConfigsByHost, connectConfigsByHost, hostPorts, listenerPort, controllerPort,
+    kafkaVersion, installDir, dataDir, logDir, deploymentMode });
+  useEffect(() => {
+    addonCheckRevision.current += 1;
+    setSchemaChecksByHost({});
+    setConnectChecksByHost({});
+  }, [addonCheckInputs]);
   const [configsByService, setConfigsByService] = useState<Record<string, NodeConfigState>>({});
   const [commonConfigs, setCommonConfigs] = useState<Record<ConfigKind, PropertyRow[]>>(() => createCommonConfigs('kraft'));
   const [commonConfigKind, setCommonConfigKind] = useState<ConfigKind>('server');
@@ -461,7 +466,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   const [validatingKraft, setValidatingKraft] = useState(false);
   const [kraftValidation, setKraftValidation] = useState<KraftValidationReport | null>(null);
   const [kraftGeneratedConfig, setKraftGeneratedConfig] = useState<Record<string, string>>({});
-  
+
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const [kraftRiskAcknowledged, setKraftRiskAcknowledged] = useState(false);
@@ -473,6 +478,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     loadHosts();
     loadVersions();
     if (SCHEMA_REGISTRY_DEPLOYMENT_ENABLED) loadSchemaArtifacts();
+    if (KAFKA_CONNECT_DEPLOYMENT_ENABLED) loadConnectArtifacts();
   }, []);
 
   useEffect(() => {
@@ -561,15 +567,28 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
 
   const loadSchemaArtifacts = async () => {
     try {
-      const res = await fetch('/api/v1/artifacts?serviceType=SCHEMA_REGISTRY&status=AVAILABLE&size=100');
+      const res = await fetch('/api/v1/artifacts?status=AVAILABLE&size=100');
       if (!res.ok) return;
       const data = await res.json();
-      const available = (data.content || []).filter((artifact: SchemaArtifact) => artifact.status === 'AVAILABLE');
+      const available = (data.content || []).filter((artifact: SchemaArtifact) =>
+        artifact.status === 'AVAILABLE' && (artifact.serviceType === 'SCHEMA_REGISTRY' || isUnifiedKafkaArtifact(artifact)));
       setSchemaArtifacts(available);
-      if (available.length) setSchemaArtifactId(current => current || available[0].id);
     } catch (error) {
       console.error(error);
       setSchemaArtifacts([]);
+    }
+  };
+
+  const loadConnectArtifacts = async () => {
+    try {
+      const res = await fetch('/api/v1/artifacts?status=AVAILABLE&size=100');
+      if (!res.ok) return;
+      const data = await res.json();
+      setConnectArtifacts((data.content || []).filter((artifact: SchemaArtifact) =>
+        artifact.status === 'AVAILABLE' && (artifact.serviceType === 'KAFKA_CONNECT' || isUnifiedKafkaArtifact(artifact))));
+    } catch (error) {
+      console.error(error);
+      setConnectArtifacts([]);
     }
   };
 
@@ -579,16 +598,6 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   const selectedHosts = selectedNodeIds
     .map(id => hosts.find(host => host.id === id))
     .filter(Boolean) as Host[];
-
-  useEffect(() => {
-    if (schemaHostId && !selectedNodeIds.includes(schemaHostId)) {
-      setSchemaHostId('');
-      setSchemaCheck({ status: 'IDLE', logOutput: '', errorMsg: '' });
-    }
-    if (!schemaHostId && selectedNodeIds.length > 0) {
-      setSchemaHostId(selectedNodeIds[0]);
-    }
-  }, [schemaHostId, selectedNodeIds]);
 
   const filteredHosts = hosts.filter(host => {
     const needle = `${host.hostname} ${displayIp(host)} ${host.id}`.toLowerCase();
@@ -604,6 +613,11 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     : deploymentMode === 'zookeeper' ? ZOOKEEPER_ROLE_OPTIONS : KRAFT_ROLE_OPTIONS;
   const allRoleOptions = [...KRAFT_ROLE_OPTIONS, ...ZOOKEEPER_ROLE_OPTIONS];
   const defaultRoleForMode: RoleChoice = isAddNodeMode ? 'broker' : deploymentMode === 'zookeeper' ? 'broker_zookeeper' : 'broker_controller';
+  const hostHasAddonRole = (hostId: string, role: AddonRole) => (addonRolesByHost[hostId] || []).includes(role);
+  const schemaHosts = selectedHosts.filter(host => hostHasAddonRole(host.id, 'schema_registry'));
+  const connectHosts = selectedHosts.filter(host => hostHasAddonRole(host.id, 'kafka_connect'));
+  const schemaConfigFor = (hostId: string) => schemaConfigsByHost[hostId] || defaultSchemaRegistryConfig();
+  const connectConfigFor = (hostId: string) => connectConfigsByHost[hostId] || defaultKafkaConnectConfig();
 
   const brokerCount = selectedHosts.filter(host => {
     const role = rolesByHost[host.id] || defaultRoleForMode;
@@ -679,12 +693,14 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     validatePath(dataDir, 'Data directory'),
     validatePath(logDir, 'Log directory'),
     validatePath(artifactLoadDir, 'Artifacts/Load Directory'),
-    ...(schemaEnabled ? [
-      validatePath(schemaInstallDir, 'Schema Registry install directory'),
-      validatePath(schemaConfigDir, 'Schema Registry config directory'),
-      validatePath(schemaLogDir, 'Schema Registry log directory'),
-      validatePath(schemaWorkingDir, 'Schema Registry working directory'),
-    ] : []),
+    ...schemaHosts.flatMap(host => {
+      const cfg = schemaConfigFor(host.id);
+      return [validatePath(cfg.installDir, `${host.hostname}: Schema Registry install directory`), validatePath(cfg.configDir, `${host.hostname}: Schema Registry config directory`), validatePath(cfg.logDir, `${host.hostname}: Schema Registry log directory`), validatePath(cfg.workingDir, `${host.hostname}: Schema Registry working directory`)];
+    }),
+    ...connectHosts.flatMap(host => {
+      const cfg = connectConfigFor(host.id);
+      return [validatePath(cfg.installDir, `${host.hostname}: Kafka Connect install directory`), validatePath(cfg.configDir, `${host.hostname}: Kafka Connect config directory`), validatePath(cfg.logDir, `${host.hostname}: Kafka Connect log directory`), validatePath(cfg.workingDir, `${host.hostname}: Kafka Connect working directory`), validatePath(cfg.pluginDir, `${host.hostname}: Kafka Connect plugin directory`)];
+    }),
   ].filter(Boolean);
 
   const configModalHost = configModalHostId
@@ -693,7 +709,8 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
 
   const prerequisiteComplete = selectedHosts.length > 0
     && selectedHosts.every(host => prereqResults[host.id]?.status === 'SUCCESS');
-  const schemaPrecheckComplete = !schemaEnabled || schemaCheck.status === 'SUCCESS';
+  const schemaPrecheckComplete = schemaHosts.every(host => schemaChecksByHost[host.id]?.status === 'SUCCESS');
+  const connectPrecheckComplete = connectHosts.every(host => connectChecksByHost[host.id]?.status === 'SUCCESS');
   const kraftDeploymentBlocked = deploymentMode === 'kraft'
     && !isAddNodeMode
     && (!kraftValidation
@@ -908,7 +925,18 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     commonConfigValue('transaction.state.log.replication.factor') && Number(commonConfigValue('transaction.state.log.replication.factor')) > effectiveBrokerCount ? `transaction.state.log.replication.factor=${commonConfigValue('transaction.state.log.replication.factor')} is invalid because the cluster will have ${effectiveBrokerCount} brokers.` : '',
   ].filter(Boolean);
 
-  const configBlockingIssues = [...missingRequiredConfigs, ...configValidationErrors];
+  const addonValidationErrors = [
+    ...schemaHosts.flatMap(host => /^[1-9]\d*[mMgG]$/.test(schemaConfigFor(host.id).heapSize)
+      ? [] : [`${host.hostname}: Schema Registry heap size must be a positive size such as 512M or 1G.`]),
+    ...connectHosts.flatMap(host => {
+      const cfg = connectConfigFor(host.id);
+      return [
+        /^[1-9]\d*[mMgG]$/.test(cfg.heapSize) ? '' : `${host.hostname}: Kafka Connect heap size must be a positive size such as 512M or 1G.`,
+        /^[A-Za-z0-9._-]{1,200}$/.test(cfg.groupId) ? '' : `${host.hostname}: Kafka Connect worker group ID must use letters, numbers, dots, underscores or hyphens.`,
+      ].filter(Boolean);
+    }),
+  ];
+  const configBlockingIssues = [...missingRequiredConfigs, ...configValidationErrors, ...addonValidationErrors];
 
   const selectedPortValidationErrors = selectedHosts.flatMap(host => {
     const role = rolesByHost[host.id] || defaultRoleForMode;
@@ -939,6 +967,9 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       );
     }
 
+    if (hostHasAddonRole(host.id, 'schema_registry')) selected.push({ label: 'Schema Registry REST port', value: schemaConfigFor(host.id).port });
+    if (hostHasAddonRole(host.id, 'kafka_connect')) selected.push({ label: 'Kafka Connect REST port', value: connectConfigFor(host.id).port });
+
     const invalid = selected
       .filter(port => !Number.isInteger(port.value) || port.value < 1 || port.value > 65535)
       .map(port => `${host.hostname}: ${port.label} must be between 1 and 65535.`);
@@ -954,8 +985,14 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     && brokerCount > 0
     && (isAddNodeMode || (deploymentMode === 'kraft' ? controllerCount > 0 : zookeeperCount > 0))
     && selectedPortValidationErrors.length === 0
-    && (!schemaEnabled || (Boolean(schemaHostId) && Boolean(schemaArtifactId)
-      && Number.isInteger(schemaPort) && schemaPort > 0 && schemaPort <= 65535));
+    && schemaHosts.every(host => {
+      const cfg = schemaConfigFor(host.id);
+      return Boolean(cfg.artifactId) && Number.isInteger(cfg.port) && cfg.port > 0 && cfg.port <= 65535;
+    })
+    && connectHosts.every(host => {
+      const cfg = connectConfigFor(host.id);
+      return Boolean(cfg.artifactId) && Number.isInteger(cfg.port) && cfg.port > 0 && cfg.port <= 65535;
+    });
 
   const serviceTemplate = (kind: ConfigKind, cfg: NodeConfigState) => {
     const commonRows = commonConfigs[kind] || [];
@@ -1018,7 +1055,12 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
 
   const buildDeploymentPayload = (includeGeneratedKraftConfig = true) => {
     const selectedArtifact = versions.find(version => version.version === kafkaVersion);
-    const selectedSchemaArtifact = schemaArtifacts.find(artifact => artifact.id === schemaArtifactId);
+    const schemaHost = schemaHosts[0];
+    const connectHost = connectHosts[0];
+    const schemaConfig = schemaHost ? schemaConfigFor(schemaHost.id) : null;
+    const connectConfig = connectHost ? connectConfigFor(connectHost.id) : null;
+    const selectedSchemaArtifact = schemaConfig ? schemaArtifacts.find(artifact => artifact.id === schemaConfig.artifactId) : undefined;
+    const selectedConnectArtifact = connectConfig ? connectArtifacts.find(artifact => artifact.id === connectConfig.artifactId) : undefined;
     const artifactRepoBaseUrl = runtimeConfig.artifactApiBasePath;
     return {
       name: clusterName.trim(),
@@ -1028,22 +1070,21 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       environment: environment.trim(),
       acknowledge_kraft_risk: kraftRiskAcknowledged,
       artifactUrl: selectedArtifact ? `${artifactRepoBaseUrl}/${selectedArtifact.id}/download` : '',
-      addons: schemaEnabled && !isAddNodeMode ? {
-        schema_registry: {
+      addons: !isAddNodeMode && (schemaHost || connectHost) ? {
+        schema_registry: schemaHost && schemaConfig ? {
           enabled: true,
-          host_id: schemaHostId,
-          artifact_id: schemaArtifactId,
-          artifact_url: `${artifactRepoBaseUrl}/${schemaArtifactId}/download`,
+          host_id: schemaHost.id, artifact_id: schemaConfig.artifactId,
+          artifact_url: `${artifactRepoBaseUrl}/${schemaConfig.artifactId}/download`,
           checksum: selectedSchemaArtifact?.sha256 || selectedSchemaArtifact?.checksum || '',
           version: selectedSchemaArtifact?.version || '',
-          port: schemaPort,
-          install_dir: schemaInstallDir.trim(),
-          config_dir: schemaConfigDir.trim(),
-          log_dir: schemaLogDir.trim(),
-          working_dir: schemaWorkingDir.trim(),
-          heap_size: schemaHeapSize,
-          compatibility_level: schemaCompatibility,
-        },
+          port: schemaConfig.port, install_dir: schemaConfig.installDir.trim(), config_dir: schemaConfig.configDir.trim(),
+          log_dir: schemaConfig.logDir.trim(), working_dir: schemaConfig.workingDir.trim(), heap_size: schemaConfig.heapSize, compatibility_level: schemaConfig.compatibility,
+        } : undefined,
+        kafka_connect: connectHost && connectConfig ? {
+          enabled: true, host_id: connectHost.id, artifact_id: connectConfig.artifactId,
+          artifact_url: `${artifactRepoBaseUrl}/${connectConfig.artifactId}/download`, checksum: selectedConnectArtifact?.sha256 || selectedConnectArtifact?.checksum || '', version: selectedConnectArtifact?.version || '',
+          port: connectConfig.port, install_dir: connectConfig.installDir.trim(), config_dir: connectConfig.configDir.trim(), log_dir: connectConfig.logDir.trim(), working_dir: connectConfig.workingDir.trim(), plugin_dir: connectConfig.pluginDir.trim(), heap_size: connectConfig.heapSize, group_id: connectConfig.groupId,
+        } : undefined,
       } : undefined,
       config: {
         configuration_mode: clusterConfigMode,
@@ -1069,6 +1110,8 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   };
 
   const openPreview = async () => {
+    setSchemaChecksByHost({});
+    setConnectChecksByHost({});
     setPrereqResults({});
     setKraftRiskAcknowledged(false);
     if (deploymentMode !== 'kraft' || isAddNodeMode) {
@@ -1112,7 +1155,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       } else {
         nextSelected = [...prev, hostId];
       }
-      
+
       setRolesByHost(rolesPrev => {
         const nextRoles = { ...rolesPrev };
         if (!isSelected) {
@@ -1122,7 +1165,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
         }
         return nextRoles;
       });
-      
+
       return nextSelected;
     });
     setPrereqResults({});
@@ -1165,11 +1208,52 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       delete next[hostId];
       return next;
     });
+    setAddonRolesByHost(prev => { const next = { ...prev }; delete next[hostId]; return next; });
+    setSchemaConfigsByHost(prev => { const next = { ...prev }; delete next[hostId]; return next; });
+    setConnectConfigsByHost(prev => { const next = { ...prev }; delete next[hostId]; return next; });
+    setSchemaChecksByHost(prev => { const next = { ...prev }; delete next[hostId]; return next; });
+    setConnectChecksByHost(prev => { const next = { ...prev }; delete next[hostId]; return next; });
     setPrereqResults(prev => {
       const next = { ...prev };
       delete next[hostId];
       return next;
     });
+  };
+
+  const toggleAddonRole = (hostId: string, role: AddonRole) => {
+    setPrereqResults({});
+    setPortCheckResults({});
+    const assignedHost = selectedHosts.find(host => host.id !== hostId && hostHasAddonRole(host.id, role));
+    if (assignedHost && !hostHasAddonRole(hostId, role)) {
+      notifyAction(`${role === 'schema_registry' ? 'Schema Registry' : 'Kafka Connect'} is currently deployed once per cluster. Remove the role from ${assignedHost.hostname} before assigning it to another host.`);
+      return;
+    }
+    setAddonRolesByHost(prev => {
+      const active = (prev[hostId] || []).includes(role);
+      const nextRoles = active ? (prev[hostId] || []).filter(item => item !== role) : [...(prev[hostId] || []), role];
+      return { ...prev, [hostId]: nextRoles };
+    });
+    if (role === 'schema_registry') {
+      setSchemaConfigsByHost(prev => prev[hostId] ? prev : { ...prev, [hostId]: defaultSchemaRegistryConfig() });
+      setSchemaChecksByHost(prev => { const next = { ...prev }; delete next[hostId]; return next; });
+    } else {
+      setConnectConfigsByHost(prev => prev[hostId] ? prev : { ...prev, [hostId]: defaultKafkaConnectConfig() });
+      setConnectChecksByHost(prev => { const next = { ...prev }; delete next[hostId]; return next; });
+    }
+  };
+
+  const updateSchemaConfig = (hostId: string, patch: Partial<SchemaRegistryConfig>) => {
+    setPrereqResults({});
+    setPortCheckResults({});
+    setSchemaConfigsByHost(prev => ({ ...prev, [hostId]: { ...schemaConfigFor(hostId), ...patch } }));
+    setSchemaChecksByHost(prev => { const next = { ...prev }; delete next[hostId]; return next; });
+  };
+
+  const updateConnectConfig = (hostId: string, patch: Partial<KafkaConnectConfig>) => {
+    setPrereqResults({});
+    setPortCheckResults({});
+    setConnectConfigsByHost(prev => ({ ...prev, [hostId]: { ...connectConfigFor(hostId), ...patch } }));
+    setConnectChecksByHost(prev => { const next = { ...prev }; delete next[hostId]; return next; });
   };
 
   const changeDeploymentMode = (mode: DeploymentMode) => {
@@ -1206,6 +1290,14 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     zookeeperPeerPort,
     zookeeperElectionPort,
   };
+
+  // During preview Kafka has not been installed yet, but Schema Registry and
+  // Connect still need the endpoint that they will use after deployment.
+  const plannedBootstrapServers = () => selectedHosts
+    .filter(host => ['broker', 'broker_controller', 'separate', 'broker_zookeeper'].includes(rolesByHost[host.id] || defaultRoleForMode))
+    .map(host => `${displayIp(host)}:${getHostPorts(host.id).listenerPort}`)
+    .filter(endpoint => !endpoint.startsWith('Unknown:'))
+    .join(',');
 
   const updateHostPort = (hostId: string, key: HostPortKey, value: number) => {
     setHostPorts(prev => ({
@@ -1262,9 +1354,8 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       ports.add(hp.zookeeperPeerPort);
       ports.add(hp.zookeeperElectionPort);
     }
-    if (schemaEnabled && schemaHostId === hostId) {
-      ports.add(schemaPort);
-    }
+    if (hostHasAddonRole(hostId, 'schema_registry')) ports.add(schemaConfigFor(hostId).port);
+    if (hostHasAddonRole(hostId, 'kafka_connect')) ports.add(connectConfigFor(hostId).port);
     return Array.from(ports);
   };
 
@@ -1281,59 +1372,99 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     return { status: 'FAILED', taskId, logOutput: '', errorMsg: 'Timed out waiting for Schema Registry pre-check.' };
   };
 
-  const discoverSchemaDirectories = async () => {
-    if (!schemaHostId) return;
-    setSchemaDiscovery({ status: 'RUNNING', logOutput: 'Discovering writable directories...', errorMsg: '' });
-    try {
-      const res = await fetch(`/api/v1/ui/hosts/${schemaHostId}/schema-directory-candidates`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ candidate_paths: '/opt,/opt_apb,/apache,/var/lib' }),
-      });
-      const queued = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(queued.message || 'Unable to discover directories.');
-      const result = await pollSchemaTask(schemaHostId, queued.taskId);
-      setSchemaDiscovery(result);
-      if (result.status === 'SUCCESS') {
-        const parsed = JSON.parse(result.logOutput || '{}');
-        setSchemaDirectoryCandidates((parsed.directories || [])
-          .filter((directory: { writable?: boolean }) => directory.writable)
-          .map((directory: { path: string }) => directory.path));
-      }
-    } catch (error) {
-      setSchemaDiscovery({ status: 'FAILED', logOutput: '', errorMsg: error instanceof Error ? error.message : 'Directory discovery failed.' });
-    }
+  const dataServiceSafetyParameters = (hostId: string, role: AddonRole) => {
+    const otherRole = role === 'schema_registry' ? 'kafka_connect' : 'schema_registry';
+    const other = hostHasAddonRole(hostId, otherRole)
+      ? (otherRole === 'schema_registry' ? schemaConfigFor(hostId) : connectConfigFor(hostId)) : null;
+    return {
+      kafka_data_dir: dataDir, kafka_log_dir: logDir,
+      other_install_dir: other?.installDir, other_config_dir: other?.configDir,
+      other_log_dir: other?.logDir, other_working_dir: other?.workingDir,
+      other_plugin_dir: other && 'pluginDir' in other ? other.pluginDir : undefined,
+    };
   };
 
-  const runSchemaPrecheck = async () => {
-    if (!schemaHostId || !schemaArtifactId) return;
-    const artifact = schemaArtifacts.find(item => item.id === schemaArtifactId);
+  const runSchemaPrecheck = async (hostId: string) => {
+    const revision = addonCheckRevision.current;
+    const cfg = schemaConfigFor(hostId);
+    if (!cfg.artifactId) return;
+    const artifact = schemaArtifacts.find(item => item.id === cfg.artifactId);
     const kafkaArtifact = versions.find(item => item.version === kafkaVersion);
     const kafkaVersionedInstallDir = `${installDir.replace(/\/$/, '')}/kafka_${kafkaArtifact?.scala_version || '2.13'}-${kafkaVersion}`;
-    setSchemaCheck({ status: 'RUNNING', logOutput: 'Running Schema Registry pre-check...', errorMsg: '' });
+    setSchemaChecksByHost(prev => ({ ...prev, [hostId]: { status: 'RUNNING', logOutput: 'Running Schema Registry pre-check...', errorMsg: '' } }));
     try {
-      const res = await fetch(`/api/v1/ui/hosts/${schemaHostId}/precheck-schema`, {
+      const res = await fetch(`/api/v1/ui/hosts/${hostId}/precheck-schema`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          artifact_url: `${runtimeConfig.artifactApiBasePath}/${schemaArtifactId}/download`,
+          artifact_url: `${runtimeConfig.artifactApiBasePath}/${cfg.artifactId}/download`,
           checksum: artifact?.sha256 || artifact?.checksum || '',
           schema_version: artifact?.version || '',
           kafka_version: kafkaVersion,
-          rest_port: schemaPort,
-          install_dir: schemaInstallDir,
-          config_dir: schemaConfigDir,
-          log_dir: schemaLogDir,
-          working_dir: schemaWorkingDir,
+          rest_port: cfg.port, install_dir: cfg.installDir,
+          config_dir: cfg.configDir, log_dir: cfg.logDir, working_dir: cfg.workingDir,
+          heap_size: cfg.heapSize, compatibility_level: cfg.compatibility, schemas_topic: '_schemas',
+          bootstrap_servers: plannedBootstrapServers(),
           kafka_install_dir: kafkaVersionedInstallDir,
           allow_deferred_kafka: true,
+          ...dataServiceSafetyParameters(hostId, 'schema_registry'),
         }),
       });
       const queued = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(queued.message || 'Unable to start Schema Registry pre-check.');
-      setSchemaCheck(await pollSchemaTask(schemaHostId, queued.taskId));
+      const result = await pollSchemaTask(hostId, queued.taskId);
+      if (revision === addonCheckRevision.current) setSchemaChecksByHost(prev => ({ ...prev, [hostId]: result }));
     } catch (error) {
-      setSchemaCheck({ status: 'FAILED', logOutput: '', errorMsg: error instanceof Error ? error.message : 'Schema Registry pre-check failed.' });
+      if (revision !== addonCheckRevision.current) return;
+      setSchemaChecksByHost(prev => ({ ...prev, [hostId]: { status: 'FAILED', logOutput: '', errorMsg: error instanceof Error ? error.message : 'Schema Registry pre-check failed.' } }));
+    }
+  };
+
+  const pollConnectTask = async (hostId: string, taskId: string): Promise<PrereqResult> => {
+    for (let i = 0; i < 90; i++) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      const res = await fetch(`/api/v1/ui/hosts/${hostId}/check-prerequisites/${taskId}`);
+      if (!res.ok) continue;
+      const data = await res.json().catch(() => ({}));
+      const status: PrereqStatus = String(data.status || '').toUpperCase() as PrereqStatus;
+      if (status === 'SUCCESS' || status === 'FAILED' || status === 'REBOOT_REQUIRED') {
+        return { status, taskId, logOutput: data.logOutput || '', errorMsg: data.errorMsg || '' };
+      }
+    }
+    return { status: 'FAILED', taskId, logOutput: '', errorMsg: 'Timed out waiting for Kafka Connect pre-check.' };
+  };
+
+  const runConnectPrecheck = async (hostId: string) => {
+    const revision = addonCheckRevision.current;
+    const cfg = connectConfigFor(hostId);
+    if (!cfg.artifactId) return;
+    const artifact = connectArtifacts.find(item => item.id === cfg.artifactId);
+    setConnectChecksByHost(prev => ({ ...prev, [hostId]: { status: 'RUNNING', logOutput: 'Running Kafka Connect pre-check...', errorMsg: '' } }));
+    try {
+      const res = await fetch(`/api/v1/ui/hosts/${hostId}/precheck-connect`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          artifact_url: `${runtimeConfig.artifactApiBasePath}/${cfg.artifactId}/download`,
+          checksum: artifact?.sha256 || artifact?.checksum || '',
+          connect_version: artifact?.version || '',
+          rest_port: cfg.port, install_dir: cfg.installDir,
+          config_dir: cfg.configDir, log_dir: cfg.logDir, working_dir: cfg.workingDir,
+          heap_size: cfg.heapSize, group_id: cfg.groupId, plugin_dir: cfg.pluginDir,
+          kafka_version: kafkaVersion, min_free_disk_mb: 5120,
+          kafka_install_dir: `${installDir.replace(/\/$/, '')}/kafka_${versions.find(item => item.version === kafkaVersion)?.scala_version || '2.13'}-${kafkaVersion}`,
+          bootstrap_servers: plannedBootstrapServers(),
+          allow_deferred_kafka: true,
+          ...dataServiceSafetyParameters(hostId, 'kafka_connect'),
+        }),
+      });
+      const queued = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(queued.message || 'Unable to start Kafka Connect pre-check.');
+      const result = await pollConnectTask(hostId, queued.taskId);
+      if (revision === addonCheckRevision.current) setConnectChecksByHost(prev => ({ ...prev, [hostId]: result }));
+    } catch (error) {
+      if (revision !== addonCheckRevision.current) return;
+      setConnectChecksByHost(prev => ({ ...prev, [hostId]: { status: 'FAILED', logOutput: '', errorMsg: error instanceof Error ? error.message : 'Kafka Connect pre-check failed.' } }));
     }
   };
 
@@ -1473,6 +1604,10 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       }
     }));
 
+    await Promise.all([
+      ...schemaHosts.map(host => runSchemaPrecheck(host.id)),
+      ...connectHosts.map(host => runConnectPrecheck(host.id)),
+    ]);
     setCheckingPrereqs(false);
   };
 
@@ -1601,7 +1736,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   };
 
   const mainContent = (
-    <div 
+    <div
       className={`cluster-deploy-page ${onClose ? 'modal-version' : ''} animate-fade-in`}
       style={!onClose ? { maxWidth: '100%' } : {}}
     >
@@ -1626,15 +1761,15 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
           </div>
           <div className="cd-header-side">
             <div className="cd-stage-tabs" aria-label="Deployment progress">
-              <span 
-                className={stage === 'details' ? 'active' : ''} 
-                onClick={() => setStage('details')} 
+              <span
+                className={stage === 'details' ? 'active' : ''}
+                onClick={() => setStage('details')}
                 style={{ cursor: 'pointer' }}
               >
                 Details
               </span>
-              <span 
-                className={`${stage === 'preview' ? 'active' : ''} ${!canPreview ? 'disabled' : ''}`} 
+              <span
+                className={`${stage === 'preview' ? 'active' : ''} ${!canPreview ? 'disabled' : ''}`}
                 onClick={() => {
                   if (canPreview) {
                     if (stage === 'details') {
@@ -1643,7 +1778,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                       setStage('preview');
                     }
                   }
-                }} 
+                }}
                 style={{ cursor: canPreview ? 'pointer' : 'not-allowed', opacity: canPreview ? 1 : 0.5 }}
               >
                 Preview
@@ -1713,9 +1848,9 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
               <label className="cd-field">
                 <span>Kafka Version</span>
                 <div style={{ position: 'relative', width: '100%' }}>
-                  <select 
-                    value={kafkaVersion} 
-                    onChange={e => changeKafkaVersion(e.target.value)} 
+                  <select
+                    value={kafkaVersion}
+                    onChange={e => changeKafkaVersion(e.target.value)}
                     disabled={isAddNodeMode || loadingVersions || versions.length === 0}
                     style={{
                       appearance: 'none',
@@ -1763,165 +1898,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
             </div>
           </section>
 
-          {SCHEMA_REGISTRY_DEPLOYMENT_ENABLED && !isAddNodeMode && (
-            <section className="cd-panel">
-              <div className="cd-panel-title">
-                <div>
-                  <h2>Schema Registry</h2>
-                  <p>Deploy Schema Registry on one selected Kafka node and connect it to this cluster.</p>
-                </div>
-                <label className="cd-toggle-switch" title="Enable Schema Registry deployment">
-                  <input
-                    type="checkbox"
-                    checked={schemaEnabled}
-                    onChange={event => {
-                      setSchemaEnabled(event.target.checked);
-                      setSchemaDiscovery({ status: 'IDLE', logOutput: '', errorMsg: '' });
-                      setSchemaCheck({ status: 'IDLE', logOutput: '', errorMsg: '' });
-                    }}
-                  />
-                  <span className="cd-toggle-slider"></span>
-                </label>
-              </div>
 
-              {schemaEnabled && (
-                <>
-                  <div className="cd-grid-2">
-                    <label className="cd-field">
-                      <span>Schema Registry artifact</span>
-                      <select value={schemaArtifactId} onChange={event => {
-                        setSchemaArtifactId(event.target.value);
-                        setSchemaCheck({ status: 'IDLE', logOutput: '', errorMsg: '' });
-                      }}>
-                        <option value="">Select uploaded artifact</option>
-                        {schemaArtifacts.map(artifact => (
-                          <option value={artifact.id} key={artifact.id}>
-                            {artifact.version || artifact.id}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="cd-field">
-                      <span>Deployment host</span>
-                      <select value={schemaHostId} onChange={event => {
-                        setSchemaHostId(event.target.value);
-                        setSchemaDiscovery({ status: 'IDLE', logOutput: '', errorMsg: '' });
-                        setSchemaCheck({ status: 'IDLE', logOutput: '', errorMsg: '' });
-                      }}>
-                        <option value="">Select a Kafka node</option>
-                        {selectedHosts.map(host => (
-                          <option value={host.id} key={host.id}>{host.hostname} ({displayIp(host)})</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="cd-field">
-                      <span>REST API port</span>
-                      <input type="number" min={1} max={65535} value={schemaPort} onChange={event => {
-                        setSchemaPort(Number(event.target.value));
-                        setSchemaCheck({ status: 'IDLE', logOutput: '', errorMsg: '' });
-                      }} />
-                    </label>
-                    <label className="cd-field">
-                      <span>Heap size</span>
-                      <input value={schemaHeapSize} onChange={event => {
-                        setSchemaHeapSize(event.target.value);
-                        setSchemaCheck({ status: 'IDLE', logOutput: '', errorMsg: '' });
-                      }} placeholder="1G" />
-                    </label>
-                    <label className="cd-field">
-                      <span>Compatibility level</span>
-                      <select value={schemaCompatibility} onChange={event => {
-                        setSchemaCompatibility(event.target.value);
-                        setSchemaCheck({ status: 'IDLE', logOutput: '', errorMsg: '' });
-                      }}>
-                        {['BACKWARD', 'BACKWARD_TRANSITIVE', 'FORWARD', 'FORWARD_TRANSITIVE', 'FULL', 'FULL_TRANSITIVE', 'NONE']
-                          .map(level => <option value={level} key={level}>{level}</option>)}
-                      </select>
-                    </label>
-                  </div>
-
-                  <div className="cd-grid-2">
-                    <label className="cd-field">
-                      <span>Install directory</span>
-                      <input value={schemaInstallDir} onChange={event => {
-                        setSchemaInstallDir(event.target.value);
-                        setSchemaCheck({ status: 'IDLE', logOutput: '', errorMsg: '' });
-                      }} />
-                    </label>
-                    <label className="cd-field">
-                      <span>Config directory</span>
-                      <input value={schemaConfigDir} onChange={event => {
-                        setSchemaConfigDir(event.target.value);
-                        setSchemaCheck({ status: 'IDLE', logOutput: '', errorMsg: '' });
-                      }} />
-                    </label>
-                    <label className="cd-field">
-                      <span>Log directory</span>
-                      <input value={schemaLogDir} onChange={event => {
-                        setSchemaLogDir(event.target.value);
-                        setSchemaCheck({ status: 'IDLE', logOutput: '', errorMsg: '' });
-                      }} />
-                    </label>
-                    <label className="cd-field">
-                      <span>Working directory</span>
-                      <input value={schemaWorkingDir} onChange={event => {
-                        setSchemaWorkingDir(event.target.value);
-                        setSchemaCheck({ status: 'IDLE', logOutput: '', errorMsg: '' });
-                      }} />
-                    </label>
-                  </div>
-
-                  <div className="cd-custom-import-actions">
-                    <button type="button" className="cd-secondary-btn compact" disabled={!schemaHostId || schemaDiscovery.status === 'RUNNING' || schemaCheck.status === 'RUNNING'} onClick={discoverSchemaDirectories}>
-                      {schemaDiscovery.status === 'RUNNING' && <Loader2 size={14} className="spin" />}
-                      Check available directories
-                    </button>
-                    <button type="button" className="cd-secondary-btn compact" disabled={!schemaHostId || !schemaArtifactId || schemaDiscovery.status === 'RUNNING' || schemaCheck.status === 'RUNNING'} onClick={runSchemaPrecheck}>
-                      {schemaCheck.status === 'RUNNING' && <Loader2 size={14} className="spin" />}
-                      Run Schema Registry pre-check
-                    </button>
-                  </div>
-
-                  {schemaDirectoryCandidates.length > 0 && (
-                    <div className="cd-template-summary">
-                      <strong>Writable base directories:</strong>
-                      <span>{schemaDirectoryCandidates.join(', ')}</span>
-                    </div>
-                  )}
-                  {schemaDiscovery.status !== 'IDLE' && <PrerequisiteLog result={schemaDiscovery} />}
-                  {schemaCheck.status !== 'IDLE' && <PrerequisiteLog result={schemaCheck} />}
-                </>
-              )}
-            </section>
-          )}
-
-          <section className="cd-panel">
-            <div className="cd-panel-title">
-              <h2>Deployment Paths</h2>
-              <button className="cd-secondary-btn compact" onClick={() => setCommonConfigOpen(true)}>
-                <FileText size={16} />
-                Config
-              </button>
-            </div>
-            <div className="cd-grid-2">
-              <label className="cd-field">
-                <span>Install directory</span>
-                <input value={installDir} onChange={e => setInstallDir(e.target.value)} placeholder="/opt" />
-              </label>
-              <label className="cd-field">
-                <span>Data directory</span>
-                <input value={dataDir} onChange={e => setDataDir(e.target.value)} placeholder="/data/kafka" />
-              </label>
-              <label className="cd-field">
-                <span>Log directory</span>
-                <input value={logDir} onChange={e => setLogDir(e.target.value)} placeholder="/var/log/kafka" />
-              </label>
-              <label className="cd-field">
-                <span>Artifacts/Load Directory</span>
-                <input value={artifactLoadDir} onChange={e => setArtifactLoadDir(e.target.value)} placeholder="/srv/tantor-agent/artifacts" />
-              </label>
-            </div>
-          </section>
 
           <section className="cd-panel">
             <div className="cd-panel-title">
@@ -1996,6 +1973,36 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
               </div>
             </div>
 
+
+            <section className="cd-panel">
+              <div className="cd-panel-title">
+                <h2>Deployment Paths</h2>
+                <button className="cd-secondary-btn compact" onClick={() => setCommonConfigOpen(true)}>
+                  <FileText size={16} />
+                  Config
+                </button>
+              </div>
+              <div className="cd-grid-2">
+                <label className="cd-field">
+                  <span>Install directory</span>
+                  <input value={installDir} onChange={e => setInstallDir(e.target.value)} placeholder="/opt" />
+                </label>
+                <label className="cd-field">
+                  <span>Data directory</span>
+                  <input value={dataDir} onChange={e => setDataDir(e.target.value)} placeholder="/data/kafka" />
+                </label>
+                <label className="cd-field">
+                  <span>Log directory</span>
+                  <input value={logDir} onChange={e => setLogDir(e.target.value)} placeholder="/var/log/kafka" />
+                </label>
+                <label className="cd-field">
+                  <span>Artifacts/Load Directory</span>
+                  <input value={artifactLoadDir} onChange={e => setArtifactLoadDir(e.target.value)} placeholder="/srv/tantor-agent/artifacts" />
+                </label>
+              </div>
+            </section>
+
+
             <div className="cd-selected-node-list">
               {selectedHosts.map(host => (
                 <div className="cd-selected-node" key={host.id} style={{ display: 'flex', flexDirection: 'column', gap: '10px', background: '#FFFFFF', borderRadius: '8px', padding: '10px 16px', border: 'none' }}>
@@ -2022,10 +2029,10 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                           {portCheckResults[host.id]?.status === 'RUNNING'
                             ? 'Checking...'
                             : portCheckResults[host.id]?.status === 'SUCCESS'
-                            ? 'Ports OK'
-                            : portCheckResults[host.id]?.status === 'FAILED'
-                            ? 'Ports Failed'
-                            : 'Check Ports'}
+                              ? 'Ports OK'
+                              : portCheckResults[host.id]?.status === 'FAILED'
+                                ? 'Ports Failed'
+                                : 'Check Ports'}
                         </span>
                         {portCheckResults[host.id]?.status === 'RUNNING' ? (
                           <Loader2 size={12} className="spin" style={{ color: '#3E1363' }} />
@@ -2135,61 +2142,79 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                             setRoleMenuAnchor(opening ? event.currentTarget : null);
                           }}
                         >
-                          <span>{(rolesByHost[host.id] || defaultRoleForMode).replace('_', ' + ').replace(/\b\w/g, l => l.toUpperCase())}</span>
+                          <span>{[
+                            (rolesByHost[host.id] || defaultRoleForMode).replace('_', ' + ').replace(/\b\w/g, l => l.toUpperCase()),
+                            ...(addonRolesByHost[host.id] || []).map(role => role === 'schema_registry' ? 'Schema Registry' : 'Kafka Connect'),
+                          ].join(' + ')}</span>
                           <MoreVertical size={14} />
                         </button>
-                      {openRoleMenuHostId === host.id && roleMenuAnchor && (
-                        <AnchoredMenu anchor={roleMenuAnchor} className="cd-role-menu" onClose={() => { setOpenRoleMenuHostId(null); setRoleMenuAnchor(null); }}>
-                          {roleOptions.filter(r => r.id !== 'separate').map(role => {
-                            const currentRole = rolesByHost[host.id] || defaultRoleForMode;
-                            let isActive = currentRole === role.id;
+                        {openRoleMenuHostId === host.id && roleMenuAnchor && (
+                          <AnchoredMenu anchor={roleMenuAnchor} className="cd-role-menu" onClose={() => { setOpenRoleMenuHostId(null); setRoleMenuAnchor(null); }}>
+                            {roleOptions.filter(r => r.id !== 'separate').map(role => {
+                              const currentRole = rolesByHost[host.id] || defaultRoleForMode;
+                              let isActive = currentRole === role.id;
 
-                            if (deploymentMode === 'kraft') {
-                              if (role.id === 'broker') isActive = currentRole === 'broker' || currentRole === 'separate';
-                              if (role.id === 'controller') isActive = currentRole === 'controller' || currentRole === 'separate';
-                            }
+                              if (deploymentMode === 'kraft') {
+                                if (role.id === 'broker') isActive = currentRole === 'broker' || currentRole === 'separate';
+                                if (role.id === 'controller') isActive = currentRole === 'controller' || currentRole === 'separate';
+                              }
 
-                            return (
-                              <label
-                                key={role.id}
-                                className={`cd-role-label ${isActive ? 'active' : ''}`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={isActive}
-                                  onChange={() => {
-                                    let nextRole = role.id;
+                              return (
+                                <label
+                                  key={role.id}
+                                  className={`cd-role-label ${isActive ? 'active' : ''}`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={isActive}
+                                    onChange={() => {
+                                      let nextRole = role.id;
 
-                                    if (deploymentMode === 'kraft') {
-                                      if (role.id === 'broker') {
-                                        if (currentRole === 'controller') nextRole = 'separate';
-                                        else if (currentRole === 'separate') nextRole = 'controller';
-                                      } else if (role.id === 'controller') {
-                                        if (currentRole === 'broker') nextRole = 'separate';
-                                        else if (currentRole === 'separate') nextRole = 'broker';
+                                      if (deploymentMode === 'kraft') {
+                                        if (role.id === 'broker') {
+                                          if (currentRole === 'controller') nextRole = 'separate';
+                                          else if (currentRole === 'separate') nextRole = 'controller';
+                                        } else if (role.id === 'controller') {
+                                          if (currentRole === 'broker') nextRole = 'separate';
+                                          else if (currentRole === 'separate') nextRole = 'broker';
+                                        }
                                       }
-                                    }
 
-                                    setRolesByHost(prev => ({ ...prev, [host.id]: nextRole }));
-                                    setPrereqResults({});
-                                    setPortCheckResults({});
-                                  }}
-                                />
-                                <span>{role.label}</span>
-                              </label>
-                            );
-                          })}
-                        </AnchoredMenu>
-                      )}
+                                      setRolesByHost(prev => ({ ...prev, [host.id]: nextRole }));
+                                      setPrereqResults({});
+                                      setPortCheckResults({});
+                                    }}
+                                  />
+                                  <span>{role.label}</span>
+                                </label>
+                              );
+                            })}
+                            {!isAddNodeMode && <>
+                              <div className="cd-role-menu-divider" />
+                              {SCHEMA_REGISTRY_DEPLOYMENT_ENABLED && (
+                                <label className={`cd-role-label ${hostHasAddonRole(host.id, 'schema_registry') ? 'active' : ''}`}>
+                                  <input type="checkbox" checked={hostHasAddonRole(host.id, 'schema_registry')} onChange={() => toggleAddonRole(host.id, 'schema_registry')} />
+                                  <span>Schema Registry</span>
+                                </label>
+                              )}
+                              {KAFKA_CONNECT_DEPLOYMENT_ENABLED && (
+                                <label className={`cd-role-label ${hostHasAddonRole(host.id, 'kafka_connect') ? 'active' : ''}`}>
+                                  <input type="checkbox" checked={hostHasAddonRole(host.id, 'kafka_connect')} onChange={() => toggleAddonRole(host.id, 'kafka_connect')} />
+                                  <span>Kafka Connect</span>
+                                </label>
+                              )}
+                            </>}
+                          </AnchoredMenu>
+                        )}
+                      </div>
+                      <button className="cd-figma-action-btn" onClick={() => setConfigModalHostId(host.id)}>
+                        <FileText size={14} />
+                        Configuration
+                      </button>
+                      <button className="cd-figma-icon-btn" onClick={() => removeNode(host.id)} title="Remove node" style={{ width: '24px', height: '24px', padding: 0 }}>
+                        <Trash2 size={16} />
+                      </button>
                     </div>
-                    <button className="cd-figma-action-btn" onClick={() => setConfigModalHostId(host.id)}>
-                      <FileText size={14} />
-                      Configuration
-                    </button>
-                    <button className="cd-figma-icon-btn" onClick={() => removeNode(host.id)} title="Remove node" style={{ width: '24px', height: '24px', padding: 0 }}>
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
                   </div>
 
                 </div>
@@ -2197,7 +2222,6 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
             </div>
 
           </section>
-
           <div className="cd-footer-actions">
             <button className="cd-secondary-btn" onClick={() => onClose ? onClose() : navigate(-1)}>Cancel</button>
             <button className="cd-primary-btn" disabled={!canPreview || validatingKraft} onClick={openPreview}>
@@ -2276,6 +2300,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
             <div className="cd-preview-list">
               {selectedHosts.map(host => {
                 const role = allRoleOptions.find(item => item.id === (rolesByHost[host.id] || defaultRoleForMode));
+                const addonRoles = addonRolesByHost[host.id] || [];
                 const result = prereqResults[host.id];
                 return (
                   <div className="cd-preview-row" key={host.id}>
@@ -2284,8 +2309,8 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                       <span>{displayIp(host)}</span>
                     </div>
                     <div className="cd-role-copy">
-                      <strong>{role?.label}</strong>
-                      <span>{role?.detail}</span>
+                      <strong>{[role?.label, ...addonRoles.map(addon => addon === 'schema_registry' ? 'Schema Registry' : 'Kafka Connect')].filter(Boolean).join(' + ')}</strong>
+                      <span>{role?.detail}{addonRoles.length ? ' Includes host-specific data-service configuration.' : ''}</span>
                     </div>
                     <StatusBadge status={result?.status || 'IDLE'} />
                   </div>
@@ -2297,9 +2322,9 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                 {[...warnings, ...replicationWarnings].map(warning => <span key={warning}><AlertTriangle size={13} /> {warning}</span>)}
               </div>
             )}
-            {[...pathErrors, ...configBlockingIssues].length > 0 && (
+            {[...pathErrors, ...configBlockingIssues, ...selectedPortValidationErrors].length > 0 && (
               <div className="cd-inline-errors">
-                {[...pathErrors, ...configBlockingIssues].map(item => <span key={item}><AlertTriangle size={13} /> {item}</span>)}
+                {[...pathErrors, ...configBlockingIssues, ...selectedPortValidationErrors].map(item => <span key={item}><AlertTriangle size={13} /> {item}</span>)}
               </div>
             )}
           </section>
@@ -2342,9 +2367,43 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
             </div>
           </section>
 
+          {schemaHosts.length > 0 && (
+            <section className="cd-panel">
+              <div className="cd-panel-title"><div><h2>Schema Registry pre-check</h2><p>Checks the selected host and configuration. Broker-dependent checks run again after Kafka starts.</p></div></div>
+              <div className="cd-prereq-grid">
+                {schemaHosts.map(host => {
+                  const result = schemaChecksByHost[host.id] || { status: 'IDLE', logOutput: '', errorMsg: '' };
+                  const config = schemaConfigFor(host.id);
+                  return <details className="cd-prereq-card" key={host.id} open={result.status !== 'IDLE'}>
+                    <summary><span>{host.hostname} · port {config.port}</span><StatusBadge status={result.status} /></summary>
+                    <button className="cd-secondary-btn compact" disabled={checkingPrereqs || !config.artifactId || activeStatus(result.status)} onClick={() => runSchemaPrecheck(host.id)}>{activeStatus(result.status) && <Loader2 size={14} className="spin" />} Run Schema Registry pre-check</button>
+                    {result.status !== 'IDLE' && <PrerequisiteLog result={result} />}
+                  </details>;
+                })}
+              </div>
+            </section>
+          )}
+
+          {connectHosts.length > 0 && (
+            <section className="cd-panel">
+              <div className="cd-panel-title"><div><h2>Kafka Connect pre-check</h2><p>Checks the selected host, plugin JARs and working disk. Broker-dependent checks run again after Kafka starts.</p></div></div>
+              <div className="cd-prereq-grid">
+                {connectHosts.map(host => {
+                  const result = connectChecksByHost[host.id] || { status: 'IDLE', logOutput: '', errorMsg: '' };
+                  const config = connectConfigFor(host.id);
+                  return <details className="cd-prereq-card" key={host.id} open={result.status !== 'IDLE'}>
+                    <summary><span>{host.hostname} · port {config.port}</span><StatusBadge status={result.status} /></summary>
+                    <button className="cd-secondary-btn compact" disabled={checkingPrereqs || !config.artifactId || activeStatus(result.status)} onClick={() => runConnectPrecheck(host.id)}>{activeStatus(result.status) && <Loader2 size={14} className="spin" />} Run Kafka Connect pre-check</button>
+                    {result.status !== 'IDLE' && <PrerequisiteLog result={result} />}
+                  </details>;
+                })}
+              </div>
+            </section>
+          )}
+
           <div className="cd-footer-actions">
             <button className="cd-secondary-btn" disabled={checkingPrereqs || deploying} onClick={() => setStage('details')}>Cancel</button>
-            <button className="cd-primary-btn" disabled={!prerequisiteComplete || !schemaPrecheckComplete || deploying || pathErrors.length > 0 || configBlockingIssues.length > 0 || kraftDeploymentBlocked} onClick={deployCluster}>
+            <button className="cd-primary-btn" disabled={checkingPrereqs || !prerequisiteComplete || !schemaPrecheckComplete || !connectPrecheckComplete || deploying || pathErrors.length > 0 || configBlockingIssues.length > 0 || kraftDeploymentBlocked} onClick={deployCluster}>
               {deploying && <Loader2 size={15} className="spin" />}
               {isAddNodeMode ? 'Add node' : 'Deploy'}
             </button>
@@ -2428,6 +2487,8 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                   </div>
                 );
               })}
+              {hostHasAddonRole(configModalHost.id, 'schema_registry') && <SchemaRegistryFields cfg={schemaConfigFor(configModalHost.id)} artifacts={schemaArtifacts} onChange={patch => updateSchemaConfig(configModalHost.id, patch)} />}
+              {hostHasAddonRole(configModalHost.id, 'kafka_connect') && <KafkaConnectFields cfg={connectConfigFor(configModalHost.id)} artifacts={connectArtifacts} onChange={patch => updateConnectConfig(configModalHost.id, patch)} />}
             </div>
           </div>
         </div>,
@@ -2460,7 +2521,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
               <PropertyTable
                 rows={commonConfigs[commonConfigKind]}
                 hostIp=""
-                onUseHostIp={() => {}}
+                onUseHostIp={() => { }}
                 onChange={(key, value) => updateCommonConfigValue(commonConfigKind, key, value)}
               />
             </div>
@@ -2575,12 +2636,12 @@ function StatusBadge({ status }: { status: PrereqStatus }) {
       ? <XCircle size={13} />
       : normalized === 'REBOOT_REQUIRED'
         ? <AlertTriangle size={13} />
-      : normalized === 'RUNNING' || normalized === 'QUEUED'
-        ? <Loader2 size={13} className="spin" />
-        : null;
-        
-    let text;
-    if (normalized === 'IDLE') {
+        : normalized === 'RUNNING' || normalized === 'QUEUED'
+          ? <Loader2 size={13} className="spin" />
+          : null;
+
+  let text;
+  if (normalized === 'IDLE') {
     text = 'Idle';
   } else if (normalized === 'SUCCESS') {
     text = 'Success';
@@ -2595,6 +2656,6 @@ function StatusBadge({ status }: { status: PrereqStatus }) {
   } else {
     text = normalized;
   }
-  
+
   return <span className={`cd-status ${normalized.toLowerCase()}`}>{icon}{text}</span>;
 }
