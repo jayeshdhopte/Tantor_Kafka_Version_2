@@ -16,6 +16,12 @@ import (
 //go:embed precheck.sh
 var precheckScript string
 
+func precheckShell() string {
+	// A Windows checkout can embed CRLF even in a Linux build. Bash treats
+	// trailing CR as part of tokens such as `set -u` and `else`.
+	return strings.ReplaceAll(precheckScript, "\r\n", "\n")
+}
+
 func CheckPaths(ctx context.Context, exec executor.Executor, s Settings) error {
 	var protected []string
 	for _, dir := range s.Protected {
@@ -62,7 +68,7 @@ func Precheck(ctx context.Context, exec executor.Executor, kind string, task *ap
 		return "[FAIL] Directory safety: " + err.Error(), err
 	}
 	logs.WriteString("[PASS] Configuration and protected Kafka paths\n")
-	args := []string{"-c", precheckScript, "--", kind, strconv.Itoa(s.Port), s.Bootstrap, s.KafkaBin, s.Plugin, s.Working, strconv.Itoa(s.MinDisk), strconv.FormatBool(s.Deferred), s.HAPeers}
+	args := []string{"-c", precheckShell(), "--", kind, strconv.Itoa(s.Port), s.Bootstrap, s.KafkaBin, s.Plugin, s.Working, strconv.Itoa(s.MinDisk), strconv.FormatBool(s.Deferred), s.HAPeers}
 	if kind == Schema {
 		args = append(args, s.SchemaTopic)
 	} else {

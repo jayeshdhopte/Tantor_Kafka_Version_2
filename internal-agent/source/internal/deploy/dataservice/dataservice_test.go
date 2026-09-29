@@ -254,7 +254,7 @@ timeout(){ echo probe-executed; return 0; }
 			if tc.name == "ip" {
 				bootstrap = "192.0.2.1:9092"
 			}
-			cmd := osexec.Command(bash, "-c", fixture+"\n"+tc.override+"\n"+precheckScript, "--", Connect, "8083", bootstrap, "/missing", "/", "/", "5120", fmt.Sprint(tc.deferred), "", "connect-configs")
+			cmd := osexec.Command(bash, "-c", fixture+"\n"+tc.override+"\n"+precheckShell(), "--", Connect, "8083", bootstrap, "/missing", "/", "/", "5120", fmt.Sprint(tc.deferred), "", "connect-configs")
 			out, err := cmd.CombinedOutput()
 			if (err != nil) != tc.fail {
 				t.Fatalf("err=%v output=%s", err, out)

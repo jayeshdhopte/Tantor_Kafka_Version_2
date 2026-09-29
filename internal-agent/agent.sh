@@ -38,6 +38,7 @@ if [[ ! -f "$binary" ]]; then
   (cd "$script_dir/source" && CGO_ENABLED=0 GOOS=linux GOARCH="$architecture" go build -o "$binary" ./cmd/agent)
 fi
 
+chmod 0755 "$binary"
 if ! "$binary" -version | grep -q -- '-dataservices\.'; then
   printf 'The agent binary is older than the Schema Registry/Connect deployment build.\n' >&2
   exit 1
