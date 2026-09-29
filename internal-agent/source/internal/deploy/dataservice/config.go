@@ -29,7 +29,7 @@ type Settings struct {
 var heapPattern = regexp.MustCompile(`^[1-9][0-9]*[mMgG]$`)
 var identityPattern = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_-]*\$?$`)
 var namePattern = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,249}$`)
-var pathPattern = regexp.MustCompile(`^/[a-zA-Z0-9_./-]+$`)
+var pathPattern = regexp.MustCompile(`^/[a-zA-Z0-9_./+-]+$`)
 var hostPattern = regexp.MustCompile(`^[a-zA-Z0-9.:-]+$`)
 
 func Value(p map[string]string, key, fallback string) string {

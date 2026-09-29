@@ -23,6 +23,15 @@ func taskFor() *api.Task {
 	return &api.Task{ArtifactURL: "https://artifacts.invalid/bundle.tgz", Checksum: strings.Repeat("a", 64), Parameters: map[string]string{"bootstrap_servers": "broker:9092", "allow_deferred_kafka": "true"}}
 }
 
+func TestSafePathAcceptsVersionedJavaHome(t *testing.T) {
+	if err := SafePath("/opt/java/jdk-17.0.20.1+1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := SafePath("/opt/java/jdk-17;touch /tmp/unsafe"); err == nil {
+		t.Fatal("accepted shell punctuation in path")
+	}
+}
+
 func TestRejectsPathsThatCouldChangeKafka(t *testing.T) {
 	for _, dir := range []string{"/opt", "/data/kafka", "/var/log/kafka/subdir", "/etc", "/tmp/../opt", "/opt/evil\nExecStart=bad", "/opt/tantor/kafka-connect/share/data"} {
 		task := taskFor()
