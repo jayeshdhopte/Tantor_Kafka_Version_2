@@ -149,6 +149,9 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 	log("  Kafka node ID: %s", firstNonEmpty(t.Parameters["node_id"], "unknown"))
 	log("  Service role: %s", firstNonEmpty(t.Parameters["service_role"], t.Parameters["role"], "unknown"))
 	log("Agent self-check passed")
+	if err := d.ensureKafkaServiceAvailable(ctx, t); err != nil {
+		return logs.String(), err
+	}
 
 	setStep("Validate host prerequisites")
 	installPaths := resolveKafkaInstallPaths(t)
@@ -647,6 +650,22 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 	log("Deployment successfully completed. Emitting RUNNING state.")
 
 	return logs.String(), nil
+}
+
+func (d *Deployer) ensureKafkaServiceAvailable(ctx context.Context, t *api.Task) error {
+	service := serviceNameForTask(t) + ".service"
+	state, errOut, err := d.exec.RunSudo(ctx, "systemctl", "show", "-p", "ActiveState", "--value", service)
+	if err != nil {
+		return fmt.Errorf("cannot inspect existing Kafka service %s: %w (%s)", service, err, strings.TrimSpace(errOut))
+	}
+	switch strings.TrimSpace(state) {
+	case "inactive", "failed":
+		return nil
+	case "active", "activating", "reloading", "deactivating":
+		return fmt.Errorf("refusing Kafka deployment: %s is already %s on this host; choose a free node so its running Kafka configuration is not overwritten", service, strings.TrimSpace(state))
+	default:
+		return fmt.Errorf("cannot determine whether Kafka service %s is available (state %q)", service, strings.TrimSpace(state))
+	}
 }
 
 func deploymentServices(t *api.Task) []string {
