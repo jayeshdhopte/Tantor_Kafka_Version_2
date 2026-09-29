@@ -12,7 +12,8 @@ import (
 )
 
 func Verify(ctx context.Context, kind, base string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	// JVM startup can take longer than a minute after a fresh archive install.
+	ctx, cancel := context.WithTimeout(ctx, 120*time.Second)
 	defer cancel()
 	parsed, err := url.Parse(base)
 	if err != nil || parsed.Scheme != "http" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") {
