@@ -56,7 +56,8 @@ func (t *Task) UnmarshalJSON(data []byte) error {
 		case "artifact_id", "artifactId", "artifactID", "artifact_uuid", "artifactUuid",
 			"artifact_url", "artifactUrl", "artifactURL", "download_url", "downloadUrl",
 			"artifact_download_url", "artifactDownloadUrl", "file_url", "fileUrl",
-			"checksum", "sha256", "sha256sum", "checksum_sha256", "checksumSha256":
+			"checksum", "sha256", "sha256sum", "checksum_sha256", "checksumSha256",
+			"parameters":
 			continue
 		default:
 			clean[key] = value
@@ -72,6 +73,25 @@ func (t *Task) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*t = Task(base)
+	if parameters, ok := raw["parameters"]; ok && string(parameters) != "null" {
+		var values map[string]json.RawMessage
+		if err := json.Unmarshal(parameters, &values); err != nil {
+			return err
+		}
+		t.Parameters = make(map[string]string, len(values))
+		for key, value := range values {
+			if string(value) == "null" {
+				continue
+			}
+			var text string
+			if err := json.Unmarshal(value, &text); err == nil {
+				t.Parameters[key] = text
+			} else {
+				// Preserve numbers, booleans, arrays, and objects as JSON text.
+				t.Parameters[key] = string(value)
+			}
+		}
+	}
 
 	if strings.TrimSpace(t.Command) == "" {
 		t.Command = firstJSONString(raw, "task", "taskType", "task_type", "action")

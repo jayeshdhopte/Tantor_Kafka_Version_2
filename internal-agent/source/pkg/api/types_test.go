@@ -75,3 +75,19 @@ func TestTaskClaimTokenAliases(t *testing.T) {
 		}
 	}
 }
+
+func TestTaskAcceptsMixedParameterTypes(t *testing.T) {
+	var task Task
+	payload := []byte(`{"task_id":"task-4","command":"INSTALL_SCHEMA","parameters":{"rest_port":8084,"enabled":true,"host_id":"node174.translab.io","optional":null,"config":{"a":1}}}`)
+	if err := json.Unmarshal(payload, &task); err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range map[string]string{"rest_port": "8084", "enabled": "true", "host_id": "node174.translab.io", "config": `{"a":1}`} {
+		if got := task.Parameters[key]; got != want {
+			t.Errorf("parameter %s: got %q, want %q", key, got, want)
+		}
+	}
+	if _, ok := task.Parameters["optional"]; ok {
+		t.Fatal("null parameter should be omitted")
+	}
+}
