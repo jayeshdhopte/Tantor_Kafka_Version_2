@@ -65,6 +65,7 @@ paths:
   data_dir: "/var/lib/tantor-agent/data"
   log_dir: "/var/log/tantor-agent"
   artifacts_dir: "/var/lib/tantor-agent/artifacts"
+  allowed_deployment_roots: "/var/lib/tantor-agent/artifacts:/opt/tantor-kafka:/var/lib/tantor-kafka:/srv/tantor-agent/artifacts"
 privilege:
   mode: "direct"
 EOF
