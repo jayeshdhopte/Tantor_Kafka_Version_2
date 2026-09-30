@@ -437,18 +437,11 @@ export function Clusters() {
                               {canManage ? (
                                 <div className="row-actions cluster-menu-anchor" onClick={e => e.stopPropagation()}>
                                   <button
-                                    className="btn icon-only trash-btn-action"
-                                    onClick={(e) => deleteCluster(e, cluster.id, cluster.name)}
-                                    title="Delete cluster"
-                                  >
-                                    <Trash2 size={15} />
-                                  </button>
-                                  {(cluster.mode === 'EXTERNAL' ? !['DELETED', 'DELETING'].includes(cluster.status) : cluster.status === 'SUCCESS') && <button
                                     className="btn icon-only" title="Cluster options" aria-label={`Options for ${cluster.name}`}
                                     aria-haspopup="menu" aria-expanded={servicesMenu?.cluster.id === cluster.id}
                                     onClick={event => { const anchor = event.currentTarget; setServicesMenu(current => current?.cluster.id === cluster.id ? null : { cluster, anchor }); }}>
                                     <MoreVertical size={17} />
-                                  </button>}
+                                  </button>
                                 </div>
                               ) : (
                                 <span className="heartbeat-text">View only</span>
@@ -467,7 +460,17 @@ export function Clusters() {
       </div>
 
       {servicesMenu && <AnchoredMenu anchor={servicesMenu.anchor} className="cluster-services-menu" onClose={() => setServicesMenu(null)}>
-        <div role="menu"><button role="menuitem" autoFocus onClick={() => { setServicesCluster(servicesMenu.cluster); setServicesMenu(null); }}>Add services to this cluster</button></div>
+        <div role="menu">
+          {(servicesMenu.cluster.mode === 'EXTERNAL'
+            ? !['DELETED', 'DELETING'].includes(servicesMenu.cluster.status)
+            : servicesMenu.cluster.status === 'SUCCESS') &&
+            <button role="menuitem" autoFocus onClick={() => { setServicesCluster(servicesMenu.cluster); setServicesMenu(null); }}>Add services to this cluster</button>}
+          <button role="menuitem" className="danger" onClick={event => {
+            const { id, name } = servicesMenu.cluster;
+            setServicesMenu(null);
+            void deleteCluster(event, id, name);
+          }}><Trash2 size={15} /> Delete cluster</button>
+        </div>
       </AnchoredMenu>}
       {servicesCluster && <AddClusterServicesModal cluster={servicesCluster} onClose={() => setServicesCluster(null)} />}
       {showDeploymentModal && createPortal(

@@ -30,4 +30,6 @@
 .cluster-services-menu { padding: 6px; background: white; border: 1px solid #e5e7eb; border-radius: 8px; box-shadow: 0 6px 24px #0002; }
 .cluster-services-menu button { background: white; border: 0; padding: 12px; color: #36145d; cursor: pointer; border-radius: 5px; }
 .cluster-services-menu button:hover, .cluster-services-menu button:focus-visible { background: #faf5ff; }
+.cluster-services-menu button.danger { color: #b42318; display: flex; align-items: center; gap: 8px; width: 100%; }
+.cluster-services-menu button.danger:hover, .cluster-services-menu button.danger:focus-visible { background: #fef3f2; }
 @media (max-width: 600px) { .add-services-modal .cd-deployment-choice-grid, .add-services-modal .cd-grid-2 { grid-template-columns: 1fr; } }
