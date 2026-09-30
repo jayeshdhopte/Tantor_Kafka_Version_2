@@ -184,8 +184,8 @@ public class HostController {
             String blocked = io.translab.tantor.server.service.DataServiceAgentSupport.precheckBlockReason(host.getAgentVersion());
             if (blocked != null) return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", blocked));
         }
-        if (!"ONLINE".equalsIgnoreCase(hostStatusService.effectiveStatus(host))) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "Host must be ONLINE."));
+        if (!"ONLINE".equalsIgnoreCase(hostStatusService.agentConnectivityStatus(host))) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "Host agent must be ONLINE."));
         }
         try {
             Task task = dataServiceHostTask(id, command, options);
