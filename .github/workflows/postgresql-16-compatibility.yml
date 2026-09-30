@@ -1,0 +1,70 @@
+name: PostgreSQL 16 compatibility
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/postgresql-16-compatibility.yml'
+      - 'scripts/database/**'
+      - 'package-deployment.ps1'
+      - 'podman-compose.yml'
+      - 'docker-compose-test.yml'
+      - 'tantor-server/pom.xml'
+      - 'tantor-server/src/**'
+      - 'tantor-artifact-repository/pom.xml'
+      - 'tantor-artifact-repository/src/**'
+  push:
+    branches:
+      - main
+      - server-194-host-release-fix
+    paths:
+      - '.github/workflows/postgresql-16-compatibility.yml'
+      - 'scripts/database/**'
+      - 'package-deployment.ps1'
+      - 'podman-compose.yml'
+      - 'docker-compose-test.yml'
+      - 'tantor-server/pom.xml'
+      - 'tantor-server/src/**'
+      - 'tantor-artifact-repository/pom.xml'
+      - 'tantor-artifact-repository/src/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: postgresql-16-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  POSTGRES_16_IMAGE: docker.io/library/postgres:16.14@sha256:95206741a5b214807675e14165369d05b93a9cf692223b616d07cca227e74b0b
+
+jobs:
+  fresh-postgresql-16:
+    name: Fresh PostgreSQL 16.14
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Run fresh migration and startup test
+        shell: bash
+        run: bash scripts/database/test-postgresql-16-compatibility.sh
+
+  postgresql-13-to-16-restore:
+    name: PostgreSQL 13.23 to 16.14 restore
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Run disposable dump and restore test
+        shell: bash
+        run: bash scripts/database/test-postgresql-13-to-16-restore.sh

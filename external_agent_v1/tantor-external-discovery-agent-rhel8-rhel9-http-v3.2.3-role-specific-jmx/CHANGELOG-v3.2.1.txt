@@ -1,0 +1,75 @@
+Tantor External Discovery Agent v3.2.1
+======================================
+
+Security-file permission hardening
+----------------------------------
+1. When --kafka-client-properties is supplied, the installer automatically
+   grants the runtime user a minimal per-user ACL if existing permissions are
+   insufficient.
+2. The exact client-properties, truststore and keystore files receive read-only
+   access; their parent directories receive traverse-only access.
+3. Credential files are never made world-readable. Installation fails closed
+   when safe ACL configuration is unavailable.
+4. The authenticated Kafka ApiVersions check runs as the configured non-root
+   runtime user before installation completes.
+
+Monitoring integration
+----------------------
+1. Added bounded production metric-family collection from JMX Exporter.
+2. Added Kafka Exporter collection for broker, topic, partition and consumer
+   group lag metrics.
+3. Added collector health, timestamps, scrape duration, sample count, error and
+   truncation fields.
+4. Added metric/label allowlists, response limits and per-family/sample limits.
+5. Preserved existing summary fields for backend compatibility.
+6. Prevented broker throughput double-counting when aggregate and per-topic
+   series are both exposed.
+7. Keyed counter state by host, Kafka cluster, node and exporter endpoint.
+
+Installer and validation
+------------------------
+1. Added optional paired --jmx-ip/--jmx-port options.
+2. Added optional paired --kafka-exporter-ip/--kafka-exporter-port options.
+3. Missing exporters are non-fatal; the agent continues with available sources.
+4. Supplied exporter endpoints must return the expected Prometheus families.
+5. Kafka connectivity is validated with Kafka ApiVersions as the runtime user.
+6. Exporter ports are explicit and are never derived from Kafka listener ports.
+7. Backend task polling is disabled by default for the external monitoring
+   agent and can be explicitly enabled with --enable-tasks.
+8. Added --kafka-client-properties for authenticated SSL/SASL broker
+   validation using Kafka's --command-config option.
+9. Validates runtime-user access to the client properties and referenced
+   truststore/keystore files before attempting the Kafka protocol check.
+10. Kafka validation failures now show bounded diagnostic output without
+    printing the client properties file or its secrets.
+11. Clarified and validated optional client-properties behavior: secured Kafka
+    uses --kafka-client-properties; unsecured PLAINTEXT Kafka omits it and
+    performs the Kafka protocol check without --command-config.
+
+Release integrity
+-----------------
+1. Replaced stale supplied executables with fresh static amd64 and arm64 builds.
+2. Standardized the bundle directory, documentation and binary version at 3.2.1.
+3. Added repeatable build, test, vet and checksum verification.
+
+Compatibility requirement
+-------------------------
+The backend must accept and persist the additive v3.2.1 metric fields documented
+in METRICS-INTEGRATION-v3.2.1.md before the new metrics can appear in the UI.
+PROCESS-DETECTION HOTFIX
+------------------------
+- Corrected the running-Kafka process regular expressions so broker.properties,
+  controller.properties, and server.properties paths are detected from active
+  kafka.Kafka and kafka-server-start.sh command lines.
+- Prevents the false installer error:
+  "Kafka is not running or its active configuration could not be found."
+
+CONFIGURATION-DRIVEN PACKAGING
+------------------------------
+- Removed deployment-specific IP addresses, Linux users, groups, cluster names,
+  Kafka roots, security-file locations, and exporter ports from all commands.
+- Backend, identity, Kafka scan roots, security files, collector endpoints,
+  service name, install paths, intervals, and authorized services are supplied
+  through installer options and persisted into the generated environment file.
+- Retained only platform-required paths and safe product defaults, all of whose
+  deployment paths and identities have documented command-line overrides.

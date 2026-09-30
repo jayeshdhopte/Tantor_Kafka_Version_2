@@ -1,0 +1,59 @@
+.topic-action-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.topic-action-modal {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(680px, calc(100vw - 32px));
+  overflow: hidden;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 20px 56px rgba(40, 47, 73, 0.2);
+}
+
+.topic-action-banner {
+  height: 90px;
+  flex: 0 0 90px;
+  background: #ffe1a0 url('../assets/orange.png') center / cover no-repeat;
+}
+
+.topic-action-close {
+  position: absolute;
+  top: 34px;
+  right: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  color: #6b7280;
+  background: transparent;
+  cursor: pointer;
+}
+
+.topic-action-content { padding: 32px 30px 30px; }
+.topic-action-title { display: flex; align-items: center; gap: 24px; }
+.topic-action-title h3 { margin: 0; color: #332849; font-size: 30px; line-height: 36px; }
+.topic-action-icon { width: 24px; height: 24px; flex: 0 0 auto; background: #f35365; clip-path: polygon(25% 0, 75% 0, 100% 25%, 100% 75%, 75% 100%, 25% 100%, 0 75%, 0 25%); }
+.topic-action-content > p { margin: 22px 0 28px; color: #818181; font-size: 20px; line-height: 27px; }
+.topic-action-names { color: #332849; font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+.topic-action-content footer { display: flex; gap: 10px; margin-top: 32px; }
+.topic-action-cancel, .topic-action-confirm { height: 62px; padding: 0 32px; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; }
+.topic-action-cancel { min-width: 137px; color: #e75b80; border: 1px solid #e75b80; background: #fff; }
+.topic-action-confirm { min-width: 193px; color: #fff; border: 1px solid #4c1975; background: #4c1975; }
+.topic-action-cancel:disabled, .topic-action-confirm:disabled, .topic-action-close:disabled { cursor: not-allowed; opacity: 0.65; }
+
+@media (max-width: 560px) {
+  .topic-action-content { padding: 28px 24px 24px; }
+  .topic-action-title h3 { font-size: 24px; line-height: 30px; }
+  .topic-action-content > p { font-size: 17px; line-height: 24px; }
+  .topic-action-content footer { flex-wrap: wrap; }
+  .topic-action-cancel, .topic-action-confirm { flex: 1 1 180px; }
+}

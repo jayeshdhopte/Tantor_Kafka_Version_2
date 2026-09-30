@@ -1,0 +1,18 @@
+# Exact fingerprints for deterministic, non-production test/example values in
+# pre-C-08 commits. Never ignore a whole test or example directory.
+154f4fdf3008269ec55237b6e3328ddfb301cef6:.env.example:generic-api-key:11
+49edea10dd5b95a9c549d19cad111d7099e8ea61:scripts/test-h01-deployment.sh:generic-api-key:139
+ffa99a6d0417ac38aabb8b0c7ab4c0dbd53f901a:scripts/test-validate-deployment-secrets.sh:tantor-hardcoded-credential-assignment:12
+ffa99a6d0417ac38aabb8b0c7ab4c0dbd53f901a:scripts/test-validate-deployment-secrets.sh:generic-api-key:13
+ffa99a6d0417ac38aabb8b0c7ab4c0dbd53f901a:scripts/test-validate-deployment-secrets.sh:tantor-hardcoded-credential-assignment:15
+ffa99a6d0417ac38aabb8b0c7ab4c0dbd53f901a:scripts/test-validate-deployment-secrets.sh:tantor-hardcoded-credential-assignment:16
+ffa99a6d0417ac38aabb8b0c7ab4c0dbd53f901a:scripts/test-validate-deployment-secrets.sh:tantor-hardcoded-credential-assignment:17
+ffa99a6d0417ac38aabb8b0c7ab4c0dbd53f901a:scripts/test-validate-deployment-secrets.sh:tantor-hardcoded-credential-assignment:18
+b486d591f34249e9b1f00f3a6c4613a4502c1e0f:tantor-agent-production-ready/internal/client/client_test.go:tantor-hardcoded-credential-assignment:20
+ffa99a6d0417ac38aabb8b0c7ab4c0dbd53f901a:tantor-server/src/test/java/io/translab/tantor/server/security/EncryptionServiceTest.java:tantor-hardcoded-credential-assignment:17
+ffa99a6d0417ac38aabb8b0c7ab4c0dbd53f901a:tantor-server/src/test/java/io/translab/tantor/server/security/EncryptionServiceTest.java:tantor-hardcoded-credential-assignment:18
+407a507c28c5a89908da80b19b8182de8f5ac4ac:tantor-server/src/test/java/io/translab/tantor/server/util/SslUtilsTest.java:tantor-hardcoded-credential-assignment:15
+407a507c28c5a89908da80b19b8182de8f5ac4ac:tantor-server/src/test/java/io/translab/tantor/server/util/SslUtilsTest.java:tantor-hardcoded-credential-assignment:26
+a4052d437e56d42465d93db8af464fffadaa636b:tantor-server/src/test/resources/application.yml:generic-api-key:14
+a4052d437e56d42465d93db8af464fffadaa636b:tantor-server/src/test/resources/application.yml:generic-api-key:16
+1c4008266611e7cd8885542c638ea88a2b746675:tantor-ui/src/services/KeycloakService.ts:jwt:91

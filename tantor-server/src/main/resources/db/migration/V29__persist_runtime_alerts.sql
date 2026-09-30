@@ -1,0 +1,11 @@
+ALTER TABLE alerts
+    ADD COLUMN IF NOT EXISTS alert_key VARCHAR(255),
+    ADD COLUMN IF NOT EXISTS host_id VARCHAR(255),
+    ADD COLUMN IF NOT EXISTS source VARCHAR(80) NOT NULL DEFAULT 'stored',
+    ADD COLUMN IF NOT EXISTS error_log TEXT,
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_alerts_alert_key
+    ON alerts(alert_key) WHERE alert_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_alerts_status_source
+    ON alerts(status, source, updated_at DESC);

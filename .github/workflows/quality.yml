@@ -1,0 +1,73 @@
+name: Quality gate
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tantor-server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Run server unit and security tests
+        run: mvn -B verify
+
+  artifact-repository:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tantor-artifact-repository
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Run artifact repository integration tests
+        run: mvn -B verify
+
+  agent:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tantor-agent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.x'
+          cache-dependency-path: tantor-agent/go.sum
+      - name: Run agent tests
+        run: go test ./...
+
+  ui:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tantor-ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: tantor-ui/package-lock.json
+      - name: Install locked UI dependencies
+        run: npm ci
+      - name: Lint UI
+        run: npm run lint:ci
+      - name: Build UI
+        run: npm run build

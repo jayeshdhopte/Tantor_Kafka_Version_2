@@ -1,0 +1,2 @@
+ALTER TABLE kf_external_cluster_nodes DROP CONSTRAINT IF EXISTS kf_external_cluster_nodes_cluster_id_host_key;
+ALTER TABLE kf_external_cluster_nodes ADD CONSTRAINT kf_external_cluster_nodes_cluster_id_node_id_key UNIQUE (cluster_id, node_id);

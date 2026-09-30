@@ -1,0 +1,21 @@
+spring:
+  datasource:
+    url: ${TANTOR_DB_URL:jdbc:postgresql://localhost:5432/tantor}
+  flyway:
+    baseline-on-migrate: true
+    ignore-missing-migrations: true
+    validate-on-migrate: false
+
+tantor:
+  runtime:
+    environment: DEVELOPMENT
+  artifact-repo:
+    internal-url: ${TANTOR_REPO_INTERNAL_URL:http://localhost:8081}
+    public-url: ${TANTOR_REPO_PUBLIC_URL:https://localhost:8443}
+  control-plane:
+    public-url: ${TANTOR_PUBLIC_ORIGIN:https://localhost:8443}
+  kafka-deployment:
+    security-mode: ${TANTOR_KAFKA_SECURITY_MODE:PLAINTEXT}
+  monitoring:
+    mode: ${TANTOR_MONITORING_MODE:direct}
+    prometheus-url: ${TANTOR_PROMETHEUS_URL:http://127.0.0.1:9090}

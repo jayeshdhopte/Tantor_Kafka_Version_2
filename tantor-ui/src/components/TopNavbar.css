@@ -1,0 +1,104 @@
+.top-navbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+  height: 72px;
+  background: #FFFFFF;
+  border-bottom: 1px solid #F3F0F0;
+  box-sizing: border-box;
+}
+
+.navbar-left {
+  display: flex;
+  align-items: center;
+  width: 200px;
+  /* Aligns with sidebar boundary */
+}
+
+
+.search-container .search-icon {
+  color: #818181;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  display: block;
+  position: static !important;
+}
+
+.search-input {
+  border: none;
+  background: transparent;
+  outline: none;
+  font-family: 'Satoshi';
+  font-size: 14px;
+  color: #282F49;
+  width: 100%;
+}
+
+.navbar-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+  justify-content: flex-end;
+}
+
+.search-container {
+  display: flex;
+  align-items: center;
+  background: #ffffff;
+  border: 2px solid #E5E5E5;
+  border-radius: 8px;
+  padding: 8px 12px;
+  width: 248px;
+  height: 40px;
+  box-sizing: border-box;
+  gap: 8px;
+}
+
+.nav-action-btn {
+  background: transparent;
+  border: none;
+  color: #818181;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 4px;
+  transition: color 0.12s ease;
+}
+
+.nav-action-btn:hover {
+  color: #DF678B;
+}
+
+.profile-badge {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #DF678B;
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Satoshi';
+  font-weight: 700;
+  font-size: 14px;
+  user-select: none;
+}
+
+.logo-container {
+  display: flex;
+  align-items: center;
+  height: 100%;
+}
+
+.header-logo {
+  width: 140px;
+  height: 29px;
+  object-fit: contain;
+  filter: none;
+  /* Removed filter so native colors of Tantor-pink-logo.png display correctly */
+}

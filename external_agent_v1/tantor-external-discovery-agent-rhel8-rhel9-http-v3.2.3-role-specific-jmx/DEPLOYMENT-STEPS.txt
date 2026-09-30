@@ -1,0 +1,117 @@
+TANTOR EXTERNAL CLUSTER AGENT - DEPLOYMENT STEPS
+================================================
+
+This package supports both secured and unsecured Kafka. The client properties
+argument is optional and must be used only when the broker listener needs
+SSL/SASL client configuration.
+
+1. Extract and verify
+---------------------
+
+  unzip tantor-external-discovery-agent-rhel8-rhel9-http-v3.2.3-role-specific-jmx.zip
+  cd tantor-external-discovery-agent-rhel8-rhel9-http-v3.2.3-role-specific-jmx
+  sha256sum -c SHA256SUMS
+  chmod 0755 install-agent.sh
+
+2A. Secured Kafka (SSL/SASL)
+---------------------------
+
+You may verify whether the runtime user can already read the properties file:
+
+  sudo -u <agent-user> test -r <absolute-client-properties-path> \
+    && echo "client properties readable" \
+    || echo "installer will apply a minimal ACL"
+
+Install:
+
+  sudo ./install-agent.sh \
+    --server-url http://<backend-host>:<backend-port> \
+    --run-user <agent-user> \
+    --run-group <agent-group> \
+    --auth-type none \
+    --node-name <BROKER_IP> \
+    --cluster-name <cluster-name> \
+    --environment <environment> \
+    --scan-paths <absolute-kafka-scan-roots> \
+    --discovery-policy running-only \
+    --disable-tasks \
+    --require-server-reachable \
+    --kafka-client-properties <absolute-client-properties-path> \
+    --jmx-ip <jmx-exporter-host> \
+    --jmx-port <jmx-exporter-port> \
+    --controller-jmx-ip <controller-jmx-exporter-host> \
+    --controller-jmx-port <controller-jmx-exporter-port> \
+    --kafka-exporter-ip <kafka-exporter-host> \
+    --kafka-exporter-port <kafka-exporter-port>
+
+The installer passes:
+
+  --command-config <absolute-client-properties-path>
+
+only to the bounded Kafka protocol validation command. It does not print the
+properties file or its secrets. If the runtime user cannot read the properties
+file or a referenced ssl.truststore.location/ssl.keystore.location file, the
+installer grants only:
+
+  r-- on the exact required file
+  --x on its parent directories
+
+using a per-user ACL. It does not make security files world-readable and does
+not add the runtime user to root or wheel. If the acl package is unavailable,
+the installer fails instead of weakening file permissions.
+
+2B. Unsecured Kafka (PLAINTEXT)
+------------------------------
+
+Install without --kafka-client-properties:
+
+  sudo ./install-agent.sh \
+    --server-url http://<backend-host>:<backend-port> \
+    --run-user <agent-user> \
+    --run-group <agent-group> \
+    --auth-type none \
+    --node-name <BROKER_IP> \
+    --cluster-name <cluster-name> \
+    --environment <environment> \
+    --scan-paths <absolute-kafka-scan-roots> \
+    --discovery-policy running-only \
+    --disable-tasks \
+    --require-server-reachable \
+    --jmx-ip <jmx-exporter-host> \
+    --jmx-port <jmx-exporter-port> \
+    --controller-jmx-ip <controller-jmx-exporter-host> \
+    --controller-jmx-port <controller-jmx-exporter-port> \
+    --kafka-exporter-ip <kafka-exporter-host> \
+    --kafka-exporter-port <kafka-exporter-port>
+
+No client properties file is checked or required in this mode.
+
+3. Optional exporter arguments
+------------------------------
+
+For separate KRaft processes, --jmx-ip/--jmx-port identify the broker exporter
+and --controller-jmx-ip/--controller-jmx-port identify the controller exporter.
+For a combined broker+controller JVM, omit the controller pair. If JMX Exporter
+is unavailable, omit both pairs.
+If Kafka Exporter is unavailable, omit --kafka-exporter-ip and
+--kafka-exporter-port. Prometheus is not required; the agent scrapes configured
+exporter endpoints and pushes the supported payload to the Tantor backend.
+
+4. Verify
+---------
+
+  systemctl is-enabled tantor-discovery-agent.service
+  systemctl is-active tantor-discovery-agent.service
+  systemctl status tantor-discovery-agent.service --no-pager -l
+  journalctl -u tantor-discovery-agent.service -n 150 --no-pager
+
+Look for:
+
+  Kafka ApiVersions protocol check passed
+  cluster registered
+  heartbeat
+  metrics
+
+Repeat the installation on every external Kafka broker. Keep --cluster-name,
+--environment and --server-url identical; change --node-name and exporter IPs
+for each broker.

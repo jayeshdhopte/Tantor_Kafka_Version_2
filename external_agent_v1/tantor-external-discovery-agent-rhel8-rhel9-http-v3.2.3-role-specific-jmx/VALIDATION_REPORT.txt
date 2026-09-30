@@ -1,0 +1,36 @@
+Validation Report — External Discovery Agent v3.2.1
+===================================================
+
+Build validation
+----------------
+PASS: Go 1.22.2 compiler
+PASS: gofmt
+PASS: Go unit tests
+PASS: Go race tests
+PASS: Go vet
+PASS: static Linux AMD64 build
+PASS: static Linux ARM64 build
+PASS: AMD64 binary reports version 3.2.1
+PASS: Bash installer and build-script syntax
+PASS: archive contains no stale/quarantined executable
+PASS: SHA-256 manifest verification
+
+Behavior covered by automated tests
+-----------------------------------
+- Controlled Prometheus family and label filtering
+- Broker throughput aggregation without per-topic double-counting
+- Counter reset handling
+- Kafka Exporter broker/topic/consumer-group family parsing
+- Explicit exporter port resolution without Kafka-listener substitution
+- Existing discovery/config parsing tests
+
+Client-environment acceptance still required
+--------------------------------------------
+- Install on representative RHEL 8 and RHEL 9 hosts with SELinux Enforcing
+- Validate the client Kafka security mode and ApiVersions connectivity
+- Validate the real JMX Exporter and Kafka Exporter endpoints
+- Validate backend DTO/persistence support for all v3.2.1 additive fields
+- Confirm UI rendering, multi-node aggregation, retention and stale-data behavior
+
+The target-host connectivity checks intentionally run during installation,
+because the build environment cannot reach client-only Kafka/exporter endpoints.

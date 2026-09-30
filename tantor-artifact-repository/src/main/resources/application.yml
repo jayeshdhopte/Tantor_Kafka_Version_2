@@ -1,0 +1,98 @@
+server:
+  port: 8081
+  # Large artifacts (Kafka tarballs ~100MB+) stream straight to disk, so keep
+  # the request timeout generous and disable response compression for binaries.
+  tomcat:
+    max-swallow-size: -1
+    connection-timeout: 120s
+
+spring:
+  config:
+    import:
+      - optional:file:.env[.properties]
+      - optional:configtree:/run/secrets/
+  application:
+    name: tantor-artifact-repository
+
+  datasource:
+    # Deliberately no defaults: a missing deployment setting must stop startup
+    # instead of silently selecting a database in this container.
+    url: ${TANTOR_DB_URL}
+    username: ${TANTOR_DB_USER}
+    password: ${TANTOR_DB_PASSWORD}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      pool-name: tantor-artifact-pool
+      connection-timeout: ${TANTOR_DB_CONNECTION_TIMEOUT_MS:5000}
+      validation-timeout: ${TANTOR_DB_VALIDATION_TIMEOUT_MS:3000}
+      initialization-fail-timeout: ${TANTOR_DB_INITIALIZATION_FAIL_TIMEOUT_MS:60000}
+
+  jpa:
+    hibernate:
+      # Flyway owns the schema; disable Hibernate validation to prevent type mismatch errors
+      ddl-auto: none
+    open-in-view: false
+    properties:
+      hibernate.jdbc.time_zone: UTC
+      hibernate.format_sql: false
+
+  flyway:
+    enabled: false
+
+  servlet:
+    multipart:
+      max-file-size: ${TANTOR_MAX_UPLOAD_SIZE:512MB}
+      max-request-size: ${TANTOR_MAX_UPLOAD_SIZE:512MB}
+      file-size-threshold: 16MB
+
+# Tantor artifact repository specific settings
+tantor:
+  cors:
+    allowed-origins: ${TANTOR_CORS_ALLOWED_ORIGINS}
+  repository:
+    # Root of the on-disk artifact store. In k8s this is a mounted PVC.
+    base-path: ${TANTOR_REPO_PATH:/var/lib/tantor/repository}
+    # V67 is the latest server-owned migration defining the current kf_artifact
+    # service-type contract. The Artifact Repository verifies it but never migrates.
+    required-schema-migration: ${TANTOR_REQUIRED_SCHEMA_MIGRATION:67}
+    # Reject uploads whose declared checksum does not match the computed one.
+    enforce-checksum: true
+    # Buffer size used when streaming files to/from disk.
+    stream-buffer-bytes: 1048576
+    max-upload-bytes: ${TANTOR_MAX_UPLOAD_BYTES:536870912}
+    max-bundle-bytes: ${TANTOR_MAX_BUNDLE_BYTES:536870912}
+    minimum-free-space-bytes: ${TANTOR_MINIMUM_FREE_SPACE_BYTES:5368709120}
+    max-concurrent-uploads: ${TANTOR_MAX_CONCURRENT_UPLOADS:2}
+    max-archive-entries: ${TANTOR_MAX_ARCHIVE_ENTRIES:10000}
+    max-archive-entry-bytes: ${TANTOR_MAX_ARCHIVE_ENTRY_BYTES:1073741824}
+    max-archive-expanded-bytes: ${TANTOR_MAX_ARCHIVE_EXPANDED_BYTES:2147483648}
+    max-archive-compression-ratio: ${TANTOR_MAX_ARCHIVE_COMPRESSION_RATIO:100}
+    malware-scan:
+      enabled: ${TANTOR_MALWARE_SCAN_ENABLED:false}
+      required: ${TANTOR_MALWARE_SCAN_REQUIRED:false}
+      host: ${TANTOR_MALWARE_SCAN_HOST:}
+      port: ${TANTOR_MALWARE_SCAN_PORT:0}
+      timeout-ms: ${TANTOR_MALWARE_SCAN_TIMEOUT_MS:30000}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,db,artifactSchema
+      show-details: when-authorized
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  level:
+    io.translab.tantor: INFO

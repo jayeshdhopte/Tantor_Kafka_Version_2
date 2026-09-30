@@ -1,0 +1,26 @@
+Validation Report - External Discovery Agent v3.2.3
+====================================================
+
+Agent verification
+------------------
+- gofmt completed for changed Go sources.
+- go test -race ./... passed with Go 1.22.2.
+- go vet ./... passed.
+- Linux amd64 and arm64 static binaries built successfully.
+- amd64 version output: tantor-discovery-agent 3.2.3 commit=role-specific-jmx
+
+Installer verification
+----------------------
+- bash -n install-agent.sh passed.
+- --help exposes controller-jmx-metrics-url, controller-jmx-ip and
+  controller-jmx-port.
+
+Behavior verified by tests
+--------------------------
+- Broker-only discovery selects the broker JMX endpoint.
+- Controller-only discovery selects the controller JMX endpoint.
+- A combined broker+controller JVM selects the broker JMX endpoint.
+- An unconfigured controller endpoint does not reuse the broker endpoint.
+- Broker and controller URLs accept distinct explicit exporter ports.
+- The current exporter names messagesin_total and bytesin_total are recognized
+  as broker counters and converted into per-second ingestion rates.

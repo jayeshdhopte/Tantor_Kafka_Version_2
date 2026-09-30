@@ -1,0 +1,499 @@
+.versioned-config-page { padding-bottom: 24px; }
+.config-flow-strip { display: flex; align-items: center; gap: 8px; overflow-x: auto; padding: 10px 12px; border: 1px solid #b8d7ee; border-radius: 8px; background: #f0f7fc; color: #185fa5; font-size: 11px; white-space: nowrap; }
+.config-flow-strip span { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; }
+.config-flow-strip b { color: #7eaac9; }
+.config-options { display: flex; align-items: center; gap: 14px; }
+.config-review { border-color: #9cc7e6; }
+.config-messages { padding: 9px 11px; border-radius: 6px; font-size: 11px; }
+.config-messages p { margin: 2px 0; }
+.config-messages.error { border: 1px solid #e4a0a0; background: #fff0f0; color: #8f1d1d; }
+.config-messages.warning { border: 1px solid #e4ca87; background: #fff8df; color: #765b0b; }
+.config-diff-list { display: grid; gap: 6px; }
+.config-diff-row { display: grid; grid-template-columns: minmax(180px, .8fr) minmax(180px, 1fr) auto minmax(180px, 1fr); align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--border-subtle); border-left: 3px solid #d29a38; border-radius: 6px; background: #fcfbf8; }
+.config-diff-row.added { border-left-color: #2f8b57; }
+.config-diff-row.removed { border-left-color: #b84d4d; }
+.config-diff-row > div { min-width: 0; display: grid; gap: 3px; }
+.config-diff-row span { width: max-content; padding: 2px 5px; border-radius: 4px; background: #eceae5; font-size: 8px; font-weight: 800; }
+.config-diff-row code { overflow-wrap: anywhere; font-size: 10px; }
+.config-diff-row pre { min-width: 0; overflow: auto; margin: 0; padding: 7px; border-radius: 4px; background: #f3f2ef; font: 10px Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.config-review-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--text-secondary); font-size: 10px; }
+.config-review-footer button, .version-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 31px; padding: 5px 9px; border: 1px solid var(--border-default); border-radius: 5px; background: #fff; color: var(--text-primary); font: inherit; font-size: 10px; font-weight: 700; cursor: pointer; }
+.config-review-footer button, .version-actions button.primary { border-color: #185fa5; background: #185fa5; color: #fff; }
+.version-list { display: grid; gap: 7px; }
+.version-list article { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px; border: 1px solid var(--border-subtle); border-radius: 7px; background: #fbfaf8; }
+.version-list article.active-version { border-color: #78b690; background: #f0faf4; }
+.version-main { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.version-main strong { font-size: 13px; }
+.version-main small { width: 100%; color: var(--text-secondary); font-size: 9px; }
+.version-status, .rollback-tag { padding: 2px 6px; border-radius: 99px; background: #ebe9e4; color: #555; font-size: 8px; font-weight: 800; text-transform: uppercase; }
+.version-status.applied { background: #dff3e6; color: #276c42; }
+.version-status.pending_approval { background: #fff0c7; color: #765b0b; }
+.version-status.failed { background: #fde2e2; color: #8f1d1d; }
+.rollback-tag { background: #eee7fa; color: #69439a; }
+.version-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+@media (max-width: 800px) { .config-diff-row { grid-template-columns: 1fr; } .config-diff-row > b { display: none; } .version-list article, .config-review-footer { align-items: stretch; flex-direction: column; } .version-actions { justify-content: flex-start; } .config-options { align-items: flex-start; flex-direction: column; gap: 6px; } }
+
+/* Internal configuration workflow */
+.versioned-config-page {
+  gap: 16px;
+  max-width: none;
+}
+
+.versioned-config-page .node-config-header h2 {
+  color: #332849;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.versioned-config-page .node-config-header p {
+  color: #818181;
+  font-size: 13px;
+}
+
+.versioned-config-page .config-flow-strip {
+  gap: 8px !important;
+  margin-bottom: 0 !important;
+  overflow: visible;
+}
+
+.versioned-config-page .config-flow-strip button {
+  height: 35px;
+  min-height: 35px;
+  padding: 0 12px !important;
+  border-color: #5B126D !important;
+  border-radius: 8px !important;
+  color: #5B126D !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+}
+
+.versioned-config-page .config-flow-strip button:disabled {
+  opacity: 1 !important;
+}
+
+.versioned-config-page .config-selection-step {
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.versioned-config-page .config-selection-step > .node-config-section-title {
+  min-height: 72px;
+  padding: 14px;
+  box-sizing: border-box;
+  border: 1px solid #D2D2D7;
+  border-radius: 8px;
+  background: #FFFFFF;
+}
+
+.versioned-config-page .config-selection-step .node-config-section-title > span {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  color: #5B126D !important;
+  border-color: #5B126D !important;
+}
+
+.versioned-config-page .config-selection-step .node-config-hosts button,
+.versioned-config-page .config-selection-step .node-config-files button {
+  min-height: 64px;
+  padding: 12px 16px;
+  border-color: #D2D2D7;
+  border-radius: 8px;
+  background: #FFFFFF;
+}
+
+.versioned-config-page .config-selection-step .node-config-hosts button.active,
+.versioned-config-page .config-selection-step .node-config-files button.active {
+  border-color: #D8C8E8 !important;
+  background: #F1E9FC !important;
+  color: #332849 !important;
+}
+
+.versioned-config-page .config-selection-step strong {
+  color: #332849;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.versioned-config-page .config-selection-step small {
+  color: #5F5670;
+  font-size: 12px;
+}
+
+.versioned-config-page .node-config-section.editor {
+  padding: 16px;
+  border-color: #D2D2D7;
+  border-radius: 8px;
+}
+
+.versioned-config-page .node-config-editor-head {
+  min-height: 60px;
+}
+
+.versioned-config-page .config-options input[type='checkbox'] {
+  width: 17px;
+  height: 17px;
+  accent-color: #8B72B7;
+}
+
+.versioned-config-page .node-config-table-wrap {
+  border-color: #D2D2D7;
+  border-radius: 0;
+}
+
+.versioned-config-page .node-config-table th {
+  height: 44px;
+  padding: 0 14px;
+  background: #FAFAFA;
+  color: #332849;
+  font-size: 13px;
+  font-weight: 500;
+  text-transform: none;
+}
+
+.versioned-config-page .node-config-table th:first-child {
+  width: 34%;
+}
+
+.versioned-config-page .node-config-table th:last-child {
+  width: 90px;
+}
+
+.versioned-config-page .node-config-table td {
+  height: 50px;
+  padding: 5px 14px;
+  border-top-color: #E4E4E7;
+}
+
+.versioned-config-page .node-config-table code {
+  color: #4B4655;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 13px;
+}
+
+.versioned-config-page .node-config-table input,
+.versioned-config-page .node-config-add input {
+  min-height: 40px;
+  color: #818181;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 13px;
+}
+
+.versioned-config-page .node-config-table td:last-child button {
+  width: 36px;
+  height: 36px;
+  border-color: #D2D2D7 !important;
+  border-radius: 8px;
+  color: #818181 !important;
+}
+
+.versioned-config-page .node-config-add {
+  grid-template-columns: minmax(240px, 1.4fr) minmax(220px, 1fr) minmax(240px, .9fr) !important;
+  margin-top: 8px !important;
+}
+
+.versioned-config-page .node-config-add button,
+.versioned-config-page .node-config-footer button {
+  height: 40px;
+}
+
+.versioned-config-page .node-config-footer {
+  margin-top: 8px !important;
+}
+
+.versioned-config-page .node-config-footer button {
+  min-width: 240px;
+}
+
+.versioned-config-page .config-review {
+  border-color: #D2D2D7 !important;
+  border-radius: 8px;
+  margin-top: 0 !important;
+  padding: 16px;
+}
+
+.versioned-config-page .config-review .node-config-section-title > span {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  color: #5B126D !important;
+  border-color: #5B126D !important;
+  background: #FFFFFF !important;
+}
+
+.versioned-config-page .config-review-placeholder {
+  margin: 4px 0 0;
+  color: #818181;
+  font-size: 12px;
+}
+
+.versioned-config-page .config-diff-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 0;
+}
+
+.versioned-config-page .config-diff-item {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+}
+
+.versioned-config-page .config-diff-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.versioned-config-page .config-diff-meta span {
+  color: #818181;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.versioned-config-page .config-diff-meta strong {
+  color: #818181;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.versioned-config-page .config-diff-values {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.versioned-config-page .config-diff-values > div {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  box-sizing: border-box;
+  border: 1px solid #D2D2D7;
+  border-radius: 8px;
+  background: #FFFFFF;
+  color: #818181;
+  font-size: 13px;
+}
+
+.versioned-config-page .config-review-footer {
+  margin-top: 4px !important;
+  padding-top: 8px !important;
+  border-top: 0 !important;
+}
+
+.versioned-config-page .config-review-footer button {
+  min-width: 300px;
+  min-height: 40px;
+  border-color: #4B126F;
+  border-radius: 8px;
+  background: #4B126F;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.versioned-config-page .config-history {
+  padding: 16px;
+  border-color: #D2D2D7;
+  border-radius: 8px;
+}
+
+.versioned-config-page .config-history .node-config-section-title > span {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  color: #5B126D;
+  border: 1px solid #5B126D;
+  background: #FFFFFF;
+}
+
+.versioned-config-page .version-list {
+  gap: 8px;
+}
+
+.versioned-config-page .version-list article {
+  min-height: 58px;
+  padding: 10px 12px;
+  box-sizing: border-box;
+  border-color: #D2D2D7;
+  border-radius: 8px;
+  background: #FFFFFF;
+}
+
+.versioned-config-page .version-list article.active-version {
+  border-color: #9ED7B4;
+  background: #F0FAF4;
+}
+
+.versioned-config-page .version-main {
+  gap: 7px;
+}
+
+.versioned-config-page .version-main strong {
+  color: #332849;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.versioned-config-page .version-main small {
+  color: #818181;
+  font-size: 11px;
+}
+
+.versioned-config-page .version-status,
+.versioned-config-page .rollback-tag {
+  padding: 3px 7px;
+  font-size: 9px;
+}
+
+.versioned-config-page .version-actions {
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+
+.versioned-config-page .version-actions button {
+  min-height: 34px;
+  padding: 0 12px;
+  border-color: #D2D2D7;
+  border-radius: 7px;
+  background: #FFFFFF;
+  color: #5B126D;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.versioned-config-page .version-actions button.primary {
+  border-color: #4B126F;
+  background: #4B126F;
+  color: #FFFFFF;
+}
+
+.versioned-config-page .version-actions button.view-job {
+  border-color: #D2D2D7;
+  background: #FFFFFF;
+  color: #5B126D;
+}
+
+.versioned-config-page .version-actions button.view-job.highlighted {
+  border-color: #4B126F;
+  background: #4B126F;
+  color: #FFFFFF;
+}
+
+.versioned-config-page .version-history-empty {
+  margin: 2px 0 0;
+  color: #818181;
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .versioned-config-page .node-config-add {
+    grid-template-columns: 1fr !important;
+  }
+
+  .versioned-config-page .config-diff-item {
+    grid-template-columns: 1fr;
+  }
+
+  .versioned-config-page .config-diff-values {
+    grid-template-columns: 1fr;
+  }
+}
+
+.config-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(24, 24, 27, 0.58);
+}
+
+.config-dialog {
+  width: min(610px, calc(100vw - 40px));
+  overflow: hidden;
+  border-radius: 18px;
+  background: #FFFFFF;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.26);
+}
+
+.config-dialog-banner {
+  position: relative;
+  height: 80px;
+  background-image:
+    url('../assets/orange.png'),
+    radial-gradient(circle at 82% 20%, rgba(255, 248, 215, .95) 0 21%, transparent 22%),
+    radial-gradient(circle at 64% -25%, transparent 0 30%, rgba(255, 206, 90, .82) 31% 41%, rgba(255, 239, 174, .9) 42% 49%, transparent 50%),
+    linear-gradient(110deg, #FFFDFC 0 31%, #FFF0B8 32%, #FFC451 65%, #FFE59B 100%);
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+
+.config-dialog-close {
+  position: absolute;
+  top: 22px;
+  right: 18px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #6B7280;
+  cursor: pointer;
+}
+
+.config-dialog-body {
+  padding: 24px 28px 28px;
+}
+
+.config-dialog-body h3 {
+  margin: 0;
+  color: #332849;
+  font-size: 27px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.config-dialog-body p {
+  margin: 8px 0 26px;
+  color: #818181;
+  font-size: 17px;
+  line-height: 1.45;
+}
+
+.config-dialog-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.config-dialog-actions button {
+  min-width: 95px;
+  height: 54px;
+  padding: 0 24px;
+  border-radius: 10px;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.config-dialog-actions .cancel {
+  border: 1px solid #E85D8B;
+  background: #FFFFFF;
+  color: #E85D8B;
+}
+
+.config-dialog-actions .confirm {
+  border: 1px solid #4B126F;
+  background: #4B126F;
+  color: #FFFFFF;
+}

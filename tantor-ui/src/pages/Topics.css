@@ -1,0 +1,897 @@
+.topics-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.topics-title-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+
+.topics-title-row h2 {
+  margin: 2px 0 4px;
+  font-size: 1.65rem;
+}
+
+.topics-title-row p {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.topics-title-row .topics-eyebrow {
+  color: var(--accent-primary);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.topics-title-actions,
+.topics-title-actions button,
+.bulk-actions,
+.bulk-actions button,
+.topic-alert,
+.topics-pagination > div,
+.topic-button {
+  display: flex;
+  align-items: center;
+}
+
+.topics-title-actions { gap: 0.65rem; }
+
+.topic-button {
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 38px;
+  padding: 0.55rem 0.9rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.topic-button:disabled { cursor: not-allowed; opacity: 0.55; }
+.topic-button.primary { color: white; background: var(--accent-primary); }
+.topic-button.primary:hover:not(:disabled) { filter: brightness(0.94); }
+.topic-button.secondary { color: var(--text-primary); background: var(--bg-surface); border-color: var(--border-default); }
+.topic-button.secondary:hover:not(:disabled) { background: var(--bg-raised); }
+.topic-button.secondary.live-active { color: #3E1363; background: #F3E8FF; border-color: #3E1363; }
+.topic-button.destructive { color: white; background: #b42318; }
+
+.spin-slow {
+  animation: spin 1.8s linear infinite;
+}
+
+/* -- Toolbar -- */
+.topics-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.topic-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.topic-search svg:first-child {
+  position: absolute;
+  left: 10px;
+  color: #818181;
+}
+
+.topic-search input {
+  width: 260px;
+  background: #ffffff;
+  border: 1px solid #CCCCCC;
+  color: #23252D;
+  padding: 8px 12px 8px 34px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: 'Satoshi', sans-serif;
+  outline: none;
+}
+
+.topic-search input::placeholder {
+  color: #818181;
+}
+
+.topic-search button {
+  position: absolute;
+  right: 10px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: #818181;
+}
+
+.topics-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Toggle Switch */
+.internal-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 14px;
+  color: #818181;
+  cursor: pointer;
+}
+
+.internal-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+.internal-toggle span {
+  position: relative;
+  display: inline-block;
+  width: 32px;
+  height: 18px;
+  background-color: #CCCCCC;
+  border-radius: 10px;
+  transition: .2s;
+}
+
+.internal-toggle span:before {
+  position: absolute;
+  content: "";
+  height: 14px;
+  width: 14px;
+  left: 2px;
+  bottom: 2px;
+  background-color: white;
+  border-radius: 50%;
+  transition: .2s;
+}
+
+.internal-toggle input:checked + span {
+  background-color: #3E1363;
+}
+
+.internal-toggle input:checked + span:before {
+  transform: translateX(14px);
+}
+
+.topic-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  border: 1px solid transparent;
+}
+
+.topic-button.outline {
+  background: #ffffff;
+  border-color: #3E1363;
+  color: #3E1363;
+}
+
+.topic-button.filled {
+  background: #3E1363;
+  color: #ffffff;
+}
+
+/* -- Table Container -- */
+.topics-table-card {
+  overflow: auto;
+  border: 1px solid #CCCCCC;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.topics-table {
+  width: 100%;
+  min-width: 900px;
+  border-collapse: collapse;
+}
+
+.topics-table th {
+  padding: 16px;
+  background: #F9F9F9;
+  border-bottom: 1px solid #CCCCCC;
+  color: #332849;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.topics-table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid #CCCCCC;
+  background: #FFFFFF;
+  color: #23252D;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.topics-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.table-header-with-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.table-header-with-checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.topics-table tbody td.check-column {
+  width: 48px;
+  padding-right: 0;
+}
+
+.topics-table tbody td.check-column input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  margin-left: 16px;
+}
+
+.topic-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.internal-badge {
+  background: #F2F2F2;
+  color: #818181;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+/* -- Empty State -- */
+.empty-state-cell {
+  padding: 60px 20px !important;
+  text-align: center;
+}
+
+.topic-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #23252D;
+}
+
+.topic-empty strong {
+  font-size: 16px;
+  font-weight: 600;
+  margin-top: 8px;
+}
+
+.topic-empty span {
+  font-size: 14px;
+  color: #818181;
+}
+
+.figma-empty-illustration {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: #F4F6FB;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 8px;
+}
+
+.illustration-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 80px;
+  height: 16px;
+  background: #ffffff;
+  border-radius: 4px;
+  box-shadow: 0px 2px 6px rgba(0, 0, 0, 0.05);
+  padding: 0 8px;
+}
+
+.icon-bar {
+  height: 2px;
+  border-radius: 1px;
+}
+
+.icon-bar.grey {
+  width: 24px;
+  background: #CCCCCC;
+}
+
+.icon-bar.purple {
+  width: 16px;
+  background: #C4B5FD;
+}
+
+/* Bulk actions, alerts, modals styles left intact for functionality */
+.bulk-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #FAFAFC;
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: 1px solid #E4E4E7;
+}
+
+.bulk-actions-count {
+  margin-right: 2px;
+  color: #282F49;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.bulk-action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 8px 13px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.bulk-action-button.neutral {
+  color: #4C1D6F;
+  background: #FFFFFF;
+  border-color: #D5CBDD;
+}
+
+.bulk-action-button.neutral:hover {
+  background: #FAF8FF;
+  border-color: #4C1D6F;
+}
+
+.bulk-action-button.destructive {
+  color: #D1435B;
+  background: #FFFFFF;
+  border-color: #F0A4B2;
+}
+
+.bulk-action-button.destructive:hover {
+  background: #FFF1F3;
+  border-color: #D1435B;
+}
+
+.bulk-action-button.primary {
+  color: #FFFFFF;
+  background: #4C1D6F;
+  border-color: #4C1D6F;
+}
+
+.bulk-action-button.primary:hover {
+  background: #3D1359;
+  border-color: #3D1359;
+  box-shadow: 0 3px 8px rgba(76, 29, 111, 0.18);
+}
+
+.bulk-action-button:focus-visible {
+  outline: 3px solid rgba(76, 29, 111, 0.2);
+  outline-offset: 2px;
+}
+
+.topic-alert {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  gap: 8px;
+}
+
+.topic-alert.error { background: #FDE8E8; color: #9B1C1C; }
+.topic-alert.success { background: #DEF7EC; color: #03543F; }
+
+.topics-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px;
+  border-top: 1px solid #CCCCCC;
+  color: #818181;
+  font-size: 14px;
+}
+
+.topics-pagination > div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.topics-pagination button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #23252D;
+}
+
+.health {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.health i {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.health.healthy i { background-color: #10B981; } /* Green dot */
+.health.danger i { background-color: #EF4444; } /* Red dot */
+
+/* -- Modal Styles -- */
+.topic-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.topic-modal {
+  background: #ffffff;
+  border-radius: 12px;
+  width: 480px;
+  box-shadow: 0px 8px 32px rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: column;
+}
+
+.create-topic-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid transparent; /* matches figma clean look */
+}
+
+.create-topic-header h2 {
+  margin: 0;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 16px;
+  font-weight: 500;
+  color: #23252D;
+}
+
+.create-topic-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #818181;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.create-topic-form {
+  padding: 16px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.form-field-full, .form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form-fields-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.create-topic-form label {
+  font-family: 'Satoshi', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  color: #23252D;
+}
+
+.create-topic-form input {
+  background: #ffffff;
+  border: 1px solid #CCCCCC;
+  color: #23252D;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: 'Satoshi', sans-serif;
+  outline: none;
+}
+
+.create-topic-form input::placeholder {
+  color: #818181;
+}
+
+.create-topic-footer {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.create-topic-footer .topic-button {
+  padding: 10px 24px;
+}
+
+.create-topic-footer .topic-button.outline {
+  border: 1px solid #C4B5FD;
+  color: #8F55C9;
+}
+
+/* -- Figma Add Topic Modal Styles -- */
+.topic-modal.figma-topic-modal {
+  width: 760px; /* matched to figma proportion */
+  max-width: 90vw;
+  max-height: calc(100vh - 64px);
+  background: #FFFFFF;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0px 12px 48px rgba(0, 0, 0, 0.16);
+}
+
+.figma-topic-modal .modal-title-area h2 {
+  font-family: 'Satoshi', sans-serif;
+  font-size: 16px;
+  font-weight: 500;
+  color: #332849;
+  margin: 0 0 2px 0;
+}
+
+.figma-topic-modal .modal-title-area h3 {
+  font-family: 'Satoshi', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: #3E1363; /* Purple accent color matching the theme */
+  margin: 0 0 4px 0;
+}
+
+.figma-topic-modal .modal-title-area p {
+  font-family: 'Satoshi', sans-serif;
+  font-size: 12px;
+  color: #818181;
+  margin: 0;
+}
+
+.figma-topic-modal .create-topic-form {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: calc(100vh - 64px);
+}
+
+.figma-topic-modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 32px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.figma-topic-modal .form-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #EAEAEA;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+}
+
+.figma-topic-modal .form-section-header span {
+  font-family: 'Satoshi', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  color: #3E1363;
+}
+
+.figma-topic-modal .form-grid-row {
+  display: flex;
+  gap: 16px;
+}
+
+.figma-topic-modal .form-grid-row-2 {
+  display: flex;
+  gap: 16px;
+}
+
+.figma-topic-modal .form-grid-row-2 > label {
+  flex: 1;
+}
+
+.figma-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.figma-form-field.full-width {
+  width: 100%;
+}
+
+.figma-form-field span {
+  font-family: 'Satoshi', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  color: #23252D;
+}
+
+.figma-form-field input,
+.figma-form-field select {
+  font-family: 'Satoshi', sans-serif;
+  font-size: 13px;
+  padding: 10px 14px;
+  border: 1px solid #D1D1D6;
+  border-radius: 8px;
+  background: #FFFFFF;
+  color: #332849;
+  transition: border-color 0.15s;
+  outline: none;
+}
+
+.figma-form-field input:focus,
+.figma-form-field select:focus {
+  border-color: #3E1363;
+}
+
+.figma-form-field input::placeholder {
+  color: #C7C7CC;
+}
+
+.quick-options-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quick-options-container .quick-options-label {
+  font-family: 'Satoshi', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  color: #23252D;
+}
+
+.quick-options-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.quick-option-btn {
+  font-family: 'Satoshi', sans-serif;
+  font-size: 12px;
+  padding: 6px 12px;
+  border: 1px solid #D1D1D6;
+  border-radius: 6px;
+  background: #FFFFFF;
+  color: #555555;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.quick-option-btn:hover {
+  border-color: #3E1363;
+  color: #3E1363;
+}
+
+.quick-option-btn.active {
+  background: #3E1363;
+  color: #FFFFFF;
+  border-color: #3E1363;
+}
+
+.figma-topic-modal .create-topic-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 16px;
+  border-top: none;
+  padding-top: 0;
+}
+
+.figma-topic-modal .cancel-btn {
+  border: 1px solid #3E1363 !important;
+  color: #3E1363 !important;
+  background: #FFFFFF !important;
+  border-radius: 8px !important;
+  padding: 10px 20px !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  cursor: pointer;
+}
+
+.figma-topic-modal .create-btn {
+  background: #3E1363 !important;
+  color: #FFFFFF !important;
+  border: none !important;
+  border-radius: 8px !important;
+  padding: 10px 20px !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  cursor: pointer;
+}
+
+.figma-topic-modal .create-btn:hover {
+  background: #2e0e4b !important;
+}
+
+.figma-topic-modal .cancel-btn:hover {
+  background: #f7f3fd !important;
+}
+
+/* -- Align X Button & Top Spacing for Figma Modal -- */
+.figma-topic-modal .create-topic-header {
+  align-items: flex-start !important;
+  padding: 24px 32px 12px !important;
+}
+
+.figma-topic-modal .create-topic-close {
+  margin-top: 4px;
+}
+
+/* -- Custom Scrollbar for Topic Modal Body -- */
+.figma-topic-modal-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.figma-topic-modal-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.figma-topic-modal-body::-webkit-scrollbar-thumb {
+  background: #CBC0E0;
+  border-radius: 3px;
+}
+
+.figma-topic-modal-body::-webkit-scrollbar-thumb:hover {
+  background: #3E1363;
+}
+
+/* -- Align Footer Buttons with Scrollbar Offset -- */
+.figma-topic-modal .create-topic-footer {
+  border-top: 1px solid #EAEAEA !important;
+  padding: 16px 38px 24px 32px !important; /* Extra 6px on right to align with scrollbar */
+  margin-top: 0;
+  flex-shrink: 0;
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  background: #FFFFFF;
+}
+
+.topic-create-modal form footer {
+  position: sticky;
+  z-index: 1;
+  bottom: 0;
+  margin-top: 0;
+  box-shadow: 0 -8px 18px rgba(28, 28, 26, 0.04);
+}
+
+@media (max-width: 620px) {
+  .topic-modal-backdrop {
+    align-items: stretch;
+    padding: 0;
+  }
+
+  .topic-create-modal {
+    width: 100%;
+    max-height: 100vh;
+    border-radius: 0;
+  }
+
+  .topic-create-modal .topic-form-grid,
+  .custom-config-row {
+    grid-template-columns: 1fr;
+  }
+
+  .custom-config-row > button {
+    width: 100%;
+    height: 34px;
+  }
+}
+
+/* === Live interval dropdown (shared with Monitoring) === */
+.live-pill-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #94a3b8;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.live-pill-dot.active {
+  background: #10b981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.4);
+}
+
+.live-dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+  padding: 4px;
+  min-width: 160px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.live-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #334155;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.live-dropdown-item:hover {
+  background: #f1f5f9;
+}
+
+.live-dropdown-item.selected {
+  background: #f4f2ff;
+  color: #5b21b6;
+  font-weight: 600;
+}
+
+.topics-page .dropdown-divider {
+  height: 1px;
+  background: #e2e8f0;
+  margin: 4px 0;
+}

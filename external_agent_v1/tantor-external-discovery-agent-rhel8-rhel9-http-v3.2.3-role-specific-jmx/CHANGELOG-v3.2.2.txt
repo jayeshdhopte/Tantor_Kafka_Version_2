@@ -1,0 +1,21 @@
+Tantor External Discovery Agent v3.2.2
+======================================
+
+Dynamic JMX Exporter port reporting
+-----------------------------------
+
+- The discovery report now includes jmxExporterPort when an explicit port is
+  configured in TANTOR_AGENT_JMX_METRICS_URL.
+- IPv4, IPv6 and {host} URL templates are supported.
+- The field is omitted when JMX monitoring is disabled or the URL has no
+  explicit port, preserving compatibility with older backends.
+- The Tantor backend must persist this field on the matching external node.
+  Prometheus service discovery then uses the reported per-node port and falls
+  back to 7071/7072 only when no port was reported.
+
+Build identity
+--------------
+
+Version: 3.2.2
+Commit label: dynamic-jmx-port
+Source: included in ./source

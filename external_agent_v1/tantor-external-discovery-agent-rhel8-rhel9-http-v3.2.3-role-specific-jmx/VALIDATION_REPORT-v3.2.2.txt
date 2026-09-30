@@ -1,0 +1,21 @@
+Validation Report - External Discovery Agent v3.2.2
+====================================================
+
+Agent verification
+------------------
+
+PASS: gofmt completed.
+PASS: go test ./... completed.
+PASS: go vet ./... completed.
+PASS: Linux AMD64 binary built with CGO_ENABLED=0 and -trimpath.
+PASS: Linux ARM64 binary built with CGO_ENABLED=0 and -trimpath.
+PASS: Dynamic JMX port parsing covers IPv4, IPv6 and {host} URLs.
+PASS: Missing, implicit and malformed ports are omitted from the payload.
+
+Backend verification
+--------------------
+
+PASS: ExternalClusterService persists a valid agent-reported JMX port.
+PASS: Prometheus service discovery uses the stored per-node JMX port.
+PASS: ExternalClusterServiceTest and PrometheusMonitoringServiceTest passed
+      (25 tests, 0 failures, 0 errors).

@@ -1,0 +1,113 @@
+.cluster-nodes-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.cluster-node-identity-summary {
+  margin: 6px 0 0;
+  color: #6d6679;
+  font-size: 13px;
+}
+
+.cluster-nodes-error {
+  padding: 12px 14px;
+  border: 1px solid #e8a19a;
+  border-radius: 8px;
+  background: #fff4f2;
+  color: #a5271a;
+  font-size: 14px;
+}
+
+.cluster-nodes-page header button { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 5px 10px; border: 1px solid var(--border-default); border-radius: 6px; background: var(--bg-surface); font: inherit; font-size: 12px; cursor: pointer; }
+.cluster-nodes-table-wrap {
+  overflow: auto;
+  border: 1px solid #CCCCCC;
+  border-radius: 8px;
+  background: #FFFFFF;
+}
+
+.cluster-nodes-table {
+  width: 100%;
+  min-width: 820px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.cluster-nodes-table th {
+  padding: 16px;
+  background: #F9F9F9;
+  border-bottom: 1px solid #CCCCCC;
+  color: #332849;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 16px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.cluster-nodes-table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid #CCCCCC;
+  background: #FFFFFF;
+  color: #23252D;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.cluster-nodes-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.cluster-nodes-table code {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.cluster-node-host {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #23252D;
+}
+
+.cluster-node-role {
+  text-transform: capitalize;
+}
+
+.cluster-node-status {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  padding: 4px 8px;
+  background: rgba(217, 217, 217, 0.5);
+  border-radius: 100px;
+  color: #818181;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 400;
+}
+
+.cluster-node-status.success,
+.cluster-node-status.online,
+.cluster-node-status.live {
+  background: rgba(42, 199, 146, 0.1);
+  border: 1px solid #2AC792;
+  color: #1F845A;
+}
+
+.cluster-node-status.offline,
+.cluster-node-status.unavailable {
+  background: rgba(222, 71, 71, 0.08);
+  border: 1px solid #d85d5d;
+  color: #a5271a;
+}
+
+.cluster-node-status.stale,
+.cluster-node-status.not-enrolled,
+.cluster-node-status.unknown {
+  background: rgba(230, 153, 37, 0.1);
+  border: 1px solid #e09925;
+  color: #8a5a12;
+}

@@ -1,0 +1,25 @@
+version_catalog:
+  application:
+    tantor_release: 1.0.0
+
+  toolchain:
+    java: 21
+    maven: 3.9.16
+    node: 22.23.2
+    npm: 10.9.2
+    go: 1.22.0
+
+  infrastructure:
+    postgresql: 16.14
+    kafka: 7.5.0
+    kafka_connect: 7.5.0
+    schema_registry: 7.5.0
+    ksqldb: 7.5.0
+    zookeeper: 7.5.0
+
+  container_images:
+    java_builder: maven:3.9.16-eclipse-temurin-21-noble@sha256:c07f7ccfb8ca6c9fa29ee523f00afa7d2ca6132c92f8652c4aebb5ee3491f502
+    java_runtime: eclipse-temurin:21.0.11_10-jre-resolute@sha256:b3598c584b6f797ee2324baac2ae5ceb6c8fb3a97f3b11e5a6ee4fd47308bc58
+    node_builder: node:22-bookworm@sha256:0557ac14e0d45d02ed563067b82856ca5e7aa3437fa28d98d4350ea9c3d9494a
+    nginx_runtime: nginx:1.31.3-alpine@sha256:4a73073bd557c65b759505da037898b61f1be6cbcc3c2c3aeac22d2a470c1752
+    postgres: docker.io/library/postgres:16.14@sha256:95206741a5b214807675e14165369d05b93a9cf692223b616d07cca227e74b0b

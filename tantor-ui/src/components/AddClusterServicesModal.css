@@ -1,0 +1,33 @@
+.add-services-overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(15, 15, 30, .48); backdrop-filter: blur(4px); z-index: 26000; }
+.add-services-modal { width: min(850px, calc(100vw - 32px)); max-height: 90vh; display: flex; flex-direction: column; }
+.add-services-modal:focus { outline: none; }
+.add-services-modal .cd-deployment-modal-header { flex-shrink: 0; }
+.add-services-body { overflow-y: auto; min-height: 0; padding: 0 28px; }
+.add-services-modal .cd-deployment-cards-wrapper { margin: 0; padding: 20px; }
+.add-services-modal .cd-deployment-choice-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.add-services-modal .add-service-tile { text-align: left; font: inherit; cursor: pointer; color: inherit; }
+.add-services-modal .add-service-tile.selected { border-color: #6d28a8; background: #faf5ff; box-shadow: 0 0 0 1px #6d28a8; }
+.add-service-tile-heading { display: flex; justify-content: space-between; color: #6d28a8; }
+.add-service-tile span { color: #6d28a8; font-size: 13px; }
+.add-services-modal button:disabled { opacity: .5; cursor: not-allowed; }
+.add-services-modal button:focus-visible { outline: 2px solid #6d28a8; outline-offset: 3px; }
+.add-services-fields { border: 0; padding: 0; margin: 24px 0 0; min-width: 0; }
+.add-services-fields section + section { margin-top: 24px; padding-top: 24px; border-top: 1px solid #e5e7eb; }
+.add-services-footer { display: flex; justify-content: flex-end; gap: 12px; padding: 20px 28px; margin-top: 20px; border-top: 1px solid #e5e7eb; flex-shrink: 0; }
+.add-services-modal .add-services-footer button,
+.add-services-modal .add-services-footer button:disabled {
+  background: #3E1363;
+  border-color: #3E1363;
+  color: #FFFFFF;
+  opacity: 1;
+}
+.add-services-validation { color: #795515; font-size: 13px; padding-left: 20px; }
+.add-services-error { color: #b42318; }
+.add-services-prechecks { margin: 22px 0; }
+.add-services-prechecks h3 { margin: 0 0 6px; color: #36145d; }
+.add-services-precheck { margin-top: 16px; padding: 14px; border: 1px solid #e5e7eb; border-radius: 8px; }
+.add-services-precheck-log { max-height: 220px; overflow: auto; margin: 10px 0 0; padding: 12px; background: #080d18; color: #e5f1ff; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+.cluster-services-menu { padding: 6px; background: white; border: 1px solid #e5e7eb; border-radius: 8px; box-shadow: 0 6px 24px #0002; }
+.cluster-services-menu button { background: white; border: 0; padding: 12px; color: #36145d; cursor: pointer; border-radius: 5px; }
+.cluster-services-menu button:hover, .cluster-services-menu button:focus-visible { background: #faf5ff; }
+@media (max-width: 600px) { .add-services-modal .cd-deployment-choice-grid, .add-services-modal .cd-grid-2 { grid-template-columns: 1fr; } }

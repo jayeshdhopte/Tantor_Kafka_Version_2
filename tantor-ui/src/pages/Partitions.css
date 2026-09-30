@@ -1,0 +1,163 @@
+/* ============================================================
+   Partitions page – layout & table styles
+   ============================================================ */
+
+.partitions-tab {
+    width: 100%;
+    padding: 1.5rem;
+    box-sizing: border-box;
+}
+
+/* ── Page header ─────────────────────────────────────────── */
+
+.topics-header {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+/* ── Toolbar (search + refresh) ──────────────────────────── */
+
+.tab-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    height: 40px;
+    box-sizing: border-box;
+}
+
+/* ── Figma-style table ───────────────────────────────────── */
+
+.figma-table {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    min-width: 0;
+}
+
+.figma-table-header {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    width: 100%;
+    height: 54px;
+    background: var(--bg-raised, #FAF8FF);
+    border-bottom: 1px solid var(--border-default, #CCCCCC);
+    box-sizing: border-box;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.figma-table-body {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+}
+
+.figma-table-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    width: 100%;
+    height: 52px;
+    background: var(--bg-surface, #FFFFFF);
+    border-bottom: 1px solid var(--border-subtle, #F3F0F0);
+    box-sizing: border-box;
+    transition: background-color var(--transition-fast, 120ms ease);
+}
+
+.figma-table-row:last-child {
+    border-bottom: none;
+}
+
+/* Hover state shared across table rows */
+.table-row-hover:hover {
+    background: var(--bg-raised, #FAF8FF);
+    cursor: default;
+}
+
+.table-row-hover.clickable:hover {
+    cursor: pointer;
+}
+
+/* ── Error alert ─────────────────────────────────────────── */
+
+.error-alert {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    background: rgba(239, 77, 95, 0.08);
+    border: 1px solid rgba(239, 77, 95, 0.25);
+    border-radius: var(--radius-md, 8px);
+    color: #C0283A;
+    font-size: var(--text-sm, 13px);
+    font-weight: var(--font-medium, 500);
+}
+
+/* ── Empty state ─────────────────────────────────────────── */
+
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem 2rem;
+    text-align: center;
+    color: var(--text-secondary, #5F5E5A);
+}
+
+/* ── Pagination ──────────────────────────────────────────── */
+
+.pagination {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border-top: 1px solid var(--border-default, #CCCCCC);
+    background: var(--bg-surface, #FFFFFF);
+}
+
+.pagination-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px;
+    background: var(--bg-surface, #FFFFFF);
+    border: 1px solid var(--border-default, #CCCCCC);
+    border-radius: 6px;
+    color: var(--text-primary, #282F49);
+    cursor: pointer;
+    transition: background-color var(--transition-fast, 120ms ease),
+        border-color var(--transition-fast, 120ms ease);
+}
+
+.pagination-btn:hover:not(:disabled) {
+    background: var(--bg-raised, #FAF8FF);
+    border-color: #8E77BB;
+}
+
+.pagination-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+/* ── Spin animation for refresh icon ─────────────────────── */
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.spin {
+    animation: spin 0.8s linear infinite;
+}

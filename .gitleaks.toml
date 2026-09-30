@@ -1,0 +1,21 @@
+[extend]
+useDefault = true
+
+[[rules]]
+id = "tantor-hardcoded-credential-assignment"
+description = "Hardcoded credential assignment"
+regex = '''(?i)(?:password|passwd|pwd|secret|token|api[_-]?key|client[_-]?secret)\s*[:=]\s*["']([A-Za-z0-9_./+=:@-]{12,})["']'''
+secretGroup = 1
+entropy = 2.5
+
+[[rules]]
+id = "tantor-jdbc-inline-credentials"
+description = "Credentials embedded in a JDBC URL"
+regex = '''jdbc:[a-z0-9]+://[^\s:/?#]+:([^\s@/?#]+)@'''
+secretGroup = 1
+
+[[rules]]
+id = "tantor-jdbc-driver-manager-password"
+description = "Literal password passed to JDBC DriverManager"
+regex = '''DriverManager\.getConnection\(\s*"[^"]+"\s*,\s*"[^"]+"\s*,\s*"([^"]+)"'''
+secretGroup = 1

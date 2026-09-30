@@ -1,0 +1,228 @@
+.jobs-list-page {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 24px;
+  background: #FFFFFF;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 24px;
+  min-height: calc(100vh - 120px);
+  margin: 20px;
+  box-sizing: border-box;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+}
+
+
+.page-header-jobs {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  height: 40px;
+}
+
+.header-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.header-titles h2 {
+  margin: 0;
+  font-family: 'Satoshi', sans-serif;
+  font-style: normal;
+  font-weight: 700;
+  font-size: 24px;
+  line-height: 32px;
+  color: #282F49;
+}
+
+.header-titles p {
+  margin: 0;
+  font-family: 'Satoshi', sans-serif;
+  font-style: normal;
+  font-weight: 400;
+  font-size: 14px;
+  line-height: 19px;
+  color: #818181;
+}
+
+.refresh-btn {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background: #FFFFFF;
+  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+  color: #818181;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.2s;
+}
+
+.refresh-btn:hover {
+  background: #F9F9F9;
+}
+
+.table-container {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  max-height: calc(100vh - 230px);
+  border: 1px solid #CCCCCC;
+  border-radius: 8px;
+  overflow-x: auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.jobs-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.jobs-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  box-sizing: border-box;
+  width: 161.29px;
+  height: 54px;
+  padding: 16px;
+  background: #F9F9F9;
+  border-bottom: 1px solid #CCCCCC;
+  font-family: 'Satoshi', sans-serif;
+  font-style: normal;
+  font-weight: 400;
+  font-size: 14px;
+  line-height: 19px;
+  color: #332849;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.jobs-table th:first-child { border-radius: 8px 0 0 0; }
+.jobs-table th:last-child { border-radius: 0 8px 0 0; }
+
+.jobs-table td {
+  box-sizing: border-box;
+  height: 52px;
+  padding: 14px 16px;
+  background: #FFFFFF;
+  border-bottom: 1px solid #CCCCCC;
+  font-family: 'Satoshi', sans-serif;
+  font-style: normal;
+  font-weight: 400;
+  font-size: 14px;
+  line-height: 19px;
+  color: #818181;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.jobs-table tr:last-child td {
+  border-bottom: none;
+}
+
+.job-type {
+  /* Inherits from td */
+}
+
+.status-pill {
+  box-sizing: border-box;
+  display: inline-flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  padding: 4px 8px;
+  gap: 10px;
+  height: 24px;
+  width: fit-content;
+  min-width: 59px;
+  border-radius: 100px;
+  font-family: 'Satoshi', sans-serif;
+  font-style: normal;
+  font-weight: 400;
+  font-size: 12px;
+  line-height: 16px;
+  text-align: center;
+}
+
+.badge-success {
+  background: rgba(42, 199, 146, 0.25);
+  color: #069B68;
+}
+
+.badge-failed {
+  background: rgba(242, 118, 167, 0.3);
+  color: #EF4D5F;
+}
+
+.badge-in-progress {
+  background: rgba(217, 217, 217, 0.5);
+  color: #818181;
+}
+
+.badge-warning {
+  background: rgba(245, 158, 11, 0.15); /* Estimated warning */
+  color: #f59e0b;
+}
+
+.badge-rolled-back {
+  background: rgba(22, 171, 194, 0.25);
+  color: #16ABC2;
+}
+
+.badge-pending {
+  background: rgba(217, 217, 217, 0.5);
+  color: #818181;
+}
+
+.btn-outline-primary {
+  box-sizing: border-box;
+  display: inline-flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  padding: 6px 8px;
+  gap: 6px;
+  height: 28px;
+  background: #FFFFFF;
+  border: 1px solid #8E77BB;
+  border-radius: 6px;
+  font-family: 'Satoshi', sans-serif;
+  font-style: normal;
+  font-weight: 500;
+  font-size: 12px;
+  line-height: 16px;
+  color: #8E77BB;
+  cursor: pointer;
+}
+
+.btn-outline-primary:hover {
+  background: #fdfcff;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 40px !important;
+  color: #818181;
+  font-size: 14px;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+  transform-origin: center;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

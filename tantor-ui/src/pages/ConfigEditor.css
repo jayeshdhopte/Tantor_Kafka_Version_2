@@ -1,0 +1,45 @@
+.node-config-page { display: grid; gap: 14px; max-width: 1180px; }
+.node-config-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.node-config-header h2 { margin: 0; font-size: 18px; }
+.node-config-header p { margin: 4px 0 0; color: var(--text-secondary); font-size: 12px; }
+.node-config-header button,
+.node-config-add button,
+.node-config-footer button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; padding: 6px 11px; border: 1px solid var(--border-default); border-radius: 6px; background: var(--bg-surface); color: var(--text-primary); font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
+.node-config-section { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--border-default); border-radius: 8px; background: var(--bg-surface); }
+.node-config-section-title { display: flex; align-items: center; gap: 9px; }
+.node-config-section-title > span { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; background: #e6f1fb; color: #185fa5; font-size: 11px; font-weight: 750; }
+.node-config-section h3 { margin: 0; font-size: 14px; }
+.node-config-section p { margin: 2px 0 0; color: var(--text-secondary); font-size: 11px; }
+.node-config-hosts,
+.node-config-files { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 8px; }
+.node-config-hosts button,
+.node-config-files button { min-width: 0; display: flex; align-items: center; gap: 9px; padding: 10px; border: 1px solid var(--border-default); border-radius: 7px; background: #fbfaf8; color: var(--text-primary); text-align: left; cursor: pointer; }
+.node-config-hosts button.active,
+.node-config-files button.active { border-color: #78aede; background: #edf5fc; color: #185fa5; }
+.node-config-hosts button span,
+.node-config-files button span { min-width: 0; display: grid; gap: 2px; }
+.node-config-hosts strong,
+.node-config-files strong { font-size: 12px; }
+.node-config-hosts small,
+.node-config-files small { overflow: hidden; color: var(--text-secondary); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.node-config-editor-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.node-config-editor-head label { display: inline-flex; align-items: center; gap: 7px; color: var(--text-secondary); font-size: 11px; }
+.node-config-table-wrap { overflow: auto; border: 1px solid var(--border-subtle); border-radius: 7px; }
+.node-config-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.node-config-table th { padding: 9px; background: #f7f6f3; color: var(--text-secondary); font-size: 10px; text-align: left; text-transform: uppercase; }
+.node-config-table th:first-child { width: 38%; }
+.node-config-table th:last-child { width: 52px; }
+.node-config-table td { padding: 7px 9px; border-top: 1px solid var(--border-subtle); vertical-align: middle; }
+.node-config-table td:first-child { display: grid; gap: 2px; }
+.node-config-table code { color: #333; font-size: 11px; overflow-wrap: anywhere; }
+.node-config-table small { color: #7b5b10; font-size: 9px; }
+.node-config-table input,
+.node-config-add input { width: 100%; min-height: 32px; padding: 5px 7px; border: 1px solid var(--border-default); border-radius: 5px; background: #fff; font: 11px Consolas, monospace; }
+.node-config-table input:disabled { background: #f2f1ee; color: #777; }
+.node-config-table td:last-child button { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid var(--border-default); border-radius: 5px; background: #fff; color: #8f1d1d; cursor: pointer; }
+.node-config-table button:disabled { opacity: .35; cursor: not-allowed; }
+.node-config-add { display: grid; grid-template-columns: minmax(180px, .8fr) minmax(220px, 1.2fr) auto; gap: 8px; }
+.node-config-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 2px; }
+.node-config-footer span { color: var(--text-secondary); font-size: 10px; }
+.node-config-footer button { border-color: #185fa5; background: #185fa5; color: #fff; }
+@media (max-width: 700px) { .node-config-header, .node-config-editor-head, .node-config-footer { align-items: stretch; flex-direction: column; } .node-config-add { grid-template-columns: 1fr; } }

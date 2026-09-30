@@ -1,0 +1,327 @@
+.deployment-log-view {
+  display: grid;
+  gap: 12px;
+}
+.deployment-copy-toast {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 26000;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid #A7F3D0;
+  border-radius: 8px;
+  background: #ECFDF5;
+  color: #047857;
+  box-shadow: 0 12px 30px rgba(40, 47, 73, 0.16);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.deployment-log-toolbar,
+.deployment-task-picker,
+.deployment-task-summary {
+  border: 1px solid var(--border-default);
+  border-radius: 7px;
+  background: var(--bg-surface);
+}
+
+.deployment-log-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+.deployment-log-toolbar > div:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.deployment-log-toolbar strong {
+  font-size: 14px;
+}
+
+.deployment-log-toolbar span {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.deployment-log-actions {
+  display: flex;
+  gap: 7px;
+}
+
+.deployment-log-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 5px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.deployment-task-picker {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+}
+
+.deployment-task-picker label,
+.deployment-task-summary span {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.deployment-task-picker select {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  padding: 5px 9px;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+}
+
+.deployment-task-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  overflow: hidden;
+}
+
+.deployment-task-summary > div {
+  display: grid;
+  gap: 5px;
+  padding: 11px 13px;
+  border-right: 1px solid var(--border-subtle);
+}
+
+.deployment-task-summary > div:last-child {
+  border-right: 0;
+}
+
+.deployment-task-summary strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.log-status.success { color: #2f6b36; }
+.log-status.failed { color: #9b2c2c; }
+.log-status.pending,
+.log-status.running,
+.log-status.validating,
+.log-status.in_progress { color: #185fa5; }
+
+.deployment-task-error {
+  display: grid;
+  gap: 4px;
+  padding: 10px 13px;
+  border: 1px solid #efb7b0;
+  border-radius: 7px;
+  background: #fff1ef;
+  color: #8f1d1d;
+  font-size: 12px;
+}
+
+.deployment-task-error small { color: #6f3a34; }
+.deployment-task-error details { margin-top: 5px; }
+.deployment-task-error summary { cursor: pointer; font-weight: 650; }
+.deployment-task-error pre { max-height: 180px; overflow: auto; margin: 7px 0 0; padding: 9px; border-radius: 5px; background: #2b1614; color: #ffd9d4; font: 11px/1.45 Consolas, monospace; white-space: pre-wrap; }
+
+.deployment-console {
+  overflow: hidden;
+  border: 1px solid #252a31;
+  border-radius: 7px;
+  background: #0c1015;
+}
+
+.deployment-console-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 13px;
+  border-bottom: 1px solid #252a31;
+  background: #171c22;
+  color: #aeb7c2;
+  font: 12px Consolas, 'SF Mono', monospace;
+}
+
+.deployment-console-body {
+  min-height: 320px;
+  max-height: 520px;
+  overflow: auto;
+  padding: 14px;
+}
+
+.deployment-console-body pre {
+  margin: 0;
+  color: #dce4ed;
+  font: 12px/1.55 Consolas, 'SF Mono', monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.deployment-log-empty {
+  min-height: 280px;
+}
+
+@media (max-width: 800px) {
+  .deployment-task-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .deployment-task-summary > div:nth-child(2) {
+    border-right: 0;
+  }
+}
+
+@media (max-width: 560px) {
+  .deployment-log-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .deployment-task-picker,
+  .deployment-task-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .deployment-task-summary > div {
+    border-right: 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+}
+
+.deployment-action-bar {
+  display: flex;
+  gap: 12px;
+  padding: 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 7px;
+}
+
+.deployment-action-bar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 16px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+}
+
+.btn-primary {
+  background: var(--btn-primary-bg, #0969da);
+  color: #fff;
+}
+.btn-primary:hover { background: var(--btn-primary-hover, #0353b3); }
+
+.btn-danger {
+  background: #da3633;
+  color: #fff;
+}
+.btn-danger:hover { background: #b32624; }
+
+.deployment-action-bar button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.deployment-layout-split {
+  display: flex;
+  gap: 16px;
+  align-items: stretch;
+}
+
+.deployment-steps-panel {
+  width: 280px;
+  flex-shrink: 0;
+  border: 1px solid var(--border-default);
+  border-radius: 7px;
+  background: var(--bg-surface);
+  padding: 16px;
+}
+
+.deployment-steps-panel h3 {
+  margin: 0 0 16px 0;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.step-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.step-item.running {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.step-item.completed {
+  color: #2f6b36;
+}
+
+.step-item.failed {
+  color: #9b2c2c;
+  font-weight: 600;
+}
+
+.step-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+}
+
+.step-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+
+@media (max-width: 900px) {
+  .deployment-layout-split {
+    flex-direction: column;
+  }
+  .deployment-steps-panel {
+    width: 100%;
+  }
+}

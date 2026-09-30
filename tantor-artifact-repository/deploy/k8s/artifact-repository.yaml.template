@@ -1,0 +1,123 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tantor-artifact-repo-pvc
+  labels:
+    app: tantor-artifact-repository
+spec:
+  accessModes:
+    # ReadWriteMany if the repository runs HA across multiple replicas sharing
+    # one filesystem (NFS/CephFS). ReadWriteOnce for a single replica.
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 200Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tantor-artifact-repo-config
+data:
+  TANTOR_REPO_PATH: "/var/lib/tantor/repository"
+  TANTOR_DB_URL: "jdbc:postgresql://tantor-postgres:5432/tantor"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tantor-artifact-repository
+  labels:
+    app: tantor-artifact-repository
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tantor-artifact-repository
+  template:
+    metadata:
+      labels:
+        app: tantor-artifact-repository
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1500
+        runAsGroup: 1500
+        fsGroup: 1500
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: artifact-repository
+          # Template only: prepare-release.ps1 replaces this tag with an immutable digest.
+          image: registry.translab.io/tantor/artifact-repository:1.0.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1500
+            runAsGroup: 1500
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - containerPort: 8081
+          envFrom:
+            - configMapRef:
+                name: tantor-artifact-repo-config
+          env:
+            - name: TANTOR_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: tantor-db-credentials
+                  key: username
+            - name: TANTOR_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: tantor-db-credentials
+                  key: password
+          volumeMounts:
+            - name: repo-storage
+              mountPath: /var/lib/tantor/repository
+            - name: temporary-files
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8081
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8081
+            initialDelaySeconds: 40
+            periodSeconds: 15
+      volumes:
+        - name: repo-storage
+          persistentVolumeClaim:
+            claimName: tantor-artifact-repo-pvc
+        - name: temporary-files
+          emptyDir:
+            sizeLimit: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tantor-artifact-repository
+  labels:
+    app: tantor-artifact-repository
+spec:
+  selector:
+    app: tantor-artifact-repository
+  ports:
+    - name: http
+      port: 8081
+      targetPort: 8081
+  type: ClusterIP

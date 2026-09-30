@@ -1,0 +1,969 @@
+@import url('https://fonts.cdnfonts.com/css/satoshi');
+
+:root {
+  --bg-base: #FFFFFF;
+  --bg-surface: #FFFFFF;
+  --bg-raised: #FAF8FF;
+
+  --text-primary: #282F49;
+  --text-secondary: #5F5E5A;
+  --text-tertiary: #818181;
+
+  /* Named aliases used by Partitions, TopNavbar, etc. */
+  --text-heading: #282F49;
+  /* same as --text-primary */
+  --text-light: #FFFFFF;
+  --text-muted: #818181;
+  /* same as --text-tertiary */
+  --bg-neutral-2: #F3F0F0;
+  /* same as --border-subtle */
+
+  --accent-primary: #DF678B;
+  --accent-light: #FAE1E8;
+  --accent-border: #DF678B;
+  --accent-dark: #3E1363;
+
+  --color-success: #36AD8F;
+  --color-success-light: #DEF0D6;
+  --color-warning: #854F0B;
+  --color-warning-light: #FAEEDA;
+  --color-danger: #EF4D5F;
+  --color-danger-light: #FECBE8;
+  --color-info: #16ABC2;
+  --color-info-light: #C5EAF0;
+
+  --border-subtle: #F3F0F0;
+  --border-default: #CCCCCC;
+  --border-strong: #818181;
+
+  --font-sans: 'Satoshi', 'Inter', system-ui, -apple-system, sans-serif;
+  --font-display: 'Satoshi', 'DM Sans', system-ui, sans-serif;
+
+  /* Typography scale */
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 14px;
+  --text-md: 15px;
+  --text-lg: 18px;
+
+  /* Font-weight tokens */
+  --font-regular: 400;
+  --font-medium: 500;
+  --font-semibold: 600;
+  --font-bold: 700;
+
+  /* Spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 20px;
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.06), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+
+  --transition-fast: 120ms ease;
+  --transition-normal: 200ms ease;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--text-primary);
+}
+
+.app-container {
+  display: flex;
+  height: 100vh;
+}
+
+.main-content {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-base);
+}
+
+@media (max-width: 700px) {
+  .main-content {
+    padding: 0;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease forwards;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+}
+
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-color: #FFFFFF;
+  border: 1px solid #CCCCCC;
+  border-radius: 8px;
+  color: #282F49;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  padding: 10px 36px 10px 16px;
+  height: 40px;
+  line-height: 1.2;
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="%2371717A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>');
+  background-repeat: no-repeat;
+  background-position: right 16px center;
+  background-size: 16px;
+  cursor: pointer;
+  outline: none;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+select:focus {
+  border-color: #8E77BB;
+  box-shadow: 0 0 0 2px rgba(142, 119, 187, 0.15);
+}
+
+select:disabled {
+  background-color: #F4F4F5;
+  color: #A1A1AA;
+  cursor: not-allowed;
+}
+
+option {
+  font-family: var(--font-sans);
+  color: #282F49;
+  background-color: #FFFFFF;
+  padding: 12px;
+}
+
+/* Global interaction and surface system */
+:root {
+  --button-primary: #3E1363;
+  --button-primary-hover: #5B327F;
+  --button-primary-active: #332849;
+  --control-focus: rgba(142, 119, 187, 0.24);
+  --page-grey: #F5F6F8;
+  --surface-elevation: 0 2px 10px rgba(40, 47, 73, 0.06);
+}
+
+.main-content {
+  padding-bottom: 24px;
+  background: var(--page-grey);
+}
+
+/* Native and reusable dropdowns retain page-specific widths while sharing states. */
+select {
+  min-height: 40px;
+  border-color: var(--border-default);
+  border-radius: 8px;
+  background-color: #FFFFFF;
+  color: var(--text-primary);
+  font: 500 14px/20px var(--font-sans);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background-color var(--transition-fast);
+}
+
+select:hover:not(:disabled) {
+  border-color: #979797;
+}
+
+select:focus-visible {
+  border-color: #8E77BB;
+  box-shadow: 0 0 0 3px var(--control-focus);
+  outline: 0;
+}
+
+select:disabled {
+  border-color: #E1E7EC;
+  background-color: #F3F0F0;
+  color: #979797;
+  opacity: 1;
+}
+
+select option:checked {
+  color: #3E1363;
+  background: #FAF8FF;
+  font-weight: 600;
+}
+
+/* Shared binary tone for cluster/runtime state tags. */
+:is(.source-pill-v2,
+  .access-pill-v2,
+  .status-badge-v2,
+  .cd-status-badge,
+  .cluster-source-tag,
+  .kafka-running-badge).state-positive {
+  border-color: rgba(42, 199, 146, 0.35) !important;
+  color: #069B68 !important;
+  background: rgba(42, 199, 146, 0.25) !important;
+}
+
+:is(.source-pill-v2,
+  .access-pill-v2,
+  .status-badge-v2,
+  .cd-status-badge,
+  .cluster-source-tag,
+  .kafka-running-badge).state-negative {
+  border-color: rgba(239, 77, 95, 0.35) !important;
+  color: #EF4D5F !important;
+  background: rgba(239, 77, 95, 0.15) !important;
+}
+
+:is(.cd-status-badge, .cluster-source-tag, .kafka-running-badge).state-positive .status-dot {
+  background: #36AD8F !important;
+}
+
+:is(.cd-status-badge, .cluster-source-tag, .kafka-running-badge).state-negative .status-dot {
+  background: #EF4D5F !important;
+}
+
+:where(.ds-custom-select-trigger, .cluster-tabs-dropdown-trigger, .live-pill-container) {
+  border-color: var(--border-default) !important;
+  border-radius: 8px !important;
+  background: #FFFFFF;
+  font-family: var(--font-sans);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background-color var(--transition-fast);
+}
+
+:where(.ds-custom-select-trigger, .cluster-tabs-dropdown-trigger, .live-pill-container):hover {
+  border-color: #979797 !important;
+}
+
+:where(.ds-custom-select-trigger, .cluster-tabs-dropdown-trigger):focus-visible {
+  border-color: #8E77BB !important;
+  box-shadow: 0 0 0 3px var(--control-focus) !important;
+  outline: 0;
+}
+
+:where(.custom-select-options-wrapper, .ds-custom-select-dropdown, .cluster-tabs-dropdown-menu, .live-dropdown-menu, .cd-node-menu) {
+  z-index: 12000 !important;
+  max-height: min(280px, calc(100vh - 32px));
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid #E1E7EC !important;
+  border-radius: 12px !important;
+  background: #FFFFFF;
+  box-shadow: 0 12px 32px rgba(40, 47, 73, 0.14) !important;
+}
+
+:where(.ds-custom-select-option, .dropdown-item, .live-dropdown-item, .cd-node-option) {
+  min-height: 36px;
+  padding: 8px 12px !important;
+  border-radius: 8px !important;
+  color: #5F5E5A;
+  font: 500 14px/20px var(--font-sans);
+}
+
+:where(.ds-custom-select-option, .dropdown-item, .live-dropdown-item, .cd-node-option):hover,
+:where(.ds-custom-select-option, .dropdown-item, .live-dropdown-item, .cd-node-option).selected,
+:where(.ds-custom-select-option, .dropdown-item, .live-dropdown-item, .cd-node-option).active {
+  color: #3E1363 !important;
+  background: #FAF8FF !important;
+}
+
+/* Primary and call-to-action buttons */
+:where(button.btn-primary-action,
+  button.btn-primary,
+  button.cd-primary-btn,
+  button.ds-button.primary,
+  button.topic-button.primary,
+  button.topic-detail-button.primary,
+  button.db-btn.primary,
+  button.primary,
+  button.primary-button,
+  button.choice-action-btn.fill,
+  button.modal-card-action-btn.filled,
+  button.cd-deployment-btn.primary,
+  button.btn-apply,
+  .config-dialog-actions button.confirm) {
+  border-color: var(--button-primary) !important;
+  color: #FFFFFF !important;
+  background: var(--button-primary) !important;
+}
+
+:where(button.btn-primary-action,
+  button.btn-primary,
+  button.cd-primary-btn,
+  button.ds-button.primary,
+  button.topic-button.primary,
+  button.topic-detail-button.primary,
+  button.db-btn.primary,
+  button.primary,
+  button.primary-button,
+  button.choice-action-btn.fill,
+  button.modal-card-action-btn.filled,
+  button.cd-deployment-btn.primary,
+  button.btn-apply,
+  .config-dialog-actions button.confirm):hover:not(:disabled) {
+  border-color: var(--button-primary-hover) !important;
+  background: var(--button-primary-hover) !important;
+}
+
+:where(button.btn-primary-action,
+  button.btn-primary,
+  button.cd-primary-btn,
+  button.ds-button.primary,
+  button.topic-button.primary,
+  button.topic-detail-button.primary,
+  button.db-btn.primary,
+  button.primary,
+  button.primary-button,
+  button.choice-action-btn.fill,
+  button.modal-card-action-btn.filled,
+  button.cd-deployment-btn.primary,
+  button.btn-apply,
+  .config-dialog-actions button.confirm):active:not(:disabled) {
+  border-color: var(--button-primary-active) !important;
+  background: var(--button-primary-active) !important;
+}
+
+button:focus-visible {
+  outline: 3px solid var(--control-focus);
+  outline-offset: 2px;
+}
+
+/* Shared cluster-choice icon treatment used by every New Cluster entry point. */
+.cd-deployment-card-content .cluster-choice-icon.managed {
+  color: #818181;
+}
+
+.cd-deployment-card-content .cluster-choice-icon.existing {
+  color: #818181;
+}
+
+.cd-deployment-card-content .cluster-choice-icon {
+  transition: color var(--transition-fast);
+}
+
+.cd-deployment-card:hover .cd-deployment-card-content .cluster-choice-icon,
+.cd-deployment-card:focus-within .cd-deployment-card-content .cluster-choice-icon {
+  color: #3E1363;
+}
+
+/* Keep the choice modal header and body visually continuous—no divider seam. */
+.cd-deployment-modal>.cd-deployment-modal-header {
+  border-bottom: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Icon-only refresh controls */
+:where(button.refresh-btn,
+  button.btn-refresh,
+  button.alerts-refresh-btn,
+  button.cd-refresh-icon,
+  button.cd-details-refresh-btn,
+  button.manual-refresh-button,
+  button.message-refresh-btn,
+  button[title="Refresh"],
+  button[aria-label="Refresh"],
+  button[aria-label^="Refresh "]) {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex: 0 0 40px;
+  width: 40px !important;
+  min-width: 40px !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  gap: 10px;
+  padding: 8px !important;
+  border: 0 !important;
+  border-radius: 8px !important;
+  color: #818181 !important;
+  background: #FFFFFF !important;
+  box-shadow: none !important;
+  opacity: 1;
+  cursor: pointer;
+  transition: background-color var(--transition-fast), opacity var(--transition-fast);
+}
+
+:where(button.refresh-btn,
+  button.btn-refresh,
+  button.alerts-refresh-btn,
+  button.cd-refresh-icon,
+  button.cd-details-refresh-btn,
+  button.manual-refresh-button,
+  button.message-refresh-btn,
+  button[title="Refresh"],
+  button[aria-label="Refresh"],
+  button[aria-label^="Refresh "])>svg {
+  flex: 0 0 14px;
+  width: 14px !important;
+  height: 14px !important;
+  color: #818181 !important;
+  stroke: currentColor !important;
+}
+
+:where(button.refresh-btn,
+  button.btn-refresh,
+  button.alerts-refresh-btn,
+  button.cd-refresh-icon,
+  button.cd-details-refresh-btn,
+  button.manual-refresh-button,
+  button.message-refresh-btn,
+  button[title="Refresh"],
+  button[aria-label="Refresh"],
+  button[aria-label^="Refresh "]):hover:not(:disabled) {
+  color: #818181 !important;
+  background: rgba(255, 255, 255, 0.8) !important;
+}
+
+:where(button.refresh-btn,
+  button.btn-refresh,
+  button.alerts-refresh-btn,
+  button.cd-refresh-icon,
+  button.cd-details-refresh-btn,
+  button.manual-refresh-button,
+  button.message-refresh-btn,
+  button[title="Refresh"],
+  button[aria-label="Refresh"],
+  button[aria-label^="Refresh "]):active:not(:disabled) {
+  background: rgba(255, 255, 255, 0.68) !important;
+}
+
+:where(button.refresh-btn,
+  button.btn-refresh,
+  button.alerts-refresh-btn,
+  button.cd-refresh-icon,
+  button.cd-details-refresh-btn,
+  button.manual-refresh-button,
+  button.message-refresh-btn,
+  button[title="Refresh"],
+  button[aria-label="Refresh"],
+  button[aria-label^="Refresh "]):disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Overflow and dropdown menus must layer above cards and table rows. */
+:where(.artifact-action-menu,
+  .host-action-menu,
+  .cluster-action-menu,
+  .topic-menu,
+  .detail-action-menu,
+  .cd-role-menu,
+  .cluster-tabs-dropdown-menu,
+  .live-dropdown-menu) {
+  z-index: 15000 !important;
+  min-width: 168px;
+  max-width: min(320px, calc(100vw - 32px));
+  max-height: min(360px, calc(100vh - 32px));
+  overflow-y: auto;
+  padding: 8px !important;
+  border: 1px solid #E1E7EC !important;
+  border-radius: 10px !important;
+  background: #FFFFFF !important;
+  box-shadow: 0 14px 36px rgba(40, 47, 73, 0.16) !important;
+}
+
+:where(.artifact-action-menu,
+  .host-action-menu,
+  .cluster-action-menu,
+  .topic-menu,
+  .detail-action-menu,
+  .cd-role-menu) button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 36px;
+  gap: 8px;
+  padding: 8px 10px !important;
+  border: 0;
+  border-radius: 7px !important;
+  color: #494747;
+  background: transparent;
+  font: 500 13px/20px var(--font-sans);
+  text-align: left;
+}
+
+:where(.artifact-action-menu, .host-action-menu, .cluster-action-menu, .topic-menu, .detail-action-menu, .cd-role-menu) button:hover {
+  color: #3E1363;
+  background: #FAF8FF !important;
+}
+
+:where(.artifact-menu-anchor, .menu-anchor, .detail-menu-wrap, .cd-role-menu-wrap, .cluster-tabs-dropdown-container) {
+  position: relative;
+  z-index: 20;
+}
+
+/* Every confirmation-dialog banner uses the shared orange artwork. */
+body :is(.app-confirm-banner,
+  .confirm-modal-banner,
+  .delete-modal-banner,
+  .ds-delete-modal-banner,
+  .config-dialog-banner) {
+  background-color: #FFE1A0 !important;
+  background-image: url('./assets/orange.png') !important;
+  background-repeat: no-repeat !important;
+  background-position: center !important;
+  background-size: cover !important;
+}
+
+body :is(.app-confirm-banner,
+  .delete-modal-banner,
+  .ds-delete-modal-banner)>img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+}
+
+/* Consistent hierarchy for white content placed on the grey application canvas. */
+:where(.cluster-details-card,
+  .artifacts-page,
+  .alerts-container,
+  .audit-page,
+  .hosts-page,
+  .jobs-list-page,
+  .job-status-page,
+  .monitoring-white-box,
+  .clusters-wrapper,
+  .white-container,
+  .db-panel,
+  .table-container,
+  .table-card,
+  .settings-card,
+  .alerts-details-panel,
+  .deployment-steps-panel,
+  .summary-bar-card,
+  .job-logs-container,
+  .ds-panel,
+  .ds-kc-panel,
+  .external-panel,
+  .performance-section-card,
+  .system-resources-section-card,
+  .broker-details-card) {
+  border: 1px solid #E1E7EC;
+  border-radius: 12px;
+  background: #FFFFFF;
+  box-shadow: var(--surface-elevation);
+}
+
+:where(.table-container,
+  .clusters-table-wrap,
+  .brokers-table-container,
+  .topics-table-wrap,
+  .audit-table-container,
+  .ds-table-wrapper,
+  .job-logs-container,
+  .artifacts-list-container,
+  .versions-list,
+  .alerts-details-list,
+  .audit-table-wrap,
+  .cluster-nodes-table-wrap,
+  .overview-table-wrap,
+  .node-config-table-wrap,
+  .config-diff-list,
+  .version-list,
+  .ds-sr-subjects-panel,
+  .ds-sr-versions-panel,
+  .detail-table-wrap,
+  .topics-table-card,
+  .figma-table-body,
+  .steps-list) {
+  max-width: 100%;
+  max-height: min(70vh, 760px);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+:where(.modal, .modal-content, .topic-modal, .ds-modal, .cd-config-modal, .cd-deployment-modal-container) {
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  border-radius: 12px;
+  box-shadow: 0 20px 56px rgba(40, 47, 73, 0.2);
+}
+
+@media (max-width: 700px) {
+  .main-content {
+    padding-bottom: 16px;
+  }
+}
+
+/*
+ * Page containment
+ *
+ * White page surfaces grow with their controls and collection area. Only long
+ * tables, ledgers, logs, and lists scroll, so content remains visibly enclosed
+ * without compressing the page to the viewport.
+ */
+.main-content {
+  min-height: 0;
+  overflow: auto;
+}
+
+/* Every routed screen participates in normal document height calculation. */
+.main-content>* {
+  flex: 0 0 auto !important;
+  align-self: stretch;
+  min-width: 0;
+  max-width: 100%;
+  height: max-content !important;
+  overflow: visible;
+}
+
+:where(.cluster-details-card,
+  .artifacts-page,
+  .alerts-container,
+  .audit-page,
+  .hosts-page,
+  .jobs-list-page,
+  .job-status-page,
+  .monitoring-white-box,
+  .clusters-inventory,
+  .external-wrapper,
+  .cluster-deploy-page) {
+  flex: 0 0 auto !important;
+  align-self: stretch;
+  min-width: 0;
+  max-width: 100%;
+  height: max-content !important;
+  overflow: visible;
+}
+
+/* Keep every section in the white surface's height calculation. */
+:where(.cluster-details-card,
+  .artifacts-page,
+  .alerts-container,
+  .audit-page,
+  .hosts-page,
+  .jobs-list-page,
+  .job-status-page,
+  .monitoring-white-box,
+  .clusters-inventory,
+  .external-wrapper,
+  .cluster-deploy-page)>* {
+  flex-shrink: 0;
+}
+
+:where(.audit-table-wrap,
+  .table-container,
+  .clusters-table-wrap,
+  .external-table-wrap,
+  .brokers-table-container,
+  .topics-table-wrap,
+  .topics-table-card,
+  .ds-table-wrapper,
+  .cluster-nodes-table-wrap,
+  .overview-table-wrap,
+  .node-config-table-wrap,
+  .detail-table-wrap,
+  .artifacts-list-container > .versions-list,
+  .alerts-details-list,
+  .job-logs-container,
+  .deployment-log-stream,
+  .steps-list) {
+  width: 100%;
+  max-width: 100%;
+  max-height: min(70vh, 760px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.audit-ledger {
+  flex: 0 0 auto;
+  width: 100%;
+  border: 0;
+  border-radius: 7px !important;
+  color: #494747;
+  background: transparent;
+  font: 500 13px/20px var(--font-sans);
+  text-align: left;
+}
+
+:where(.artifact-action-menu, .host-action-menu, .cluster-action-menu, .topic-menu, .detail-action-menu, .cd-role-menu) button:hover {
+  color: #3E1363;
+  background: #FAF8FF !important;
+}
+
+:where(.artifact-menu-anchor, .menu-anchor, .detail-menu-wrap, .cd-role-menu-wrap, .cluster-tabs-dropdown-container) {
+  position: relative;
+  z-index: 20;
+}
+
+/* Every confirmation-dialog banner uses the shared orange artwork. */
+body :is(.app-confirm-banner,
+  .confirm-modal-banner,
+  .delete-modal-banner,
+  .ds-delete-modal-banner,
+  .config-dialog-banner) {
+  background-color: #FFE1A0 !important;
+  background-image: url('./assets/orange.png') !important;
+  background-repeat: no-repeat !important;
+  background-position: center !important;
+  background-size: cover !important;
+}
+
+body :is(.app-confirm-banner,
+  .delete-modal-banner,
+  .ds-delete-modal-banner)>img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+}
+
+/* Consistent hierarchy for white content placed on the grey application canvas. */
+:where(.cluster-details-card,
+  .artifacts-page,
+  .alerts-container,
+  .audit-page,
+  .hosts-page,
+  .jobs-list-page,
+  .job-status-page,
+  .monitoring-white-box,
+  .clusters-wrapper,
+  .white-container,
+  .db-panel,
+  .table-container,
+  .table-card,
+  .settings-card,
+  .alerts-details-panel,
+  .deployment-steps-panel,
+  .summary-bar-card,
+  .job-logs-container,
+  .ds-panel,
+  .ds-kc-panel,
+  .external-panel,
+  .performance-section-card,
+  .system-resources-section-card,
+  .broker-details-card) {
+  border: 1px solid #E1E7EC;
+  border-radius: 12px;
+  background: #FFFFFF;
+  box-shadow: var(--surface-elevation);
+}
+
+:where(.table-container,
+  .clusters-table-wrap,
+  .brokers-table-container,
+  .topics-table-wrap,
+  .audit-table-container,
+  .ds-table-wrapper,
+  .job-logs-container,
+  .artifacts-list-container,
+  .versions-list,
+  .alerts-details-list,
+  .audit-table-wrap,
+  .cluster-nodes-table-wrap,
+  .overview-table-wrap,
+  .node-config-table-wrap,
+  .config-diff-list,
+  .version-list,
+  .ds-sr-subjects-panel,
+  .ds-sr-versions-panel,
+  .detail-table-wrap,
+  .topics-table-card,
+  .figma-table-body,
+  .steps-list) {
+  max-width: 100%;
+  max-height: min(70vh, 760px);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+:where(.modal, .modal-content, .topic-modal, .ds-modal, .cd-config-modal, .cd-deployment-modal-container) {
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  border-radius: 12px;
+  box-shadow: 0 20px 56px rgba(40, 47, 73, 0.2);
+}
+
+@media (max-width: 700px) {
+  .main-content {
+    padding-bottom: 16px;
+  }
+}
+
+/*
+ * Page containment
+ *
+ * White page surfaces grow with their controls and collection area. Only long
+ * tables, ledgers, logs, and lists scroll, so content remains visibly enclosed
+ * without compressing the page to the viewport.
+ */
+.main-content {
+  min-height: 0;
+  overflow: auto;
+}
+
+/* Every routed screen participates in normal document height calculation. */
+.main-content>* {
+  flex: 0 0 auto !important;
+  align-self: stretch;
+  min-width: 0;
+  max-width: 100%;
+  height: max-content !important;
+  overflow: visible;
+}
+
+:where(.cluster-details-card,
+  .artifacts-page,
+  .alerts-container,
+  .audit-page,
+  .hosts-page,
+  .jobs-list-page,
+  .job-status-page,
+  .monitoring-white-box,
+  .clusters-inventory,
+  .external-wrapper,
+  .cluster-deploy-page) {
+  flex: 0 0 auto !important;
+  align-self: stretch;
+  min-width: 0;
+  max-width: 100%;
+  height: max-content !important;
+  overflow: visible;
+}
+
+/* Keep every section in the white surface's height calculation. */
+:where(.cluster-details-card,
+  .artifacts-page,
+  .alerts-container,
+  .audit-page,
+  .hosts-page,
+  .jobs-list-page,
+  .job-status-page,
+  .monitoring-white-box,
+  .clusters-inventory,
+  .external-wrapper,
+  .cluster-deploy-page)>* {
+  flex-shrink: 0;
+}
+
+:where(.audit-table-wrap,
+  .table-container,
+  .clusters-table-wrap,
+  .external-table-wrap,
+  .brokers-table-container,
+  .topics-table-wrap,
+  .topics-table-card,
+  .ds-table-wrapper,
+  .cluster-nodes-table-wrap,
+  .overview-table-wrap,
+  .node-config-table-wrap,
+  .detail-table-wrap,
+  .artifacts-list-container > .versions-list,
+  .alerts-details-list,
+  .job-logs-container,
+  .deployment-log-stream,
+  .steps-list) {
+  width: 100%;
+  max-width: 100%;
+  max-height: min(70vh, 760px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.audit-ledger {
+  flex: 0 0 auto;
+  width: 100%;
+  min-width: 0;
+  height: auto;
+  overflow: visible;
+}
+
+.audit-pagination {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+}
+
+/* =============================================================
+   Global modal overlay
+   Ensures every modal (Upload Binary, Agent Connectivity, etc.)
+   covers the FULL viewport with a blurred backdrop, regardless
+   of which page-level CSS file defines it.
+   ============================================================= */
+.modal-overlay,
+.cd-modal-overlay,
+.add-cluster-modal-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 10000 !important;
+  padding: 1rem;
+}
+
+/* Match every dialog backdrop to the Dashboard's New Cluster treatment. */
+.modal-overlay,
+.cd-modal-overlay,
+.add-cluster-modal-overlay,
+.app-confirm-backdrop,
+.topic-action-modal-backdrop,
+.cd-modal-backdrop,
+.cluster-edit-backdrop,
+.config-dialog-backdrop,
+.ds-modal-backdrop,
+.topic-modal-backdrop,
+.detail-modal-backdrop,
+.discovery-modal-backdrop,
+.monitoring-modal-backdrop {
+  background: rgba(15, 15, 30, 0.48) !important;
+  backdrop-filter: blur(4px) !important;
+  -webkit-backdrop-filter: blur(4px) !important;
+}

@@ -1,0 +1,16 @@
+Tantor External Discovery Agent v3.2.3
+======================================
+
+- Added a distinct controller JMX Exporter endpoint.
+- Broker-only records report the broker exporter port.
+- Controller-only records report the controller exporter port.
+- Combined broker+controller JVMs continue to use the broker endpoint.
+- Controller-only records no longer fall back to the broker endpoint when the
+  controller endpoint is not configured.
+- Metrics publishing now scrapes the exporter selected for each process role.
+- Ingestion rate calculation now recognizes the current JMX Exporter counter
+  names ending in messagesin_total and bytesin_total.
+- Added installer flags and environment persistence for controller JMX.
+
+Build version: 3.2.3
+Commit label: role-specific-jmx

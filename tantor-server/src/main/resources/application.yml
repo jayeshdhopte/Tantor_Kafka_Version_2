@@ -1,0 +1,106 @@
+spring:
+  config:
+    import:
+      - optional:file:.env[.properties]
+      - optional:configtree:/run/secrets/
+  application:
+    name: tantor-server
+  
+  datasource:
+    url: ${TANTOR_DB_URL}
+    username: ${TANTOR_DB_USER}
+    password: ${TANTOR_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: false
+    locations: classpath:db/migration
+    clean-disabled: true
+    clean-on-validation-error: false
+    ignore-missing-migrations: false
+    validate-on-migrate: true
+
+server:
+  port: 8443
+  # Production TLS and agent mTLS terminate at the only published endpoint,
+  # the hardened Nginx proxy. The backend port is private, and Nginx replaces
+  # (rather than appends) all forwarding headers before proxying.
+  forward-headers-strategy: framework
+
+tantor:
+  runtime:
+    environment: ${TANTOR_ENVIRONMENT}
+  agent:
+    # Transitional compatibility for installations whose agents connect
+    # directly without a client certificate or user JWT.
+    legacy-unauthenticated-enabled: ${TANTOR_AGENT_LEGACY_UNAUTHENTICATED_ENABLED:false}
+  ui:
+    # Keep disabled when browser requests are authenticated by Keycloak/JWT.
+    legacy-unauthenticated-enabled: ${TANTOR_UI_LEGACY_UNAUTHENTICATED_ENABLED:false}
+  security:
+    encryption:
+      key: ${TANTOR_ENCRYPTION_KEY}
+    truststore-dir: ${TANTOR_TRUSTSTORE_DIR:/srv/tantor/security/truststores}
+    jwt:
+      secret: ${TANTOR_JWT_SECRET}
+      expiration-ms: 86400000 # 24 hours
+      issuer: ${TANTOR_JWT_ISSUER:tantor-server}
+      audience: ${TANTOR_JWT_AUDIENCE:tantor-api}
+    oidc:
+      # Configure this in production to verify Keycloak/OIDC signatures through its issuer metadata/JWKS.
+      # TANTOR_KEYCLOAK_* names are retained as deployment-compatible aliases.
+      issuer-uri: ${TANTOR_OIDC_ISSUER_URI:${TANTOR_KEYCLOAK_ISSUER_URI:}}
+      audience: ${TANTOR_OIDC_AUDIENCE:${TANTOR_KEYCLOAK_CLIENT_ID:}}
+    local-break-glass:
+      enabled: ${TANTOR_BREAK_GLASS_ENABLED:false}
+      username: ${TANTOR_BREAK_GLASS_USERNAME:}
+  tasks:
+    claim-lease-seconds: ${TANTOR_TASK_CLAIM_LEASE_SECONDS:300}
+    max-claim-attempts: ${TANTOR_TASK_MAX_CLAIM_ATTEMPTS:3}
+  artifact-repo:
+    internal-url: ${TANTOR_REPO_INTERNAL_URL}
+    public-url: ${TANTOR_REPO_PUBLIC_URL}
+    jmx-exporter-artifact-id: ${TANTOR_JMX_EXPORTER_ARTIFACT_ID:}
+  control-plane:
+    public-url: ${TANTOR_PUBLIC_ORIGIN}
+  kafka-deployment:
+    runtime-user: ${TANTOR_KAFKA_RUNTIME_USER:}
+    runtime-group: ${TANTOR_KAFKA_RUNTIME_GROUP:}
+    java-home: ${TANTOR_KAFKA_JAVA_HOME:}
+    limit-nofile: ${TANTOR_KAFKA_LIMIT_NOFILE:100000}
+    security-mode: ${TANTOR_KAFKA_SECURITY_MODE}
+    service-prefix: ${TANTOR_KAFKA_SERVICE_PREFIX:tantor-kafka-}
+  hosts:
+    heartbeat-timeout-seconds: ${TANTOR_HOST_HEARTBEAT_TIMEOUT_SECONDS:90}
+  discovery-agent:
+    heartbeat-timeout-seconds: ${TANTOR_DISCOVERY_AGENT_HEARTBEAT_TIMEOUT_SECONDS:45}
+  external-clusters:
+    kafka-health-timeout-seconds: ${TANTOR_EXTERNAL_KAFKA_HEALTH_TIMEOUT_SECONDS:5}
+  rolling-restart:
+    max-disk-used-percent: ${TANTOR_ROLLING_RESTART_MAX_DISK_USED_PERCENT:85}
+    max-consumer-lag: ${TANTOR_ROLLING_RESTART_MAX_CONSUMER_LAG:1000000}
+    health-timeout-seconds: ${TANTOR_ROLLING_RESTART_HEALTH_TIMEOUT_SECONDS:300}
+    health-poll-seconds: ${TANTOR_ROLLING_RESTART_HEALTH_POLL_SECONDS:10}
+    stable-samples: ${TANTOR_ROLLING_RESTART_STABLE_SAMPLES:2}
+  monitoring:
+    mode: ${TANTOR_MONITORING_MODE}
+    prometheus-url: ${TANTOR_PROMETHEUS_URL:}
+    grafana-url: ${TANTOR_GRAFANA_URL:}
+    grafana-datasource-uid: ${TANTOR_GRAFANA_DATASOURCE_UID:}
+    grafana-username: ${TANTOR_GRAFANA_USERNAME:}
+    grafana-password: ${TANTOR_GRAFANA_PASSWORD:}
+    grafana-skip-tls-validation: ${TANTOR_GRAFANA_SKIP_TLS_VALIDATION:false}
+    tls-ca-file: ${TANTOR_MONITORING_TLS_CA_FILE:}
+    exporter-host: ${TANTOR_MONITORING_EXPORTER_HOST:}
+    kafka-exporter-port-base: ${TANTOR_KAFKA_EXPORTER_PORT_BASE:9308}
+    jmx-exporter-port: ${TANTOR_JMX_EXPORTER_PORT:7071}
+    controller-jmx-exporter-port: ${TANTOR_CONTROLLER_JMX_EXPORTER_PORT:7072}

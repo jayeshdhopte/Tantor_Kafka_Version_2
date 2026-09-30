@@ -1,0 +1,223 @@
+.brokers-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-height: 100%;
+}
+
+.brokers-overview-gradient {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
+}
+
+.figma-card {
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0px 2px 8px rgba(0, 0, 0, 0.02);
+}
+
+.figma-card .card-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  margin-bottom: 0;
+}
+
+.card-header .label {
+  font-family: 'Satoshi', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: #818181;
+}
+
+.card-body {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.card-body .value {
+  font-family: 'Satoshi', sans-serif;
+  font-size: 24px;
+  font-weight: 700;
+  color: #23252D;
+  line-height: 1;
+}
+
+.card-body .subtext {
+  font-family: 'Satoshi', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: #23252D;
+}
+
+.brokers-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.brokers-list-title {
+  margin: 0;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  color: #23252D;
+}
+
+.figma-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.search-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-icon {
+  position: absolute;
+  left: 10px;
+  color: #818181;
+}
+
+.search-wrapper .search-input {
+  width: 240px;
+  background: #ffffff;
+  border: 1px solid #CCCCCC;
+  color: #23252D;
+  padding: 8px 12px 8px 34px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: 'Satoshi', sans-serif;
+  outline: none;
+}
+
+.search-input::placeholder {
+  color: #818181;
+}
+
+.role-select {
+  background: #ffffff;
+  border: 1px solid #CCCCCC;
+  color: #23252D;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: 'Satoshi', sans-serif;
+  outline: none;
+}
+
+.brokers-table-container {
+  overflow: auto;
+  border: 1px solid #CCCCCC;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.data-table {
+  width: 100%;
+  min-width: 900px;
+  border-collapse: collapse;
+}
+
+.data-table th {
+  padding: 16px;
+  background: #F9F9F9;
+  border-bottom: 1px solid #CCCCCC;
+  color: #332849;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.data-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.data-table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid #CCCCCC;
+  background: #FFFFFF;
+  color: #23252D;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.data-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.broker-id-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.role-badge {
+  display: inline-flex;
+  padding: 4px 8px;
+  background: #F2F2F2;
+  border-radius: 100px;
+  color: #818181;
+  font-size: 12px;
+}
+
+.figma-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.metric-val {
+  font-size: 12px;
+  font-weight: 500;
+  color: #23252D;
+}
+
+.progress-bar-container {
+  height: 4px;
+  background: #EBEBEB;
+  border-radius: 2px;
+  overflow: hidden;
+  width: 80px;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: #3E1363;
+}
+.broker-metric-level {
+  display: block;
+  color: #818181;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 15px;
+}
+
+.broker-metric-status {
+  display: inline-flex;
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.broker-metric-status.stale {
+  background: #FFF7ED;
+  color: #C2410C;
+}

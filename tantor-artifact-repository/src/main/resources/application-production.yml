@@ -1,0 +1,2 @@
+# Production values are supplied by deployment. This overlay intentionally
+# contains no endpoint or filesystem fallbacks.
