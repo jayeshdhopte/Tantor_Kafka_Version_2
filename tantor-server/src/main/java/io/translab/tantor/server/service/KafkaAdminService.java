@@ -736,6 +736,7 @@ public class KafkaAdminService {
                     Map<String, Object> details = new HashMap<>();
                     details.put("value", entry.value());
                     details.put("isReadOnly", entry.isReadOnly());
+                    details.put("source", entry.source().name());
                     brokerConf.put(entry.name(), details);
                 });
                 result.put(Integer.parseInt(res.name()), brokerConf);

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { GitCompare, Loader2, RefreshCw, Settings, ShieldCheck } from 'lucide-react';
+import { Check, GitCompare, Loader2, Plus, RefreshCw, Settings, ShieldCheck, Trash2 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import './ConfigChange.css';
 
 interface Service { hostId: string; hostAddress: string; role: string; nodeId: number; serviceName?: string }
-interface ConfigPayload { serviceTopology?: Service[]; dynamicConfigs?: Record<string, Record<string, { value: string | null; isReadOnly: boolean }>>; staticConfigs?: { configFiles?: Array<{ nodeId?: number; properties?: Record<string, unknown> }> } }
+interface ConfigPayload { serviceTopology?: Service[]; dynamicConfigs?: Record<string, Record<string, { value: string | null; isReadOnly: boolean; source?: string }>>; staticConfigs?: { configFiles?: Array<{ nodeId?: number; properties?: Record<string, unknown> }> } }
 interface PreviewTarget { nodeId: number; oldValue: string | null; newValue: string }
 interface Preview { classification: string; key: string; targets: PreviewTarget[]; healthy: boolean; healthFailures: Record<string, string>; clusterLocked: boolean }
 const protectedKeys = new Set(['node.id', 'broker.id', 'process.roles', 'log.dirs', 'metadata.log.dir', 'listeners', 'advertised.listeners', 'controller.quorum.voters', 'controller.quorum.bootstrap.servers', 'inter.broker.listener.name', 'cluster.id', 'zookeeper.connect']);
@@ -22,6 +22,10 @@ export function ConfigChange() {
   const [selected, setSelected] = useState<number[]>([]);
   const [key, setKey] = useState('');
   const [value, setValue] = useState('');
+  const [draftValues, setDraftValues] = useState<Record<string, string>>({});
+  const [removedKeys, setRemovedKeys] = useState<string[]>([]);
+  const [addedKeys, setAddedKeys] = useState<string[]>([]);
+  const [propertyToAdd, setPropertyToAdd] = useState('');
   const [staticKey, setStaticKey] = useState('');
   const [staticValue, setStaticValue] = useState('');
   const [staticPreview, setStaticPreview] = useState<Preview | null>(null);
@@ -67,22 +71,29 @@ export function ConfigChange() {
       return entry && !entry.isReadOnly && !protectedKeys.has(name) && !/(password|secret|token|jaas|credential|keystore|truststore)/i.test(name);
     })).sort();
   }, [payload, role, scope, ids, selected]);
-  const currentBrokerValues = key ? targetIds.map(nodeId => ({
+  const visibleKeys = allKeys.filter(name => !removedKeys.includes(name) && (addedKeys.includes(name)
+    || targetIds.some(nodeId => {
+      const source = payload?.dynamicConfigs?.[String(nodeId)]?.[name]?.source;
+      return !source || source !== 'DEFAULT_CONFIG';
+    })));
+  const addableKeys = allKeys.filter(name => !visibleKeys.includes(name));
+  const brokerValues = (name: string) => targetIds.map(nodeId => ({
     nodeId,
-    value: payload?.dynamicConfigs?.[String(nodeId)]?.[key]?.value ?? null,
-  })) : [];
+    value: payload?.dynamicConfigs?.[String(nodeId)]?.[name]?.value ?? null,
+  }));
 
   const changeRequest = { role, scope, targetNodeIds: scope === 'ALL' ? ids : selected, key, value };
-  const requestPreview = async () => {
+  const requestPreview = async (candidateKey = key, candidateValue = value) => {
     if (!id) return;
     setBusy('preview'); setError(''); setPreview(null);
     try {
       const response = await fetch(`/api/v1/clusters/${id}/config/change/preview`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(changeRequest),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...changeRequest, key: candidateKey, value: candidateValue }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.message || 'Preview failed.');
-      setPreview(result as Preview);
+      setKey(candidateKey); setValue(candidateValue); setPreview(result as Preview);
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Preview failed.'); }
     finally { setBusy(''); }
   };
@@ -143,9 +154,23 @@ export function ConfigChange() {
     {error && <div className="cc-error" role="alert">{error}</div>}
     {busy === 'load' && <div className="cc-loading"><Loader2 className="spin" /> Loading live configuration…</div>}
     {payload && <>
-      <section className="cc-card"><div className="cc-section-heading"><span>1</span><div><h3>Select service role</h3><p>Broker and controller changes use separate target lists.</p></div></div><div className="cc-role-grid"><button className={role === 'BROKER' ? 'active' : ''} onClick={() => updateRole('BROKER')}>Brokers <small>{(payload.serviceTopology || []).filter(item => item.role.toLowerCase().includes('broker')).length} services</small></button><button className={role === 'CONTROLLER' ? 'active' : ''} onClick={() => updateRole('CONTROLLER')}>Controllers <small>{(payload.serviceTopology || []).filter(item => item.role.toLowerCase().includes('controller')).length} services</small></button></div></section>
-      <section className="cc-card"><div className="cc-section-heading"><span>2</span><div><h3>Select targets</h3><p>Choose all {role.toLowerCase()}s or only specific nodes.</p></div></div><div className="cc-scope"><label><input type="radio" checked={scope === 'ALL'} onChange={() => { setScope('ALL'); setPreview(null); setStaticPreview(null); }} /> All {role.toLowerCase()}s</label><label><input type="radio" checked={scope === 'SPECIFIC'} onChange={() => { setScope('SPECIFIC'); setPreview(null); setStaticPreview(null); }} /> Specific {role.toLowerCase()}s</label></div><div className="cc-target-list">{services.length === 0 ? <p>No {role.toLowerCase()} services were found in this cluster.</p> : services.map(service => <label key={`${service.nodeId}-${service.hostId}`}><input type="checkbox" checked={scope === 'ALL' || selected.includes(service.nodeId)} disabled={scope === 'ALL'} onChange={() => toggle(service.nodeId)} /><span><strong>Node {service.nodeId}</strong><small>{service.hostAddress || service.hostId} · {service.role}</small></span></label>)}</div></section>
-      {role === 'BROKER' ? <section className="cc-card"><div className="cc-section-heading"><span>3</span><div><h3>Set a dynamic broker property</h3><p>Only properties Kafka reports as dynamically editable on every target are offered. Changes do not restart Kafka.</p></div></div><div className="cc-property-grid"><label>Property<select value={key} onChange={event => { setKey(event.target.value); setPreview(null); }}><option value="">Select a property</option>{allKeys.map(name => <option key={name} value={name}>{name}</option>)}</select></label></div>{key && <div className="cc-current-values"><strong>Current value from Kafka</strong><p>Values shown for the selected brokers. Refresh topology to load them again.</p><div className="cc-current-list">{currentBrokerValues.map(target => <div key={target.nodeId}><span>Broker {target.nodeId}</span><code>{target.value ?? 'Unset'}</code></div>)}</div></div>}<div className="cc-property-grid"><label>New value<input value={value} onChange={event => { setValue(event.target.value); setPreview(null); }} placeholder="Enter new property value" /></label></div><button className="cc-primary" disabled={!canManage || !key || (scope === 'SPECIFIC' && selected.length === 0) || !!busy} onClick={() => void requestPreview()}><GitCompare size={16} /> Preview and precheck</button>{preview && <div className="cc-preview"><h4><ShieldCheck size={17} /> Change preview · {preview.classification}</h4><div className="cc-preview-table"><div><strong>Broker</strong><strong>Current value</strong><strong>New value</strong></div>{preview.targets.map(target => <div key={target.nodeId}><span>{target.nodeId}</span><code>{target.oldValue ?? 'Unset'}</code><code>{target.newValue}</code></div>)}</div><p>Cluster health: <strong>{preview.healthy ? 'Passed' : 'Failed'}</strong>{preview.clusterLocked ? ' · Another cluster job is active' : ''}</p>{!preview.healthy && <p className="cc-error">{Object.values(preview.healthFailures).join('; ')}</p>}<button className="cc-primary" disabled={!canManage || !preview.healthy || preview.clusterLocked || !!busy} onClick={() => void apply()}>{busy === 'apply' ? 'Queueing…' : 'Apply to selected brokers'}</button></div>}</section> : <section className="cc-card"><div className="cc-section-heading"><span>3</span><div><h3>Controller configuration</h3><p>Choose a property, review every selected node and start a controlled rolling change.</p></div></div>{staticControls()}</section>}
+      <section className="cc-card"><div className="cc-section-heading"><span>1</span><div><h3>Select service role</h3><p>Broker and controller changes use separate target lists.</p></div></div><div className="cc-role-grid"><button className={role === 'BROKER' ? 'active' : ''} disabled={!!busy} onClick={() => updateRole('BROKER')}>Brokers <small>{(payload.serviceTopology || []).filter(item => item.role.toLowerCase().includes('broker')).length} services</small></button><button className={role === 'CONTROLLER' ? 'active' : ''} disabled={!!busy} onClick={() => updateRole('CONTROLLER')}>Controllers <small>{(payload.serviceTopology || []).filter(item => item.role.toLowerCase().includes('controller')).length} services</small></button></div></section>
+      <section className="cc-card"><div className="cc-section-heading"><span>2</span><div><h3>Select targets</h3><p>Choose all {role.toLowerCase()}s or only specific nodes.</p></div></div><div className="cc-scope"><label><input type="radio" disabled={!!busy} checked={scope === 'ALL'} onChange={() => { setScope('ALL'); setPreview(null); setStaticPreview(null); }} /> All {role.toLowerCase()}s</label><label><input type="radio" disabled={!!busy} checked={scope === 'SPECIFIC'} onChange={() => { setScope('SPECIFIC'); setPreview(null); setStaticPreview(null); }} /> Specific {role.toLowerCase()}s</label></div><div className="cc-target-list">{services.length === 0 ? <p>No {role.toLowerCase()} services were found in this cluster.</p> : services.map(service => <label key={`${service.nodeId}-${service.hostId}`}><input type="checkbox" checked={scope === 'ALL' || selected.includes(service.nodeId)} disabled={scope === 'ALL' || !!busy} onChange={() => toggle(service.nodeId)} /><span><strong>Node {service.nodeId}</strong><small>{service.hostAddress || service.hostId} · {service.role}</small></span></label>)}</div></section>
+      {role === 'BROKER' ? <section className="cc-card">
+        <div className="cc-section-heading"><span>3</span><div><h3>Set dynamic broker properties</h3><p>Configured properties are shown below. Add another editable property, enter a new value and click the tick to preview and precheck it.</p></div></div>
+        <div className="cc-table-wrap"><table className="cc-property-table">
+          <thead><tr><th>Property</th><th>Current value</th><th>New value</th><th>Actions</th></tr></thead>
+          <tbody>{visibleKeys.map(name => <tr key={name} className={preview?.key === name ? 'cc-reviewed-row' : ''}>
+            <td><code>{name}</code></td>
+            <td><div className="cc-value-list">{brokerValues(name).map(target => <div key={target.nodeId}><span>Broker {target.nodeId}</span><code>{target.value === null ? 'Unset' : target.value === '' ? '(Empty)' : target.value}</code></div>)}</div></td>
+            <td><input aria-label={`New value for ${name}`} value={draftValues[name] ?? ''} disabled={!canManage || !!busy} onChange={event => { setDraftValues(current => ({ ...current, [name]: event.target.value })); if (key === name) setPreview(null); }} placeholder="Enter new value" /></td>
+            <td><div className="cc-row-actions"><button type="button" title={`Review ${name} and run precheck`} aria-label={`Review ${name} and run precheck`} disabled={!canManage || targetIds.length === 0 || !!busy} onClick={() => void requestPreview(name, draftValues[name] ?? '')}><Check size={17} /></button><button type="button" title={`Remove ${name} from this view`} aria-label={`Remove ${name} from this view`} disabled={!canManage || !!busy} onClick={() => { setRemovedKeys(current => [...current, name]); setDraftValues(current => { const next = { ...current }; delete next[name]; return next; }); if (key === name) setPreview(null); }}><Trash2 size={16} /></button></div></td>
+          </tr>)}</tbody>
+        </table></div>
+        {visibleKeys.length === 0 && <p className="cc-empty-properties">No configured properties to show. Use Add property to choose an editable Kafka property.</p>}
+        {canManage && <div className="cc-add-property"><select aria-label="Property to add" disabled={!!busy} value={propertyToAdd} onChange={event => setPropertyToAdd(event.target.value)}><option value="">Select a property to add</option>{addableKeys.map(name => <option key={name} value={name}>{name}</option>)}</select><button type="button" disabled={!addableKeys.includes(propertyToAdd) || !!busy} onClick={() => { setAddedKeys(current => [...current, propertyToAdd]); setRemovedKeys(current => current.filter(name => name !== propertyToAdd)); setPropertyToAdd(''); }}><Plus size={16} /> Add property</button></div>}
+        {preview && <div className="cc-preview"><h4><ShieldCheck size={17} /> Change preview · {preview.key} · {preview.classification}</h4><div className="cc-preview-table"><div><strong>Broker</strong><strong>Current value</strong><strong>New value</strong></div>{preview.targets.map(target => <div key={target.nodeId}><span>{target.nodeId}</span><code>{target.oldValue ?? 'Unset'}</code><code>{target.newValue}</code></div>)}</div><p>Cluster health: <strong>{preview.healthy ? 'Passed' : 'Failed'}</strong>{preview.clusterLocked ? ' · Another cluster job is active' : ''}</p>{!preview.healthy && <p className="cc-error">{Object.values(preview.healthFailures).join('; ')}</p>}<button className="cc-primary" disabled={!canManage || !preview.healthy || preview.clusterLocked || !!busy} onClick={() => void apply()}>{busy === 'apply' ? 'Queueing…' : 'Apply to selected brokers'}</button></div>}
+      </section> : <section className="cc-card"><div className="cc-section-heading"><span>3</span><div><h3>Controller configuration</h3><p>Choose a property, review every selected node and start a controlled rolling change.</p></div></div>{staticControls()}</section>}
       {role === 'BROKER' && <section className="cc-card"><div className="cc-section-heading"><span>4</span><div><h3>Broker properties requiring restart</h3><p>File changes are backed up and applied one node at a time, with Kafka health verification after each restart.</p></div></div>{staticControls()}</section>}
     </>}
   </div>;

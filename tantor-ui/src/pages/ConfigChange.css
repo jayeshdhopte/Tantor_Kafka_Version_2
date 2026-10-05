@@ -26,6 +26,28 @@
 .cc-current-list { display: grid; gap: 5px; }
 .cc-current-list > div { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 12px; padding: 7px 0; border-top: 1px solid #e8dff0; }
 .cc-current-list code { overflow-wrap: anywhere; }
+.cc-table-wrap { max-height: 540px; overflow: auto; border: 1px solid #e7e1eb; border-radius: 9px; }
+.cc-property-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
+.cc-property-table th { position: sticky; top: 0; z-index: 1; background: #f7f4f9; color: #282f49; }
+.cc-property-table th, .cc-property-table td { padding: 11px 12px; border-bottom: 1px solid #eee9f1; vertical-align: middle; }
+.cc-property-table th:nth-child(1) { width: 28%; }
+.cc-property-table th:nth-child(2) { width: 30%; }
+.cc-property-table th:nth-child(3) { width: 32%; }
+.cc-property-table th:nth-child(4) { width: 10%; }
+.cc-property-table td code { overflow-wrap: anywhere; }
+.cc-property-table input, .cc-add-property select { width: 100%; box-sizing: border-box; border: 1px solid #dcd9e2; background: white; padding: 9px 10px; border-radius: 7px; font: inherit; }
+.cc-reviewed-row { background: #faf5fd; }
+.cc-value-list { display: grid; gap: 5px; }
+.cc-value-list > div { display: flex; gap: 8px; align-items: baseline; }
+.cc-value-list span { color: #747786; white-space: nowrap; }
+.cc-row-actions { display: flex; gap: 5px; }
+.cc-row-actions button { display: grid; place-items: center; border: 1px solid #e5dbea; color: #612582; background: #fff; border-radius: 7px; width: 31px; height: 31px; cursor: pointer; }
+.cc-row-actions button:last-child { color: #b83b4d; }
+.cc-row-actions button:disabled, .cc-add-property button:disabled { opacity: .5; cursor: not-allowed; }
+.cc-add-property { display: flex; gap: 9px; margin-top: 14px; }
+.cc-add-property select { max-width: 360px; }
+.cc-add-property button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #e2d3eb; border-radius: 7px; padding: 8px 12px; color: #612582; background: #faf5fd; cursor: pointer; white-space: nowrap; }
+.cc-empty-properties { color: #747786; font-size: 13px; }
 .cc-primary { display: inline-flex; gap: 8px; align-items: center; background: #4c1d6f; border: 1px solid #4c1d6f; color: white; padding: 10px 14px; border-radius: 8px; cursor: pointer; font-weight: 700; }
 .cc-primary:disabled { opacity: .5; cursor: not-allowed; }
 .cc-preview { margin-top: 20px; padding: 17px; background: #faf8fc; border: 1px solid #e8dff0; border-radius: 9px; }
@@ -37,4 +59,4 @@
 .cc-editor-targets { display: flex; gap: 9px; flex-wrap: wrap; }
 .cc-editor-targets button, .cc-static-link button { color: #64258a; background: #faf5fd; border: 1px solid #e3d1ec; padding: 8px 10px; border-radius: 7px; cursor: pointer; }
 .cc-static-link { font-size: 13px; color: #747786; }
-@media (max-width: 720px) { .cc-page-header { flex-direction: column; } .cc-role-grid, .cc-target-list, .cc-property-grid { grid-template-columns: 1fr; } }
+@media (max-width: 720px) { .cc-page-header { flex-direction: column; } .cc-role-grid, .cc-target-list, .cc-property-grid { grid-template-columns: 1fr; } .cc-property-table { min-width: 700px; } .cc-add-property { flex-direction: column; } .cc-add-property select { max-width: none; } }
