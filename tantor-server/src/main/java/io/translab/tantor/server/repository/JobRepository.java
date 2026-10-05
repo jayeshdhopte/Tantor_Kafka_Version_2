@@ -15,6 +15,9 @@ import java.util.UUID;
 public interface JobRepository extends JpaRepository<Job, UUID> {
     List<Job> findByStatus(JobStatus status);
     List<Job> findAllByOrderByCreatedAtDesc();
+    List<Job> findByResourceKeyAndStatusIn(String resourceKey, List<JobStatus> statuses);
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    List<Job> findByStatusOrderByCreatedAtAsc(JobStatus status);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<Job> findFirstByStatusOrderByCreatedAtAsc(JobStatus status);

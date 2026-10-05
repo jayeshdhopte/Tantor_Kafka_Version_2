@@ -20,7 +20,11 @@ public class AgentTaskAwaiter {
     private long timeoutSeconds;
 
     public Task await(UUID taskId) {
-        Instant deadline = Instant.now().plus(Duration.ofSeconds(timeoutSeconds));
+        return await(taskId, timeoutSeconds);
+    }
+
+    public Task await(UUID taskId, long limitSeconds) {
+        Instant deadline = Instant.now().plus(Duration.ofSeconds(limitSeconds));
         while (Instant.now().isBefore(deadline)) {
             Task task = taskRepository.findById(taskId)
                     .orElseThrow(() -> new RuntimeException("Agent task not found: " + taskId));

@@ -1,5 +1,5 @@
 import { Download, RefreshCw, Loader2, Save, UploadCloud, X, Plus, Trash2, Server, GitCompare, FileCheck } from 'lucide-react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { usePermissions } from '../hooks/usePermissions';
@@ -73,6 +73,7 @@ const editableVersionStatuses = new Set(['VALIDATED', 'APPROVED', 'FAILED']);
 export function InternalConfigEditor() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { canManage } = usePermissions();
   const [payload, setPayload] = useState<ConfigPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -83,7 +84,7 @@ export function InternalConfigEditor() {
   const [draftProperties, setDraftProperties] = useState<Record<string, string>>({});
   const [newKey, setNewKey] = useState('');
   const [newValue, setNewValue] = useState('');
-  const [restart, setRestart] = useState(true);
+  const restart = true;
   const approvalRequired = false;
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [versions, setVersions] = useState<ConfigVersion[]>([]);
@@ -104,6 +105,15 @@ export function InternalConfigEditor() {
   useEffect(() => { void (async () => { await fetchConfigs(); })(); }, [fetchConfigs]);
 
   const files = payload?.staticConfigs.configFiles || [];
+  useEffect(() => {
+    const requestedNodeId = Number(new URLSearchParams(location.search).get('nodeId'));
+    if (!requestedNodeId) return;
+    const match = payload?.staticConfigs.configFiles?.find(file => file.nodeId === requestedNodeId);
+    if (match) Promise.resolve().then(() => {
+      setSelectedHostId(match.hostId || '');
+      setSelectedFileId(match.id);
+    });
+  }, [location.search, payload]);
   const hosts = useMemo(() => {
     const unique = new Map<string, { id: string; address: string; services: number }>();
     const topo = payload?.serviceTopology || [];
@@ -259,9 +269,7 @@ export function InternalConfigEditor() {
       void performVersionAction(version, action);
       return;
     }
-    const message = restart
-      ? `Apply configuration v${version.configVersion} and perform a controlled rolling service restart? Kafka on the affected node will be restarted and verified by the job.`
-      : `Apply configuration v${version.configVersion} without restarting Kafka? Static properties will not become active until a later restart.`;
+    const message = `Apply configuration v${version.configVersion} and perform a controlled service restart? Kafka on the affected node will be restarted and verified by the job.`;
     setDialog({
       message,
       cancelLabel: 'Cancel',
@@ -395,7 +403,7 @@ export function InternalConfigEditor() {
           <div className="node-config-editor-head">
             <div><h3>{selectedFile.label}</h3><p>{selectedFile.path}</p></div>
             <div className="config-options">
-              {canManage && <label><input type="checkbox" checked={restart} onChange={event => { setRestart(event.target.checked); setPreview(null); }} /> Restart after apply</label>}
+              {canManage && <span>Controlled restart is required for versioned file changes.</span>}
             </div>
           </div>
 

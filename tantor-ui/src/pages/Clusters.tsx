@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Network, RefreshCw, Trash2, ExternalLink, Plus, MoreVertical } from 'lucide-react';
+import { Network, RefreshCw, Trash2, ExternalLink, Plus, MoreVertical, Settings } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { AnchoredMenu } from '../components/AnchoredMenu';
 import { AddClusterServicesModal } from '../components/AddClusterServicesModal';
+import { ConfigChangeEntryModal } from '../components/ConfigChangeEntryModal';
 import { usePermissions } from '../hooks/usePermissions';
 import { confirmAction, notifyAction } from '../components/confirmUtils';
 import { clusterStatusTone } from '../utils/clusterStatusTone';
@@ -52,11 +54,13 @@ interface ClusterInfo {
 const CLUSTER_HEALTH_REFRESH_MS = 15000;
 
 export function Clusters() {
+  const navigate = useNavigate();
   const { canManage } = usePermissions();
   const [clusters, setClusters] = useState<ClusterInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [showDeploymentModal, setShowDeploymentModal] = useState(false);
   const [servicesCluster, setServicesCluster] = useState<ClusterInfo | null>(null);
+  const [configCluster, setConfigCluster] = useState<ClusterInfo | null>(null);
   const [servicesMenu, setServicesMenu] = useState<{ cluster: ClusterInfo; anchor: HTMLElement } | null>(null);
 
   const refreshClusterHealth = useCallback((items: ClusterInfo[]) => {
@@ -465,6 +469,8 @@ export function Clusters() {
             ? !['DELETED', 'DELETING'].includes(servicesMenu.cluster.status)
             : servicesMenu.cluster.status === 'SUCCESS') &&
             <button role="menuitem" autoFocus onClick={() => { setServicesCluster(servicesMenu.cluster); setServicesMenu(null); }}>Add services to this cluster</button>}
+          {!['DELETED', 'DELETING'].includes(servicesMenu.cluster.status) &&
+            <button role="menuitem" onClick={() => { setConfigCluster(servicesMenu.cluster); setServicesMenu(null); }}><Settings size={15} /> Configuration change</button>}
           <button role="menuitem" className="danger" onClick={event => {
             const { id, name } = servicesMenu.cluster;
             setServicesMenu(null);
@@ -473,6 +479,11 @@ export function Clusters() {
         </div>
       </AnchoredMenu>}
       {servicesCluster && <AddClusterServicesModal cluster={servicesCluster} onClose={() => setServicesCluster(null)} />}
+      {configCluster && <ConfigChangeEntryModal cluster={configCluster} onClose={() => setConfigCluster(null)} onContinue={() => {
+        const clusterId = configCluster.id;
+        setConfigCluster(null);
+        navigate(`/clusters/${clusterId}/config-change`);
+      }} />}
       {showDeploymentModal && createPortal(
         <div className="cd-modal-overlay" onClick={() => setShowDeploymentModal(false)}>
           <div className="cd-deployment-modal" onClick={e => e.stopPropagation()}>

@@ -123,7 +123,8 @@ public class RollingRestartHealthService {
         for (String hostId : requiredHostIds) {
             Host host = hostRepository.findById(hostId).orElse(null);
             if (host == null || host.getLastHeartbeat() == null || host.getLastHeartbeat().isBefore(cutoff)
-                    || !"ONLINE".equalsIgnoreCase(host.getStatus())) {
+                    || (!"ONLINE".equalsIgnoreCase(host.getStatus())
+                        && !"OCCUPIED".equalsIgnoreCase(host.getStatus()))) {
                 unavailable.add(hostId);
                 continue;
             }

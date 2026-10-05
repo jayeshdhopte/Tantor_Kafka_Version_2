@@ -11,6 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Set;
 
 @Component
 @RequiredArgsConstructor
@@ -24,6 +25,7 @@ public class ConfigChangeJobHandler implements JobHandler {
     private final ClusterRepository clusterRepository;
     private final ExternalClusterService externalClusterService;
     private final ObjectMapper objectMapper;
+    private final RollingRestartHealthService health;
 
     @Override
     public boolean supports(JobType type) {
@@ -42,6 +44,11 @@ public class ConfigChangeJobHandler implements JobHandler {
             try {
                 if (step.getStatus() == JobStepStatus.IN_PROGRESS && step.getAgentTaskId() != null) {
                     Task completed = taskAwaiter.await(step.getAgentTaskId());
+                    if ("patch_service".equals(payload.get("operation"))) {
+                        waitForHealth(clusterId, required(payload, "hostId"));
+                        assertRoleSafety(clusterId, required(payload, "role").toLowerCase(),
+                                Integer.parseInt(required(payload, "nodeId")));
+                    }
                     jobService.completeStep(step.getId(), completed.getLogOutput());
                     continue;
                 }
@@ -51,10 +58,6 @@ public class ConfigChangeJobHandler implements JobHandler {
             } catch (Exception e) {
                 if (versionId != null) configVersionService.markFailed(versionId);
                 jobService.failStep(step.getId(), e.getMessage());
-                clusterRepository.findById(clusterId).ifPresent(cluster -> {
-                    cluster.setStatus("FAILED");
-                    clusterRepository.save(cluster);
-                });
                 throw e;
             }
         }
@@ -108,6 +111,35 @@ public class ConfigChangeJobHandler implements JobHandler {
     @SuppressWarnings("unchecked")
     private void executeStep(UUID clusterId, JobStep step, Map<String, Object> payload, boolean rollback) {
         String operation = String.valueOf(payload.getOrDefault("operation", "service"));
+        if ("patch_service".equals(operation)) {
+            if (!Boolean.parseBoolean(String.valueOf(payload.getOrDefault("restart", true)))) {
+                throw new IllegalStateException("A versioned file change must restart its Kafka service.");
+            }
+            String role = required(payload, "role").toLowerCase();
+            if (role.contains("broker_controller") || role.contains("broker+controller")) {
+                throw new IllegalStateException("Combined broker/controller processes are not eligible for role-only rolling restart.");
+            }
+            assertRoleSafety(clusterId, role, Integer.parseInt(required(payload, "nodeId")));
+            waitForHealth(clusterId, required(payload, "hostId"));
+            @SuppressWarnings("unchecked")
+            Map<String, Object> changes = (Map<String, Object>) payload.get("changes");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> expected = (Map<String, Object>) payload.get("expected");
+            if (changes == null || changes.isEmpty() || expected == null) {
+                throw new IllegalStateException("Version has no verified property diff.");
+            }
+            UUID taskId = deploymentService.patchKafkaConfig(
+                    clusterId, required(payload, "hostId"), role, required(payload, "nodeId"),
+                    String.valueOf(payload.getOrDefault("configJson", "{}")), required(payload, "configPath"),
+                    rollback ? expected : changes, rollback ? changes : expected,
+                    true, String.valueOf(payload.getOrDefault("configVersion", "unversioned")));
+            jobService.attachAgentTask(step.getId(), taskId);
+            Task task = taskAwaiter.await(taskId);
+            jobService.appendStepLog(step.getId(), task.getLogOutput());
+            waitForHealth(clusterId, required(payload, "hostId"));
+            assertRoleSafety(clusterId, role, Integer.parseInt(required(payload, "nodeId")));
+            return;
+        }
         if ("dynamic".equals(operation)) {
             String key = required(payload, "configKey");
             if (rollback) {
@@ -192,5 +224,49 @@ public class ConfigChangeJobHandler implements JobHandler {
             throw new IllegalArgumentException("Missing configuration payload field: " + key);
         }
         return String.valueOf(value);
+    }
+
+    private void waitForHealth(UUID clusterId, String hostId) {
+        int expectedBrokers = clusterRepository.findWithServicesById(clusterId)
+                .map(cluster -> (int) cluster.getServices().stream()
+                        .filter(service -> service.getRole() != null && service.getRole().contains("broker"))
+                        .count()).orElse(1);
+        String lastReason = "Kafka health did not recover";
+        for (int attempt = 0; attempt < 45; attempt++) {
+            var snapshot = health.inspect(clusterId, Math.max(1, expectedBrokers), Set.of(hostId));
+            if (snapshot.healthy()) return;
+            lastReason = snapshot.failureReason();
+            try { Thread.sleep(2000); }
+            catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("Interrupted while verifying Kafka health", e);
+            }
+        }
+        throw new IllegalStateException("Kafka health verification failed: " + lastReason);
+    }
+
+    private void assertRoleSafety(UUID clusterId, String role, int nodeId) {
+        var cluster = clusterRepository.findWithServicesById(clusterId)
+                .orElseThrow(() -> new IllegalStateException("Managed cluster was not found"));
+        long dedicatedCount = cluster.getServices().stream()
+                .filter(service -> role.equalsIgnoreCase(service.getRole())).count();
+        if ("broker".equals(role) && dedicatedCount < 2) {
+            throw new IllegalStateException("Broker rolling change requires at least two dedicated brokers.");
+        }
+        if ("controller".equals(role)) {
+            if (dedicatedCount < 3) throw new IllegalStateException("Controller rolling change requires at least three dedicated controllers.");
+            try {
+                var quorum = kafkaAdminService.getAdminClient(clusterId).describeMetadataQuorum().quorumInfo().get();
+                if (quorum.leaderId() < 0 || quorum.voters().size() < 3
+                        || quorum.voters().stream().noneMatch(voter -> voter.replicaId() == nodeId)) {
+                    throw new IllegalStateException("KRaft quorum or selected controller voter is unavailable.");
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("Interrupted during KRaft quorum check", e);
+            } catch (java.util.concurrent.ExecutionException e) {
+                throw new IllegalStateException("KRaft quorum check failed", e);
+            }
+        }
     }
 }

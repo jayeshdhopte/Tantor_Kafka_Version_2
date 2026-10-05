@@ -25,10 +25,10 @@ printf '[INFO] Building with %s\n' "$GO_VERSION"
   go test -race ./...
   go vet ./...
   CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
-    -buildvcs=false -trimpath -ldflags='-s -w -X main.buildVersion=3.2.3 -X main.buildCommit=role-specific-jmx' \
+    -buildvcs=false -trimpath -ldflags='-s -w -X main.buildVersion=3.2.4 -X main.buildCommit=config-change-1' \
     -o "$SCRIPT_DIR/tantor-discovery-agent-linux-amd64" .
   CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
-    -buildvcs=false -trimpath -ldflags='-s -w -X main.buildVersion=3.2.3 -X main.buildCommit=role-specific-jmx' \
+    -buildvcs=false -trimpath -ldflags='-s -w -X main.buildVersion=3.2.4 -X main.buildCommit=config-change-1' \
     -o "$SCRIPT_DIR/tantor-discovery-agent-linux-arm64" .
 )
 

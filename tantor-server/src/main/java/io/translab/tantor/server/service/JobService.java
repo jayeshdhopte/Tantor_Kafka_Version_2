@@ -55,7 +55,8 @@ public class JobService {
 
     @Transactional
     public Optional<ClaimedJob> claimNextJob() {
-        Optional<Job> normal = jobRepository.findFirstByStatusOrderByCreatedAtAsc(JobStatus.PENDING);
+        Optional<Job> normal = jobRepository.findByStatusOrderByCreatedAtAsc(JobStatus.PENDING).stream()
+                .filter(job -> !resourceBusy(job)).findFirst();
         if (normal.isPresent()) {
             Job job = normal.get();
             job.setStatus(JobStatus.IN_PROGRESS);
@@ -65,7 +66,8 @@ public class JobService {
             return Optional.of(new ClaimedJob(job.getId(), false));
         }
 
-        Optional<Job> rollback = jobRepository.findFirstByStatusOrderByCreatedAtAsc(JobStatus.ROLLBACK_PENDING);
+        Optional<Job> rollback = jobRepository.findByStatusOrderByCreatedAtAsc(JobStatus.ROLLBACK_PENDING).stream()
+                .filter(job -> !resourceBusy(job)).findFirst();
         if (rollback.isPresent()) {
             Job job = rollback.get();
             job.setStatus(JobStatus.ROLLING_BACK);
@@ -74,6 +76,12 @@ public class JobService {
             return Optional.of(new ClaimedJob(job.getId(), true));
         }
         return Optional.empty();
+    }
+
+    private boolean resourceBusy(Job job) {
+        return job.getResourceKey() != null && !job.getResourceKey().isBlank()
+                && !jobRepository.findByResourceKeyAndStatusIn(job.getResourceKey(),
+                List.of(JobStatus.IN_PROGRESS, JobStatus.ROLLING_BACK)).isEmpty();
     }
 
     @Transactional

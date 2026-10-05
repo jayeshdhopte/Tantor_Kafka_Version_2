@@ -43,3 +43,7 @@
 .node-config-footer span { color: var(--text-secondary); font-size: 10px; }
 .node-config-footer button { border-color: #185fa5; background: #185fa5; color: #fff; }
 @media (max-width: 700px) { .node-config-header, .node-config-editor-head, .node-config-footer { align-items: stretch; flex-direction: column; } .node-config-add { grid-template-columns: 1fr; } }
+.cc-external-add { display: flex; gap: 8px; flex-wrap: wrap; padding: 12px 0; align-items: center; }
+.cc-external-add input { min-width: 180px; flex: 1; border: 1px solid #dedbe4; border-radius: 7px; padding: 9px; }
+.cc-external-add button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #7c3aed; background: #faf5ff; color: #6b21a8; border-radius: 7px; padding: 9px 12px; cursor: pointer; }
+.cc-external-add button:disabled { opacity: .5; cursor: not-allowed; }

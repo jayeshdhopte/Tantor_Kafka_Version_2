@@ -426,6 +426,11 @@ public class AgentService {
 
     private void updateClusterStatus(io.translab.tantor.server.domain.Cluster cluster, Task currentTask) {
         String command = currentTask.getCommand();
+        if ("READ_KAFKA_PROPERTY".equals(command) || "PATCH_KAFKA_CONFIG".equals(command)) {
+            // Configuration jobs report their own status; a read or partial patch
+            // must not rewrite the lifecycle status of the whole cluster.
+            return;
+        }
         String status = currentTask.getStatus();
         
         if ("FAILED".equals(status)) {

@@ -430,6 +430,60 @@ public class DeploymentService {
     }
 
     @Transactional
+    public UUID patchKafkaConfig(UUID clusterId, String hostId, String role, String nodeId,
+                                 String configJsonStr, String configPath,
+                                 Map<String, Object> changes, Map<String, Object> expected,
+                                 boolean restart, String version) {
+        if (configPath == null || configPath.isBlank() || changes == null || changes.isEmpty()) {
+            throw new IllegalArgumentException("A concrete config file and property changes are required.");
+        }
+        Task task = createTask(clusterId, hostId, "PATCH_KAFKA_CONFIG");
+        try {
+            Map<String, Object> params = new java.util.HashMap<>();
+            mergeConfigParams(params, configJsonStr);
+            String normalizedRole = role == null || role.isBlank() ? "broker" : role;
+            params.put("role", normalizedRole);
+            params.put("service_role", normalizedRole);
+            params.put("node_id", nodeId);
+            params.put("service_name", systemdServiceName(normalizedRole));
+            params.put("systemd_service", systemdServiceName(normalizedRole));
+            params.put("config_path", configPath.trim());
+            params.put("config_changes_json", objectMapper.writeValueAsString(changes));
+            params.put("expected_values_json", objectMapper.writeValueAsString(expected));
+            params.put("restart", String.valueOf(restart));
+            params.put("config_version", version == null ? "unversioned" : version);
+            task.setParameters(objectMapper.writeValueAsString(params));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Unable to queue Kafka config patch", e);
+        }
+        taskRepository.save(task);
+        return task.getId();
+    }
+
+    @Transactional
+    public UUID readKafkaProperty(UUID clusterId, String hostId, String role, String nodeId,
+                                  String configJsonStr, String configPath, String key) {
+        if (configPath == null || configPath.isBlank() || key == null || key.isBlank()) {
+            throw new IllegalArgumentException("A concrete config file and property are required.");
+        }
+        Task task = createTask(clusterId, hostId, "READ_KAFKA_PROPERTY");
+        try {
+            Map<String, Object> params = new java.util.HashMap<>();
+            mergeConfigParams(params, configJsonStr);
+            params.put("config_path", configPath);
+            params.put("config_key", key);
+            params.put("role", role);
+            params.put("service_role", role);
+            params.put("node_id", nodeId);
+            task.setParameters(objectMapper.writeValueAsString(params));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Unable to queue Kafka property read", e);
+        }
+        taskRepository.save(task);
+        return task.getId();
+    }
+
+    @Transactional
     public UUID deleteClusterFromHost(UUID clusterId, String hostId, String version, String configJsonStr) {
         Task task = createTask(clusterId, hostId, "DELETE_CLUSTER");
         try {

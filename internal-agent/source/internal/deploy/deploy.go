@@ -76,6 +76,10 @@ func (e *Engine) Execute(ctx context.Context, t *api.Task) (*api.TaskResult, err
 		return e.restartService(ctx, t)
 	case "UPDATE_KAFKA_CONFIG":
 		return e.updateKafkaConfig(ctx, t)
+	case "PATCH_KAFKA_CONFIG":
+		return e.patchKafkaConfig(ctx, t)
+	case "READ_KAFKA_PROPERTY":
+		return e.readKafkaProperty(ctx, t)
 	case "DELETE_CLUSTER":
 		return e.deleteCluster(ctx, t)
 	case "ROLLBACK_DEPLOYMENT":
@@ -322,6 +326,24 @@ func (e *Engine) updateKafkaConfig(ctx context.Context, t *api.Task) (*api.TaskR
 		Status:    "SUCCESS",
 		LogOutput: logOutput,
 	}, nil
+}
+
+func (e *Engine) patchKafkaConfig(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
+	deployer := kafka.NewDeployer(e.cfg, e.client, e.exec)
+	logOutput, err := deployer.PatchConfig(ctx, t)
+	if err != nil {
+		return e.fail(t, fmt.Sprintf("Kafka config patch failed: %v\nLogs: %s", err, logOutput)), nil
+	}
+	return &api.TaskResult{TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS", LogOutput: logOutput}, nil
+}
+
+func (e *Engine) readKafkaProperty(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
+	deployer := kafka.NewDeployer(e.cfg, e.client, e.exec)
+	output, err := deployer.ReadConfigProperty(ctx, t)
+	if err != nil {
+		return e.fail(t, fmt.Sprintf("Kafka property read failed: %v", err)), nil
+	}
+	return &api.TaskResult{TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS", LogOutput: output}, nil
 }
 
 func (e *Engine) checkPrerequisites(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
