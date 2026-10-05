@@ -21,6 +21,11 @@
 .cc-property-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
 .cc-property-grid label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 650; }
 .cc-property-grid select, .cc-property-grid input { width: 100%; box-sizing: border-box; border: 1px solid #dcd9e2; background: white; padding: 10px; border-radius: 7px; font: inherit; font-weight: 400; }
+.cc-current-values { margin: 0 0 16px; padding: 13px 15px; border: 1px solid #e8dff0; border-radius: 8px; background: #faf8fc; font-size: 13px; }
+.cc-current-values > p { margin: 4px 0 9px; color: #747786; }
+.cc-current-list { display: grid; gap: 5px; }
+.cc-current-list > div { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 12px; padding: 7px 0; border-top: 1px solid #e8dff0; }
+.cc-current-list code { overflow-wrap: anywhere; }
 .cc-primary { display: inline-flex; gap: 8px; align-items: center; background: #4c1d6f; border: 1px solid #4c1d6f; color: white; padding: 10px 14px; border-radius: 8px; cursor: pointer; font-weight: 700; }
 .cc-primary:disabled { opacity: .5; cursor: not-allowed; }
 .cc-preview { margin-top: 20px; padding: 17px; background: #faf8fc; border: 1px solid #e8dff0; border-radius: 9px; }
