@@ -15,7 +15,6 @@ Environment="KAFKA_HEAP_OPTS=-Xmx{{.HeapSize}} -Xms{{.HeapSize}}"
 {{if .JmxAgentPath}}Environment="KAFKA_OPTS=-javaagent:{{.JmxAgentPath}}={{.JmxPort}}:{{.JmxConfigPath}}"{{end}}
 {{if .AppLogDir}}Environment="LOG_DIR={{.AppLogDir}}"{{end}}
 ExecStart={{.InstallDir}}/bin/kafka-server-start.sh {{.ConfigPath}}
-ExecStop={{.InstallDir}}/bin/kafka-server-stop.sh
 Restart=on-failure
 RestartSec=15
 LimitNOFILE=1024000
