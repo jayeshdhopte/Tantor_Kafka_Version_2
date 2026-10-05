@@ -19,9 +19,9 @@ import (
 )
 
 var (
-	version   = "1.0.0-prod.16-reporting.9-dataservices.1-configchange.1"
-	commit    = "configchange-1"
-	buildDate = "2026-09-29"
+	version   = "1.0.0-prod.16-reporting.9-dataservices.1-configchange.2"
+	commit    = "scoped-kafka-stop"
+	buildDate = "2026-10-05"
 )
 
 func main() {
