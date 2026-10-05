@@ -262,6 +262,10 @@
   flex: none;
 }
 
+.host-status-badge.offline .status-dot {
+  background: #b42333;
+}
+
 .host-status-badge.offline {
   background: rgba(239, 77, 95, 0.1);
   border: 1px solid #EF4D5F;
@@ -269,13 +273,20 @@
 }
 
 .host-status-badge.maintenance,
-.host-status-badge.warning,
 .host-status-badge.occupied {
   width: fit-content;
   min-width: 61px;
   background: #F3F4F6;
   border: 1px solid #CCCCCC;
   color: #818181;
+}
+
+.host-status-badge.warning {
+  width: fit-content;
+  min-width: 61px;
+  background: #fff6df;
+  border: 1px solid #f0d796;
+  color: #7a5407;
 }
 
 .host-status-badge.pending {
@@ -672,19 +683,23 @@
 }
 
 .availability-badge.available {
-  background: rgba(22, 171, 194, 0.15);
-  color: #16ABC2;
+  background: #e9f7ed;
+  color: #146c2e;
 }
 
 .availability-badge.unavailable {
-  background: #FFF7D9;
-  color: #EF4D5F;
+  background: #fef2f2;
+  color: #991b1b;
 }
 
-.availability-badge.occupied,
 .availability-badge.critical {
-  background: rgba(239, 77, 95, 0.15);
-  color: #EF4D5F;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.availability-badge.occupied {
+  background: #f1f5f9;
+  color: #475569;
 }
 
 .cluster-lock {

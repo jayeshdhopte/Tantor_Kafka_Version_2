@@ -77,11 +77,13 @@ const validateRuntimeConfig = () => {
   try {
     keycloak = new URL(config.keycloakUrl);
   } catch {
-    throw new Error('keycloakUrl must be an absolute HTTPS URL');
+    throw new Error('keycloakUrl must be an absolute URL');
   }
-  if (keycloak.protocol !== 'https:' || !keycloak.hostname || keycloak.username || keycloak.password
+  const localDevelopmentHttp = !securedDeployment && keycloak.protocol === 'http:'
+    && (keycloak.hostname === 'localhost' || keycloak.hostname === '127.0.0.1');
+  if ((!localDevelopmentHttp && keycloak.protocol !== 'https:') || !keycloak.hostname || keycloak.username || keycloak.password
       || keycloak.origin !== config.keycloakUrl) {
-    throw new Error('keycloakUrl must be an absolute HTTPS origin without credentials or a path');
+    throw new Error('keycloakUrl must be an HTTPS origin (or a development loopback HTTP origin) without credentials or a path');
   }
   if (securedDeployment && (keycloak.hostname === 'localhost' || keycloak.hostname.startsWith('127.')
       || /\.(example|invalid|test)$/.test(keycloak.hostname))) {

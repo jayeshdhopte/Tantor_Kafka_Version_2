@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams } from 'react-router-dom';
 import { AlertOctagon, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardPaste, Copy, Edit3, FileDown, FileText, GitCompare, MoreVertical, Paperclip, Plus, RefreshCw, Save, Settings, Trash2, X } from 'lucide-react';
@@ -52,6 +52,13 @@ interface SavedConnection {
   certificateConfigured: boolean;
   truststoreConfigured: boolean;
   certificateType?: CertificateType;
+  certificateFileName?: string;
+}
+
+interface ClusterTruststoreInfo {
+  available: boolean;
+  certificateType?: CertificateType;
+  displayName?: string;
 }
 
 interface DiscoveredConnection {
@@ -244,14 +251,14 @@ function CustomSelect({ value, onChange, options, placeholder, disabled, classNa
 
   return (
     <div ref={setAnchor} className={`ds-custom-select-container ${className || ''} ${disabled ? 'disabled' : ''}`}>
-      <div 
-        className="ds-custom-select-trigger" 
+      <div
+        className="ds-custom-select-trigger"
         onClick={() => !disabled && setIsOpen(!isOpen)}
       >
         <span>{selectedOption ? selectedOption.label : placeholder || 'Select...'}</span>
-        <svg className={`ds-custom-select-arrow ${isOpen ? 'open' : ''}`} xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A1A1AA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+        <svg className={`ds-custom-select-arrow ${isOpen ? 'open' : ''}`} xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#A1A1AA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
       </div>
-      
+
       {isOpen && anchor && (
         <AnchoredMenu
           anchor={anchor}
@@ -260,18 +267,18 @@ function CustomSelect({ value, onChange, options, placeholder, disabled, classNa
           align="start"
           matchAnchorWidth
         >
-            {options.map(opt => (
-              <div
-                key={opt.value}
-                className={`ds-custom-select-option ${opt.value === value ? 'selected' : ''}`}
-                onClick={() => {
-                  onChange(opt.value);
-                  setIsOpen(false);
-                }}
-              >
-                {opt.label}
-              </div>
-            ))}
+          {options.map(opt => (
+            <div
+              key={opt.value}
+              className={`ds-custom-select-option ${opt.value === value ? 'selected' : ''}`}
+              onClick={() => {
+                onChange(opt.value);
+                setIsOpen(false);
+              }}
+            >
+              {opt.label}
+            </div>
+          ))}
         </AnchoredMenu>
       )}
     </div>
@@ -325,6 +332,7 @@ export function SchemaRegistry() {
 
   // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Multi-instance state ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
   const [savedConnections, setSavedConnections] = useState<SavedConnection[]>([]);
+  const [clusterTruststore, setClusterTruststore] = useState<ClusterTruststoreInfo | null>(null);
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(initialSession?.selectedConnectionId ?? null);
   const loadRequestId = useRef(0);
 
@@ -352,6 +360,16 @@ export function SchemaRegistry() {
     () => savedConnections.find(c => c.id === selectedConnectionId) ?? null,
     [savedConnections, selectedConnectionId]
   );
+
+  useEffect(() => {
+    if (!id) return;
+    const controller = new AbortController();
+    fetch(`/api/v1/clusters/${id}/data-services/cluster-truststore`, { signal: controller.signal })
+      .then(response => response.ok ? response.json() : null)
+      .then(info => { if (!controller.signal.aborted) setClusterTruststore(info); })
+      .catch(() => { if (!controller.signal.aborted) setClusterTruststore(null); });
+    return () => controller.abort();
+  }, [id]);
 
   const comparableVersions = useMemo(() => {
     const versions = [...(details?.versions || [])];
@@ -439,7 +457,7 @@ export function SchemaRegistry() {
       setProtocol(conn.protocol || 'http');
       setCustomIp(conn.host || '');
       setCustomPort(conn.port ? String(conn.port) : '');
-      setCertType(conn.certificateType || 'PEM');
+      setCertType(conn.certificateType || clusterTruststore?.certificateType || 'PEM');
       setFormIsDefault(conn.isDefault);
     } else {
       setEditingConnectionId(null);
@@ -447,7 +465,7 @@ export function SchemaRegistry() {
       setProtocol('http');
       setCustomIp('');
       setCustomPort('');
-      setCertType('PEM');
+      setCertType(clusterTruststore?.certificateType || 'PEM');
       setFormIsDefault(false);
     }
     setCertFile(null); setCertFileName(''); setCertPasteText(''); setCertPasteMode(false); setCertPassword('');
@@ -468,6 +486,7 @@ export function SchemaRegistry() {
         port: parseInt(customPort.trim()) || 8081,
         certificateType: protocol === 'https' ? certType : null,
         certificateData: protocol === 'https' ? certData : null,
+        certificateFileName: protocol === 'https' && certData ? certFile?.name : undefined,
         truststorePassword: protocol === 'https' ? (certPassword || null) : null,
         isDefault: formIsDefault
       };
@@ -603,7 +622,7 @@ export function SchemaRegistry() {
     setCustomIp(discovered.host || '');
     setCustomPort(discovered.port ? String(discovered.port) : '8081');
     setFormIsDefault(true);
-    setCertType('PEM');
+    setCertType(existing?.certificateType || clusterTruststore?.certificateType || 'PEM');
     setCertFile(null);
     setCertFileName('');
     setCertPasteText('');
@@ -912,9 +931,9 @@ export function SchemaRegistry() {
                       options={
                         savedConnections.length > 0
                           ? savedConnections.map(c => ({
-                              value: c.id,
-                              label: c.isDefault ? 'Default connection' : c.connectionName
-                            }))
+                            value: c.id,
+                            label: c.isDefault ? 'Default connection' : c.connectionName
+                          }))
                           : [{ value: '', label: 'Default connection' }]
                       }
                     />
@@ -941,9 +960,9 @@ export function SchemaRegistry() {
               <div className="ds-buttons-group">
                 {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Buttons ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
                 {canManage && (
-                  <button 
+                  <button
                     className="ds-sr-save-button"
-                    onClick={() => saveGlobalCompatibility(globalCompatibility)} 
+                    onClick={() => saveGlobalCompatibility(globalCompatibility)}
                     disabled={saving}
                     style={{
                       boxSizing: 'border-box',
@@ -1009,9 +1028,9 @@ export function SchemaRegistry() {
               <p style={{ margin: 0, fontFamily: 'Satoshi, sans-serif', fontSize: 'var(--text-md)', fontWeight: 'var(--font-regular)', color: 'var(--text-tertiary)' }}>
                 Schema Registry data is not loaded automatically.
               </p>
-              <button 
+              <button
                 className="ds-sr-fetch-button"
-                type="button" 
+                type="button"
                 onClick={() => void fetchWithDiscovery()}
                 disabled={loading}
                 style={{
@@ -1036,62 +1055,62 @@ export function SchemaRegistry() {
               </button>
             </div>
           ) : <>
-          <div className="ds-metrics ds-sr-metrics">
-            <div className="ds-metric-card"><span>Total Subjects</span><strong>{summary?.totalSubjects ?? 0}</strong></div>
-            <div className="ds-metric-card"><span>Value Subjects</span><strong>{summary?.valueSubjects ?? 0}</strong></div>
-            <div className="ds-metric-card"><span>Key Subjects</span><strong>{summary?.keySubjects ?? 0}</strong></div>
-            <div className="ds-metric-card">
-              <span>REST Endpoint</span>
-              <strong className="ds-sr-endpoint-value">
-                {summary?.connection ? (
-                  <a 
-                    href={summary.connection} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
+            <div className="ds-metrics ds-sr-metrics">
+              <div className="ds-metric-card"><span>Total Subjects</span><strong>{summary?.totalSubjects ?? 0}</strong></div>
+              <div className="ds-metric-card"><span>Value Subjects</span><strong>{summary?.valueSubjects ?? 0}</strong></div>
+              <div className="ds-metric-card"><span>Key Subjects</span><strong>{summary?.keySubjects ?? 0}</strong></div>
+              <div className="ds-metric-card">
+                <span>REST Endpoint</span>
+                <strong className="ds-sr-endpoint-value">
+                  {summary?.connection ? (
+                    <a
+                      href={summary.connection}
+                      target="_blank"
+                      rel="noopener noreferrer"
 
-                  >
-                    {summary.connection}
-                  </a>
-                ) : (
-                  '-'
-                )}
-              </strong>
+                    >
+                      {summary.connection}
+                    </a>
+                  ) : (
+                    '-'
+                  )}
+                </strong>
+              </div>
             </div>
-          </div>
 
-          <div className="ds-panel ds-sr-subjects-panel">
-            <table className="ds-table ds-sr-subjects-table">
-              <thead>
-                <tr><th>Subject</th><th>Type</th><th>Latest Version</th><th>Schema ID</th><th>Schema Type</th>{canManage && <th>Actions</th>}</tr>
-              </thead>
-              <tbody>
-                {loading && !summary ? (
-                  <tr><td colSpan={canManage ? 6 : 5} className="ds-empty">Loading schemas...</td></tr>
-                ) : summary && summary.subjects.length > 0 ? (
-                  summary.subjects.map(item => (
-                    <tr key={item.subject} className="ds-hoverable-row" onClick={() => openSubject(item)} style={{ cursor: 'pointer' }}>
-                      <td><span className="ds-link-button">{item.subject}</span></td>
-                      <td><span className="ds-status">{item.type}</span></td>
-                      <td>{item.version || '-'}</td>
-                      <td>{item.id || '-'}</td>
-                      <td>{item.schemaType}</td>
-                      {canManage && (
-                        <td>
-                          <div className="ds-inline-actions" onClick={e => e.stopPropagation()}>
-                            <button className="ds-table-delete-btn" onClick={() => deleteSubject(item.subject)} disabled={saving}>
-                              <Trash2 size={14} /> Delete
-                            </button>
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  ))
-                ) : (
-                  <tr><td colSpan={canManage ? 6 : 5} className="ds-empty">No schemas found in this registry.</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+            <div className="ds-panel ds-sr-subjects-panel">
+              <table className="ds-table ds-sr-subjects-table">
+                <thead>
+                  <tr><th>Subject</th><th>Type</th><th>Latest Version</th><th>Schema ID</th><th>Schema Type</th>{canManage && <th>Actions</th>}</tr>
+                </thead>
+                <tbody>
+                  {loading && !summary ? (
+                    <tr><td colSpan={canManage ? 6 : 5} className="ds-empty">Loading schemas...</td></tr>
+                  ) : summary && summary.subjects.length > 0 ? (
+                    summary.subjects.map(item => (
+                      <tr key={item.subject} className="ds-hoverable-row" onClick={() => openSubject(item)} style={{ cursor: 'pointer' }}>
+                        <td><span className="ds-link-button">{item.subject}</span></td>
+                        <td><span className="ds-status">{item.type}</span></td>
+                        <td>{item.version || '-'}</td>
+                        <td>{item.id || '-'}</td>
+                        <td>{item.schemaType}</td>
+                        {canManage && (
+                          <td>
+                            <div className="ds-inline-actions" onClick={e => e.stopPropagation()}>
+                              <button className="ds-table-delete-btn" onClick={() => deleteSubject(item.subject)} disabled={saving}>
+                                <Trash2 size={14} /> Delete
+                              </button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    ))
+                  ) : (
+                    <tr><td colSpan={canManage ? 6 : 5} className="ds-empty">No schemas found in this registry.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </>}
         </>
       )}
@@ -1196,10 +1215,15 @@ export function SchemaRegistry() {
               </thead>
               <tbody>
                 {(details?.versions || []).map(version => (
-                  <>
+                  <Fragment key={version.version}>
                     <tr key={version.version} className="ds-hoverable-row" style={{ cursor: 'pointer' }} onClick={() => toggleVersion(version.version)}>
                       <td>
-                        <button className="ds-mini-button ds-expand-btn">
+                        <button
+                          type="button"
+                          className="ds-mini-button ds-expand-btn"
+                          aria-label={`${expandedVersions.has(version.version) ? 'Collapse' : 'Expand'} version ${version.version}`}
+                          aria-expanded={expandedVersions.has(version.version)}
+                        >
                           {expandedVersions.has(version.version)
                             ? <ChevronDown size={14} aria-hidden="true" />
                             : <ChevronRight size={14} aria-hidden="true" />}
@@ -1232,7 +1256,7 @@ export function SchemaRegistry() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 ))}
                 {!loadingDetails && (!details?.versions || details.versions.length === 0) && (
                   <tr><td colSpan={4} className="ds-empty">No older versions found.</td></tr>
@@ -1254,7 +1278,7 @@ export function SchemaRegistry() {
                 <X size={20} />
               </button>
             </div>
-            
+
             <div className="ds-compare-selectors">
               <div className="ds-field">
                 <label>Version A</label>
@@ -1531,6 +1555,18 @@ export function SchemaRegistry() {
                           </div>
                         )}
                       </div>
+                    </div>
+                  )}
+                  {!certFileName && !certPasteText.trim() && editingConnectionId && selectedConn?.certificateConfigured && (
+                    <div className="ds-saved-certificate">
+                      <FileText size={16} aria-hidden="true" />
+                      <span>Saved file: {selectedConn.certificateFileName || (selectedConn.certificateType === 'PEM' ? 'Certificate (name unavailable)' : 'Truststore (name unavailable)')}. Kept unless replaced.</span>
+                    </div>
+                  )}
+                  {!certFileName && !certPasteText.trim() && !selectedConn?.certificateConfigured && protocol === 'https' && clusterTruststore?.available && (
+                    <div className="ds-saved-certificate">
+                      <FileText size={16} aria-hidden="true" />
+                      <span>{clusterTruststore.displayName} ({clusterTruststore.certificateType}) will be used when saved.</span>
                     </div>
                   )}
                 </div>

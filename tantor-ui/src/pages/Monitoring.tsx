@@ -3,6 +3,7 @@ import { AlertTriangle, RefreshCw, Check, Server } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { CustomSelect } from '../components/CustomSelect';
 import { AnchoredMenu } from '../components/AnchoredMenu';
+import { formatMonitoringBytes as formatBytes, formatMonitoringNumber as formatNumber } from '../utils/monitoringFormat';
 import './Monitoring.css';
 
 interface MonitoringNode {
@@ -74,24 +75,6 @@ interface MonitoringSample {
   brokerCpu: number | null;
   systemCpu: number | null;
 }
-
-const formatNumber = (value?: number | null, digits = 0) => {
-  if (value === undefined || value === null || Number.isNaN(value)) return 'N/A';
-  return value.toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: digits });
-};
-
-const formatBytes = (value?: number | null) => {
-  if (value === undefined || value === null || Number.isNaN(value)) return 'N/A';
-  if (value <= 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  let next = value;
-  let unit = 0;
-  while (next >= 1024 && unit < units.length - 1) {
-    next /= 1024;
-    unit += 1;
-  }
-  return `${next.toFixed(unit === 0 ? 0 : 2)} ${units[unit]}`;
-};
 
 const hasValue = (value?: number | null) => value !== undefined && value !== null && !Number.isNaN(value);
 
@@ -655,8 +638,8 @@ export function Monitoring() {
                           <AreaChart data={graphHistory} margin={{ top: 5, right: 5, left: -25, bottom: 5 }}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                             <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#94a3b8' }} />
-                            <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} />
-                            <Tooltip contentStyle={{ fontSize: '11px', borderRadius: '6px' }} />
+                            <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} tickFormatter={value => formatNumber(Number(value), 2)} />
+                            <Tooltip contentStyle={{ fontSize: '11px', borderRadius: '6px' }} formatter={value => `${formatNumber(Number(value), 2)} msg/s`} />
                             <Area type="monotone" dataKey="messagesIn" stroke="#c084fc" fill="#f3e8ff" strokeWidth={1.5} />
                           </AreaChart>
                         </ResponsiveContainer>

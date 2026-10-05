@@ -11,11 +11,10 @@ Type=simple
 User={{.User}}
 Group={{.Group}}
 Environment="JAVA_HOME={{.JavaHome}}"
-Environment="KAFKA_HEAP_OPTS=-Xmx{{.HeapSize}} -Xms{{.HeapSize}}"
+Environment="KAFKA_HEAP_OPTS=-Xmx{{.HeapXmx}} -Xms{{.HeapXms}}"
 {{if .JmxAgentPath}}Environment="KAFKA_OPTS=-javaagent:{{.JmxAgentPath}}={{.JmxPort}}:{{.JmxConfigPath}}"{{end}}
 {{if .AppLogDir}}Environment="LOG_DIR={{.AppLogDir}}"{{end}}
 ExecStart={{.InstallDir}}/bin/kafka-server-start.sh {{.ConfigPath}}
-ExecStop={{.InstallDir}}/bin/kafka-server-stop.sh
 Restart=on-failure
 RestartSec=15
 LimitNOFILE=1024000
@@ -51,7 +50,7 @@ Type=simple
 User={{.User}}
 Group={{.Group}}
 Environment="JAVA_HOME={{.JavaHome}}"
-Environment="KAFKA_HEAP_OPTS=-Xmx{{.HeapSize}} -Xms{{.HeapSize}}"
+Environment="KAFKA_HEAP_OPTS=-Xmx{{.HeapXmx}} -Xms{{.HeapXms}}"
 ExecStart={{.InstallDir}}/bin/zookeeper-server-start.sh {{.ConfigPath}}
 ExecStop={{.InstallDir}}/bin/zookeeper-server-stop.sh
 Restart=on-failure

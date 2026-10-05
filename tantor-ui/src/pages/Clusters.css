@@ -1350,14 +1350,16 @@
   flex-shrink: 0;
 }
 
-/* Default to green active */
+/* Source and access type describe provenance, not health. */
 .source-pill-v2,
+.access-pill-v2.metadata {
+  background: #f1f5f9;
+  color: #475569;
+}
+
 .access-pill-v2,
 .status-badge-v2,
-.source-pill-v2.internal,
-.source-pill-v2.external,
 .access-pill-v2.managed,
-.access-pill-v2.metadata,
 .status-badge-v2.active,
 .status-badge-v2.online,
 .status-badge-v2.success,
@@ -1367,27 +1369,29 @@
   color: #069B68;
 }
 
-/* A partially connected agent needs attention without being treated as offline. */
-.access-pill-v2.state-warning {
-  background: #fff6df;
-  color: #7a5407;
-  border-color: #f0d796;
-}
-
-/* Warnings / Failed / Not Connected states -> Red */
+.access-pill-v2.state-negative,
+.status-badge-v2.state-negative,
 .status-badge-v2.failed,
-.status-badge-v2.degraded,
 .status-badge-v2.offline,
 .status-badge-v2.not-connected,
 .status-badge-v2.not-installed,
-.status-badge-v2.warning,
 .status-badge-v2.error {
   background: #FDE8E8;
   color: #E02424;
 }
 
+.access-pill-v2.state-warning,
+.status-badge-v2.state-warning,
+.status-badge-v2.degraded,
+.status-badge-v2.warning {
+  background: #fff6df;
+  color: #7a5407;
+  border-color: #f0d796;
+}
+
 /* Managed-cluster deployment is an in-progress state, not runtime health. */
-.status-badge-v2.deploying.state-deploying {
+.status-badge-v2.deploying.state-deploying,
+.status-badge-v2.deleting.state-deploying {
   background: #E6F1FB;
   color: #185FA5;
   border-color: #B5D4F4;
@@ -2483,7 +2487,7 @@
 }
 
 .clusters-surface .clusters-table {
-  min-width: 1120px;
+  min-width: 1500px;
   table-layout: fixed;
 }
 
@@ -2520,15 +2524,15 @@
 .clusters-surface .clusters-table th:nth-child(2),
 .clusters-surface .clusters-table td:nth-child(2) { width: 18%; }
 .clusters-surface .clusters-table th:nth-child(3),
-.clusters-surface .clusters-table td:nth-child(3) { width: 14%; }
+.clusters-surface .clusters-table td:nth-child(3) { width: 13%; }
 .clusters-surface .clusters-table th:nth-child(4),
-.clusters-surface .clusters-table td:nth-child(4) { width: 10%; }
+.clusters-surface .clusters-table td:nth-child(4) { width: 8%; }
 .clusters-surface .clusters-table th:nth-child(5),
-.clusters-surface .clusters-table td:nth-child(5) { width: 11%; }
+.clusters-surface .clusters-table td:nth-child(5) { width: 10%; }
 .clusters-surface .clusters-table th:nth-child(6),
-.clusters-surface .clusters-table td:nth-child(6) { width: 11%; }
+.clusters-surface .clusters-table td:nth-child(6) { width: 10%; }
 .clusters-surface .clusters-table th:nth-child(7),
-.clusters-surface .clusters-table td:nth-child(7) { width: calc(20% - 104px); }
+.clusters-surface .clusters-table td:nth-child(7) { width: calc(25% - 104px); }
 .clusters-surface .clusters-table th:nth-child(8),
 .clusters-surface .clusters-table td:nth-child(8) {
   width: 104px;

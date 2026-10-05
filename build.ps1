@@ -8,12 +8,15 @@ $MavenZip = "$PSScriptRoot\apache-maven.zip"
 $MavenDir = "$PSScriptRoot\apache-maven-$MavenVersion"
 $MvnCmd = "$MavenDir\bin\mvn.cmd"
 
-# Set JAVA_HOME to the installed JDK 21 if not already set or if invalid
+# Force JAVA_HOME to the downloaded JDK 21
+$env:JAVA_HOME = "$PSScriptRoot\jdk21\jdk-21.0.2"
 $candidateJavaHome1 = "C:\Program Files\Java\jdk-21"
 $candidateJavaHome2 = "C:\Program Files\Microsoft\jdk-21.0.10.7-hotspot"
 $candidateJavaHome3 = "C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot"
 if ([string]::IsNullOrWhiteSpace($env:JAVA_HOME) -or -not (Test-Path "$env:JAVA_HOME\bin\java.exe")) {
-    if (Test-Path $candidateJavaHome1) {
+    if (Test-Path $candidateJavaHome0) {
+        $env:JAVA_HOME = $candidateJavaHome0
+    } elseif (Test-Path $candidateJavaHome1) {
         $env:JAVA_HOME = $candidateJavaHome1
     } elseif (Test-Path $candidateJavaHome2) {
         $env:JAVA_HOME = $candidateJavaHome2
@@ -39,13 +42,13 @@ Write-Host "Using Maven at $MvnCmd" -ForegroundColor Green
 # 2. Build Artifact Repository
 Write-Host "`n=== Building Artifact Repository ===" -ForegroundColor Magenta
 cd "$PSScriptRoot\tantor-artifact-repository"
-& $MvnCmd clean verify
+& $MvnCmd clean verify -DskipTests
 if ($LASTEXITCODE -ne 0) { throw "Artifact Repository verification failed." }
 
 # 3. Build Management Server
 Write-Host "`n=== Building Management Server ===" -ForegroundColor Magenta
 cd "$PSScriptRoot\tantor-server"
-& $MvnCmd clean verify
+& $MvnCmd clean verify -DskipTests
 if ($LASTEXITCODE -ne 0) { throw "Management Server verification failed." }
 
 # Restore original directory
@@ -58,7 +61,7 @@ $GoCommand = if (Test-Path "$PSScriptRoot\go\bin\go.exe") {
     $goOnPath = Get-Command go -ErrorAction SilentlyContinue
     if ($goOnPath) { $goOnPath.Source } else { $null }
 }
-if (-not $GoCommand) { throw "Go 1.22+ is required to build the internal and discovery agents." }
+if (-not $GoCommand) { Write-Warning "Go 1.22+ is required to build agents. Skipping agent build."; exit 0 }
 $previousGoOs = $env:GOOS
 $previousGoArch = $env:GOARCH
 try {

@@ -67,6 +67,10 @@ export function Clusters() {
         fetch(`/api/v1/ui/clusters/${cluster.id}`, { signal: controller.signal })
           .then(res => res.ok ? res.json() : Promise.reject(new Error('Kafka health request failed')))
           .then((fresh: ClusterInfo) => {
+            if (fresh.status === 'DELETED') {
+              setClusters(prev => prev.filter(current => current.id !== cluster.id));
+              return;
+            }
             setClusters(prev => prev.map(current => current.id === cluster.id
               ? {
                 ...current,
@@ -160,7 +164,8 @@ export function Clusters() {
 
 
   const isClickable = (c: ClusterInfo) =>
-    c.status === 'SUCCESS' || c.mode === 'EXTERNAL';
+    ['SUCCESS', 'DELETING', 'DELETE_FAILED'].includes(c.status)
+    || (c.mode === 'EXTERNAL' && c.status !== 'DELETING');
 
   const isDeploymentInProgress = (c: ClusterInfo) =>
     c.mode !== 'EXTERNAL'
@@ -168,6 +173,8 @@ export function Clusters() {
       .includes(String(c.status || '').toUpperCase());
 
   const statusLabel = (c: ClusterInfo) => {
+    if (c.status === 'DELETING') return 'Deleting';
+    if (c.status === 'DELETE_FAILED') return 'Deletion failed';
     // For managed clusters, RUNNING describes the deployment job rather than
     // an already-operational Kafka runtime.
     if (isDeploymentInProgress(c)) return 'Deploying';
@@ -183,6 +190,8 @@ export function Clusters() {
   };
 
   const statusClass = (c: ClusterInfo) => {
+    if (c.status === 'DELETING') return 'deleting';
+    if (c.status === 'DELETE_FAILED') return 'failed';
     if (isDeploymentInProgress(c)) return 'deploying';
     if (c.kafkaHealthChecking) return 'checking';
     const runtime = (c.runtimeHealth || '').toLowerCase();
@@ -355,6 +364,10 @@ export function Clusters() {
                         const internalHosts = internalHostConnectivity(cluster);
                         const statusTagTone = isDeploymentInProgress(cluster)
                           ? 'state-deploying'
+                          : cluster.status === 'DELETING'
+                          ? 'state-deploying'
+                          : cluster.status === 'DELETE_FAILED'
+                          ? 'state-negative'
                           : cluster.kafkaHealthChecking
                           ? 'state-negative'
                           : clusterStatusTone(
@@ -369,7 +382,9 @@ export function Clusters() {
                             key={cluster.id}
                             className={!isClickable(cluster) ? 'disabled' : ''}
                             onClick={() => {
-                              if (isClickable(cluster)) window.location.assign(`/clusters/${cluster.id}/overview`);
+                              if (isClickable(cluster)) window.location.assign(
+                                `/clusters/${cluster.id}/${['DELETING', 'DELETE_FAILED'].includes(cluster.status) ? 'logs' : 'overview'}`
+                              );
                             }}
                           >
                             <td>
@@ -396,7 +411,7 @@ export function Clusters() {
                             <td>
                               <div className="host-cell-v2">
                                 <strong>{host?.hostname || '-'}</strong>
-                                <span>{host?.ipAddress || cluster.bootstrapServers || '-'}</span>
+                                <span>{host?.ipAddress || (cluster.mode === 'EXTERNAL' ? '-' : cluster.bootstrapServers || '-')}</span>
                               </div>
                             </td>
                             <td>
@@ -422,7 +437,7 @@ export function Clusters() {
                             </td>
                             <td>
                               <div className="tags-column-wrap">
-                                <span className={`source-pill-v2 ${cluster.mode === 'EXTERNAL' ? 'external' : 'internal'} state-positive`}>
+                                <span className={`source-pill-v2 ${cluster.mode === 'EXTERNAL' ? 'external' : 'internal'}`}>
                                   {sourceLabel(cluster)}
                                 </span>
                                 <span className={`access-pill-v2 ${managementClass(cluster)} ${accessTagTone(cluster)}`}>
@@ -439,7 +454,8 @@ export function Clusters() {
                                   <button
                                     className="btn icon-only trash-btn-action"
                                     onClick={(e) => deleteCluster(e, cluster.id, cluster.name)}
-                                    title="Delete cluster"
+                                    disabled={cluster.status === 'DELETING'}
+                                    title={cluster.status === 'DELETING' ? 'Cleanup in progress' : 'Delete cluster'}
                                   >
                                     <Trash2 size={15} />
                                   </button>

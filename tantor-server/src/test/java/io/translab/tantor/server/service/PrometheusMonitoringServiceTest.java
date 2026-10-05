@@ -32,6 +32,45 @@ class PrometheusMonitoringServiceTest {
     }
 
     @Test
+    void createsOnlyConfiguredJmxTargetForInternalBroker() {
+        Cluster cluster = new Cluster();
+        cluster.setId(UUID.randomUUID());
+        cluster.setName("internal-prod");
+        cluster.setOriginType("INTERNAL");
+        cluster.setMonitoringEnabled(true);
+        cluster.setJmxEnabled(true);
+
+        ClusterServiceAssignment broker = assignment(cluster, "host-1", 1);
+        broker.setRole("broker");
+        broker.setJmxExporterPort(17071);
+        cluster.setServices(List.of(broker));
+
+        Host host = new Host();
+        host.setId("host-1");
+        host.setHostIp("192.168.10.11");
+
+        ClusterRepository clusters = mock(ClusterRepository.class);
+        HostRepository hosts = mock(HostRepository.class);
+        when(clusters.findByStatusNot("DELETED")).thenReturn(List.of(cluster));
+        when(hosts.findById("host-1")).thenReturn(Optional.of(host));
+
+        PrometheusMonitoringService service = new PrometheusMonitoringService(
+                clusters, mock(ExternalClusterRepository.class), mock(ExternalClusterNodeRepository.class),
+                hosts, mock(EncryptionService.class), new ObjectMapper(),
+                mock(MonitoringRestTemplate.class), monitoringProperties());
+        ReflectionTestUtils.setField(service, "kafkaExporterPortBase", 9308);
+
+        assertThat(service.prometheusTargets())
+                .extracting(
+                        target -> target.getTargets().getFirst(),
+                        target -> target.getLabels().get("job"),
+                        target -> target.getLabels().get("node_id"))
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple("192.168.10.11:17071", "kafka_jmx", "1"),
+                        org.assertj.core.groups.Tuple.tuple("192.168.10.11:9308", "kafka_exporter", "1"));
+    }
+
+    @Test
     void createsSeparateBrokerAndControllerJmxTargetsWithoutDuplicatingKafkaExporter() {
         UUID id = UUID.randomUUID();
         Cluster mirror = new Cluster();

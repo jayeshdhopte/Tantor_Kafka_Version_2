@@ -125,6 +125,11 @@ public class DataServicesController {
         return ResponseEntity.ok(dataServiceConnectionService.listConnections(clusterId, "SCHEMA_REGISTRY"));
     }
 
+    @GetMapping("/cluster-truststore")
+    public ResponseEntity<?> getClusterTruststoreInfo(@PathVariable UUID clusterId) {
+        return ResponseEntity.ok(dataServiceConnectionService.getClusterTruststoreInfo(clusterId));
+    }
+
     @GetMapping("/kafka-connect/connections")
     public ResponseEntity<?> listKafkaConnectConnections(@PathVariable UUID clusterId) {
         return ResponseEntity.ok(dataServiceConnectionService.listConnections(clusterId, "KAFKA_CONNECT"));

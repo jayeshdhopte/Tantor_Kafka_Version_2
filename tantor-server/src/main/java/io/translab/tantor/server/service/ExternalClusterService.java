@@ -32,6 +32,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -68,6 +69,7 @@ public class ExternalClusterService {
     private final Map<String, ExternalAgentTask> pendingTasks = new ConcurrentHashMap<>();
     private final Map<String, ExternalAgentTask> completedTasks = new ConcurrentHashMap<>();
     private final Map<String, ExternalDiscoveryReport> pendingDiscoveries = new ConcurrentHashMap<>();
+    private final Map<String, OffsetDateTime> acceptedDiscoveriesByAgent = new ConcurrentHashMap<>();
 
     public boolean isClusterNameAvailable(String name) {
         String normalizedName = name == null ? "" : name.trim();
@@ -590,6 +592,7 @@ public class ExternalClusterService {
             }
             applyDiscoveryReportToNodes(cluster, report, agent);
             pendingDiscoveries.remove(discoveryKey(report));
+            acceptedDiscoveriesByAgent.put(agentId, OffsetDateTime.now());
 
             return Map.of(
                     "id", cluster.getId(),
@@ -601,6 +604,7 @@ public class ExternalClusterService {
 
         String key = discoveryKey(report);
         pendingDiscoveries.put(key, report);
+        acceptedDiscoveriesByAgent.put(agentId, OffsetDateTime.now());
         return Map.of(
                 "discoveryKey", key,
                 "name", report.getName(),
@@ -685,6 +689,22 @@ public class ExternalClusterService {
                 "lastHeartbeat", report.getLastSeen()
         );
     }
+
+    public InstallValidation installValidation(String agentId, OffsetDateTime since) {
+        OffsetDateTime now = OffsetDateTime.now();
+        Optional<DiscoveryAgent> agent = discoveryAgentRepository.findById(agentId);
+        boolean heartbeatAccepted = since != null && agent.isPresent()
+                && agent.get().getLastHeartbeat() != null
+                && agent.get().getLastHeartbeat().isAfter(since)
+                && agent.get().getLastHeartbeat().isAfter(now.minusSeconds(agentStaleSeconds()));
+        OffsetDateTime discoveryAcceptedAt = acceptedDiscoveriesByAgent.get(agentId);
+        boolean discoveryReceived = since != null && discoveryAcceptedAt != null
+                && discoveryAcceptedAt.isAfter(since);
+        return new InstallValidation(now, agent.isPresent(), heartbeatAccepted, discoveryReceived);
+    }
+
+    public record InstallValidation(OffsetDateTime serverTime, boolean registered,
+                                    boolean heartbeatAccepted, boolean discoveryReceived) {}
 
     public List<Map<String, Object>> listDiscoveryAgents() {
         OffsetDateTime now = OffsetDateTime.now();
@@ -1369,16 +1389,26 @@ public class ExternalClusterService {
     }
 
     private void upsertDiscoveryAgent(ExternalDiscoveryReport report, ExternalCluster cluster) {
-        String agentId = report.getHostId() == null || report.getHostId().isBlank() 
-                ? discoveryHostId(report) 
-                : report.getHostId();
+        String agentId = report.getHostId() == null ? "" : report.getHostId().trim();
+        if (agentId.isEmpty()) {
+            throw new IllegalArgumentException("A stable host-id is required for discovery agents.");
+        }
+        String nodeName = blankToDefault(report.getHostname(), extractHostFromBootstrap(report.getBootstrapServers())).trim();
+        if (nodeName.isEmpty()) {
+            throw new IllegalArgumentException("A node-name is required for discovery agents.");
+        }
+        if (discoveryAgentRepository.existsNodeNameOwnedByAnotherHost(nodeName.toLowerCase(Locale.ROOT), agentId)) {
+            throw new NodeNameConflictException(nodeName);
+        }
+        report.setHostId(agentId);
+        report.setHostname(nodeName);
                 
         io.translab.tantor.server.domain.DiscoveryAgent agent = discoveryAgentRepository.findById(agentId)
                 .orElseGet(io.translab.tantor.server.domain.DiscoveryAgent::new);
                 
         agent.setId(agentId);
         agent.setAgentName(report.getAgentName());
-        agent.setHostname(blankToDefault(report.getHostname(), extractHostFromBootstrap(report.getBootstrapServers())));
+        agent.setHostname(nodeName);
         agent.setIpAddresses(blankToDefault(report.getIpAddresses(), writeJson(List.of(extractHostFromBootstrap(report.getBootstrapServers())))));
         agent.setVersion(blankToDefault(report.getAgentVersion(), "tantor-discovery-agent"));
         agent.setCanDeployServices(report.isCanDeployServices());

@@ -252,7 +252,8 @@ timeout(){ echo probe-executed; return 0; }
 		{"java", `java(){ echo 'openjdk version "21.0.1"' >&2; }`, true, true},
 		{"limits", `ulimit(){ echo 1024; }`, true, true},
 		{"ntp", `systemctl(){ return 1; }`, true, true},
-		{"plugins", `find(){ return 0; }`, true, true},
+		{"missing plugins", "", true, false},
+		{"invalid plugin path", "", true, true},
 		{"port", `ss(){ echo 'LISTEN 0 128 0.0.0.0:8083 0.0.0.0:*'; }`, true, true},
 		{"disk", `df(){ printf 'header\n/dev/test 100 20 80 20%% /\n'; }`, true, true},
 		{"ssmissing", `ss(){ return 127; }`, true, true},
@@ -260,10 +261,16 @@ timeout(){ echo probe-executed; return 0; }
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			bootstrap := "broker:9092"
+			plugin := "/"
+			if tc.name == "missing plugins" {
+				plugin = "/tantor-test-plugin-directory-that-does-not-exist"
+			} else if tc.name == "invalid plugin path" {
+				plugin = "/dev/null"
+			}
 			if tc.name == "ip" {
 				bootstrap = "192.0.2.1:9092"
 			}
-			cmd := osexec.Command(bash, "-c", fixture+"\n"+tc.override+"\n"+precheckShell(), "--", Connect, "8083", bootstrap, "/missing", "/", "/", "5120", fmt.Sprint(tc.deferred), "", "connect-configs")
+			cmd := osexec.Command(bash, "-c", fixture+"\n"+tc.override+"\n"+precheckShell(), "--", Connect, "8083", bootstrap, "/missing", plugin, "/", "5120", fmt.Sprint(tc.deferred), "", "connect-configs")
 			out, err := cmd.CombinedOutput()
 			if (err != nil) != tc.fail {
 				t.Fatalf("err=%v output=%s", err, out)

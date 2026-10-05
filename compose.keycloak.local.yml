@@ -1,0 +1,16 @@
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.4
+    container_name: tantor-keycloak
+    restart: unless-stopped
+    mem_limit: 1g
+    env_file:
+      - .env.keycloak.local
+    ports:
+      - "127.0.0.1:8180:8080"
+    volumes:
+      - ./keycloak/local-realm.json:/opt/keycloak/data/import/Gatekeeper-realm.json:ro
+    command:
+      - start-dev
+      - --import-realm
+      - --hostname=http://localhost:8180

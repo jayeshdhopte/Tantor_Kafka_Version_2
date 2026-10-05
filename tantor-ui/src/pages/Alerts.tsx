@@ -22,7 +22,7 @@ interface AlertRow {
   source?: string;
 }
 
-const ALERT_REFRESH_INTERVAL_MS = 2_000;
+const ALERT_REFRESH_INTERVAL_MS = 10_000;
 
 export function Alerts() {
   const [alerts, setAlerts] = useState<AlertRow[]>([]);
@@ -37,8 +37,9 @@ export function Alerts() {
       const res = await fetch('/api/v1/ui/alerts');
       if (!res.ok) throw new Error(`Alerts request failed (${res.status})`);
       setAlerts(await res.json());
+      setError('');
     } catch (e: unknown) {
-      if (!quiet) setError(e instanceof Error ? e.message : 'Failed to load alerts');
+      setError(e instanceof Error ? e.message : 'Failed to load alerts');
     } finally {
       if (!quiet) setLoading(false);
     }
@@ -94,8 +95,8 @@ export function Alerts() {
           
           {/* Right side actions */}
           <div className="alerts-header-actions">
-            <span className={`alerts-status-badge ${activeAlerts.length ? 'needs-attention' : 'healthy'}`}>
-              {activeAlerts.length ? 'Live system needs attention' : 'Live system is healthy'}
+            <span className={`alerts-status-badge ${error ? 'unavailable' : activeAlerts.length ? 'needs-attention' : 'healthy'}`}>
+              {error ? 'Alert status unavailable' : activeAlerts.length ? 'Live system needs attention' : 'No current alerts'}
             </span>
             <button className="alerts-refresh-btn" onClick={() => fetchAlerts()} aria-label="Refresh alerts">
               <RefreshCw size={14} className={`alerts-refresh-icon ${loading ? 'spin' : ''}`} />
@@ -184,13 +185,15 @@ export function Alerts() {
                   <strong>Loading alerts...</strong>
                 </div>
               ) : visibleAlerts.length === 0 ? (
-                <div className="alerts-empty-state healthy">
-                  <CheckCircle size={44} />
-                  <strong>{viewMode === 'CURRENT' ? 'All systems are healthy' : 'No resolved alerts'}</strong>
+                <div className="alerts-empty-state">
+                  {error ? <AlertTriangle size={32} /> : <CheckCircle size={32} />}
+                  <strong>{error ? 'Unable to load alerts' : viewMode === 'CURRENT' ? 'No current alerts' : 'No resolved alerts'}</strong>
                   <span>
-                    {viewMode === 'CURRENT'
-                      ? 'There are no current alerts requiring attention.'
-                      : 'Resolved alert history will appear here.'}
+                    {error
+                      ? 'Refresh to try again.'
+                      : viewMode === 'CURRENT'
+                        ? 'There are no current alerts requiring attention.'
+                        : 'Resolved alert history will appear here.'}
                   </span>
                 </div>
               ) : (
@@ -212,6 +215,7 @@ export function Alerts() {
                             {/* Frame 1000005352 */}
                             <div className="alerts-detail-title-line">
                               <h3>{alert.title}</h3>
+                              <span className={`alerts-detail-severity ${severityTone(alert.severity)}`}>{alert.severity || 'Info'}</span>
                               <span className="alerts-detail-category-pill">{sourceLabel(alert.source)}</span>
                             </div>
                             
@@ -238,7 +242,7 @@ export function Alerts() {
                               
                               {/* Host / IP */}
                               <div className="alerts-meta-block">
-                                <span className="meta-block-label">Host / IP</span>
+                                <span className="meta-block-label">Host / endpoint</span>
                                 <span className="meta-block-val">{hostLabel(alert)}</span>
                               </div>
                               <div className="alerts-meta-separator" />
@@ -250,10 +254,20 @@ export function Alerts() {
                               </div>
                               <div className="alerts-meta-separator" />
 
+                              {alert.status?.toUpperCase() === 'RESOLVED' && (
+                                <>
+                                  <div className="alerts-meta-block">
+                                    <span className="meta-block-label">Resolved</span>
+                                    <span className="meta-block-val">{formatDateTime(alert.resolvedAt) || '-'}</span>
+                                  </div>
+                                  <div className="alerts-meta-separator" />
+                                </>
+                              )}
+
                               {/* Status Badge */}
                               <div className="alerts-meta-status-container">
                                 <span className={`alerts-detail-status-pill ${alert.status?.toUpperCase() === 'RESOLVED' ? 'resolved' : ''}`}>
-                                  {alert.status?.toUpperCase() === 'RESOLVED' ? 'Resolved' : 'Active'}
+                                  {alert.status?.toUpperCase() === 'RESOLVED' ? 'Resolved' : 'Current'}
                                 </span>
                               </div>
                             </div>

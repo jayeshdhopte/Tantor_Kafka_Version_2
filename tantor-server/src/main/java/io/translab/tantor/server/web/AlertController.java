@@ -64,6 +64,7 @@ public class AlertController {
         List<Cluster> clusters = clusterRepository.findByStatusNot("DELETED");
         List<Host> allHosts = hostRepository.findAll();
         List<Host> hosts = allHosts.stream()
+                .filter(host -> !Boolean.TRUE.equals(host.getRemoved()))
                 .filter(hostStatusService::isInfrastructureHost)
                 .toList();
         List<Task> tasks = taskRepository.findAll();
@@ -76,8 +77,8 @@ public class AlertController {
         List<Map<String, Object>> alerts = new ArrayList<>();
 
         hosts.forEach(host -> {
-            String effectiveStatus = hostStatusService.effectiveStatus(host);
-            if ("OFFLINE".equalsIgnoreCase(effectiveStatus)) {
+            boolean agentOnline = agentOnline(host);
+            if (!agentOnline) {
                 alerts.add(runtimeAlert(
                         "host-offline-" + host.getId(),
                         "CRITICAL",
@@ -87,14 +88,14 @@ public class AlertController {
                         null,
                         host.getId(),
                         hostIp(host),
-                        host.getLastHeartbeat(),
+                        null,
                         null,
                         "host"
                 ));
             }
 
             long diskPct = diskUsedPercent(host);
-            if (diskPct >= 90) {
+            if (agentOnline && diskPct >= 90) {
                 alerts.add(runtimeAlert(
                         "host-disk-full-" + host.getId(),
                         "CRITICAL",
@@ -108,7 +109,7 @@ public class AlertController {
                         null,
                         "storage"
                 ));
-            } else if (diskPct >= 80) {
+            } else if (agentOnline && diskPct >= 80) {
                 alerts.add(runtimeAlert(
                         "host-disk-warning-" + host.getId(),
                         "WARNING",
@@ -125,7 +126,7 @@ public class AlertController {
             }
 
             long memoryPct = memoryUsedPercent(host);
-            if (memoryPct >= 90) {
+            if (agentOnline && memoryPct >= 90) {
                 alerts.add(runtimeAlert(
                         "host-memory-high-" + host.getId(),
                         memoryPct >= 95 ? "CRITICAL" : "WARNING",
@@ -145,12 +146,12 @@ public class AlertController {
         clusters.forEach(cluster -> {
             List<Host> assignedHosts = assignedHosts(cluster, hostById);
             if ("FAILED".equalsIgnoreCase(cluster.getStatus())) {
-                Task latest = latestTask(tasks, cluster.getId());
+                Task latest = latestFailedTask(tasks, cluster.getId());
                 alerts.add(runtimeAlert(
                         "cluster-failed-" + cluster.getId(),
                         "CRITICAL",
                         "Cluster failed",
-                        cluster.getName() + " is marked failed. " + taskReason(latest, "Review the latest deployment or upgrade task."),
+                        cluster.getName() + " is marked failed. " + taskReason(latest, "Review the cluster's deployment and service health."),
                         cluster.getId(),
                         cluster.getName(),
                         latest == null ? null : latest.getHostId(),
@@ -176,9 +177,8 @@ public class AlertController {
             }
 
             assignedHosts.stream()
-                    .filter(host -> "OFFLINE".equalsIgnoreCase(hostStatusService.effectiveStatus(host)))
-                    .findFirst()
-                    .ifPresent(host -> alerts.add(runtimeAlert(
+                    .filter(host -> !agentOnline(host))
+                    .forEach(host -> alerts.add(runtimeAlert(
                             "cluster-host-offline-" + cluster.getId() + "-" + host.getId(),
                             "CRITICAL",
                             "Cluster host offline",
@@ -187,15 +187,14 @@ public class AlertController {
                             cluster.getName(),
                             host.getId(),
                             hostIp(host),
-                            host.getLastHeartbeat(),
+                            null,
                             null,
                             "cluster"
                     )));
 
             assignedHosts.stream()
-                    .filter(host -> diskUsedPercent(host) >= 95)
-                    .findFirst()
-                    .ifPresent(host -> alerts.add(runtimeAlert(
+                    .filter(host -> agentOnline(host) && diskUsedPercent(host) >= 95)
+                    .forEach(host -> alerts.add(runtimeAlert(
                             "cluster-disk-full-" + cluster.getId() + "-" + host.getId(),
                             "CRITICAL",
                             "Cluster host storage full",
@@ -252,11 +251,17 @@ public class AlertController {
                         null,
                         "consumer"
                 ))));
+        Map<TaskOperationKey, Task> latestTasks = new LinkedHashMap<>();
         tasks.stream()
-                // A port check is an operator-requested prerequisite result. It
-                // belongs in the audit trail, not in the live-health alert feed.
-                .filter(task -> "FAILED".equalsIgnoreCase(task.getStatus()))
+                // Port checks are operator-requested prerequisite results and
+                // belong in the audit trail, not the live-health alert feed.
                 .filter(task -> !"CHECK_PORTS".equalsIgnoreCase(task.getCommand()))
+                .forEach(task -> latestTasks.merge(
+                        new TaskOperationKey(task.getCommand(), task.getClusterId(), task.getHostId()),
+                        task,
+                        (previous, current) -> compareTaskUpdates(previous, current) >= 0 ? previous : current));
+        latestTasks.values().stream()
+                .filter(task -> "FAILED".equalsIgnoreCase(task.getStatus()))
                 .sorted(Comparator.comparing(Task::getUpdatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
                 .limit(12)
                 .forEach(task -> {
@@ -351,7 +356,7 @@ public class AlertController {
                 firstNonBlank(alert.getHostIpSnapshot(), liveHostIp, alert.getAffectedIps()),
                 alert.getCreatedAt() == null ? null : alert.getCreatedAt().atOffset(OffsetDateTime.now().getOffset()),
                 alert.getErrorLog(),
-                "stored"
+                alert.getSource()
         );
         response.put("kafkaClusterId", firstNonBlank(
                 alert.getKafkaClusterIdSnapshot(),
@@ -498,19 +503,32 @@ public class AlertController {
         return cluster.getServices().stream()
                 .map(service -> hostById.get(service.getHostId()))
                 .filter(Objects::nonNull)
+                .distinct()
                 .toList();
     }
 
-    private Task latestTask(List<Task> tasks, UUID clusterId) {
+    private boolean agentOnline(Host host) {
+        return "ONLINE".equalsIgnoreCase(hostStatusService.agentConnectivityStatus(host));
+    }
+
+    private Task latestFailedTask(List<Task> tasks, UUID clusterId) {
         if (clusterId == null) {
             return null;
         }
         return tasks.stream()
                 .filter(task -> clusterId.equals(task.getClusterId()))
+                .filter(task -> "FAILED".equalsIgnoreCase(task.getStatus()))
                 .sorted(Comparator.comparing(Task::getUpdatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
                 .findFirst()
                 .orElse(null);
     }
+
+    private int compareTaskUpdates(Task left, Task right) {
+        return Comparator.nullsFirst(Comparator.<OffsetDateTime>naturalOrder())
+                .compare(left.getUpdatedAt(), right.getUpdatedAt());
+    }
+
+    private record TaskOperationKey(String command, UUID clusterId, String hostId) {}
 
     private String taskReason(Task task, String fallback) {
         if (task == null) {

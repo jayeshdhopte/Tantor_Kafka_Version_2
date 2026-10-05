@@ -36,8 +36,10 @@ apache-maven-*.zip
 go/
 go*.windows-amd64.zip
 jdk-21.0.3+9/
+jdk21/
 server.log
 server.err
+keycloak/
 
 # Artifacts and Heavy Files
 /repository/

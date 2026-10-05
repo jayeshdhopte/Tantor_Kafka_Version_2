@@ -28,6 +28,7 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -338,7 +339,15 @@ public class ClusterController {
         }
 
         return externalClusterRepository.findById(id).map(extCluster -> {
-            List<io.translab.tantor.server.domain.ExternalClusterNode> nodes = externalClusterNodeRepository.findByClusterId(id);
+            List<io.translab.tantor.server.domain.ExternalClusterNode> nodes = externalClusterNodeRepository.findByClusterId(id).stream()
+                    .sorted(Comparator
+                            .comparing(io.translab.tantor.server.domain.ExternalClusterNode::getNodeId,
+                                    Comparator.nullsLast(Comparator.naturalOrder()))
+                            .thenComparing(io.translab.tantor.server.domain.ExternalClusterNode::getHost,
+                                    Comparator.nullsLast(Comparator.naturalOrder()))
+                            .thenComparing(io.translab.tantor.server.domain.ExternalClusterNode::getId,
+                                    Comparator.nullsLast(Comparator.naturalOrder())))
+                    .toList();
             List<String> warnings = new ArrayList<>();
             io.translab.tantor.server.dto.ClusterOverviewDto liveOverview = null;
             try {
@@ -1067,11 +1076,18 @@ public class ClusterController {
         }
 
         Cluster cluster = existing.get();
+        if ("DELETING".equalsIgnoreCase(cluster.getStatus())) {
+            return ResponseEntity.accepted().build();
+        }
         boolean cleanupScheduled = !"EXTERNAL".equalsIgnoreCase(cluster.getMode())
                 && initiateClusterCleanup(cluster);
-        hardDeleteCluster(cluster, "CLUSTER_DELETED", cleanupScheduled);
+        if (cleanupScheduled) {
+            activityAlertService.logActivity("INFO", "Deleting cluster; waiting for VM cleanup", id);
+            return ResponseEntity.accepted().build();
+        }
+        hardDeleteCluster(cluster, "CLUSTER_DELETED", false);
         activityAlertService.logActivity("INFO",
-                cleanupScheduled ? "Deleted cluster after dispatching VM cleanup" : "Deleted cluster", id);
+                "Deleted cluster with no VM cleanup required", id);
         return ResponseEntity.ok().build();
     }
 
@@ -1472,9 +1488,9 @@ public class ClusterController {
         payload.put("heap_size", addon.getHeap_size());
         payload.put("bootstrap_servers", kafkaClientBootstrapServers(bootstrapServers));
         payload.put("group_id", addon.getGroup_id() + "-" + clusterId);
-        payload.put("offset_topic", "tantor-connect-offsets-" + clusterId);
-        payload.put("config_topic", "tantor-connect-configs-" + clusterId);
-        payload.put("status_topic", "tantor-connect-status-" + clusterId);
+        payload.put("offset_topic", "connect-offsets");
+        payload.put("config_topic", "connect-configs");
+        payload.put("status_topic", "connect-status");
         payload.put("min_free_disk_mb", 5120);
         payload.put("replication_factor", Math.max(1, Math.min(3, brokerCount)));
         payload.put("service_user", "root");
@@ -1648,11 +1664,45 @@ public class ClusterController {
         private String configuration_mode;
         private String properties_template;
         private String heap_size;
+        private String heap_xms;
+        private String heap_xmx;
         private Integer listener_port;
         private Integer controller_port;
         private Integer jmx_port;
         private Integer zookeeper_peer_port;
         private Integer zookeeper_election_port;
+    }
+
+    static String heapRangeError(String heapSize, String heapXms, String heapXmx) {
+        if ((heapSize == null || heapSize.isBlank())
+                && (heapXms == null || heapXms.isBlank())
+                && (heapXmx == null || heapXmx.isBlank())) {
+            return null;
+        }
+        if (heapSize != null && !heapSize.isBlank() && heapSizeMiB(heapSize) == null) {
+            return "Heap size must be a positive size such as 512M or 1G.";
+        }
+        String min = heapXms == null || heapXms.isBlank() ? heapSize : heapXms;
+        String max = heapXmx == null || heapXmx.isBlank() ? heapSize : heapXmx;
+        Long minMiB = heapSizeMiB(min);
+        Long maxMiB = heapSizeMiB(max);
+        if (minMiB == null || maxMiB == null) {
+            return "Min Heap and Max Heap must be positive sizes such as 512M or 1G.";
+        }
+        return minMiB > maxMiB ? "Min Heap cannot exceed Max Heap." : null;
+    }
+
+    private static Long heapSizeMiB(String value) {
+        if (value == null || !value.trim().matches("[1-9][0-9]*[mMgG]")) {
+            return null;
+        }
+        String size = value.trim();
+        try {
+            long amount = Long.parseLong(size.substring(0, size.length() - 1));
+            return Math.multiplyExact(amount, Character.toUpperCase(size.charAt(size.length() - 1)) == 'G' ? 1024L : 1L);
+        } catch (NumberFormatException | ArithmeticException e) {
+            return null;
+        }
     }
 
     private String buildServiceConfigJson(Map<String, Object> deploymentConfig, ServiceAssignmentReq svc) {
@@ -1662,6 +1712,12 @@ public class ClusterController {
         }
         if (svc.getHeap_size() != null && !svc.getHeap_size().isBlank()) {
             serviceConfig.put("heap_size", svc.getHeap_size());
+        }
+        if (svc.getHeap_xms() != null && !svc.getHeap_xms().isBlank()) {
+            serviceConfig.put("heap_xms", svc.getHeap_xms());
+        }
+        if (svc.getHeap_xmx() != null && !svc.getHeap_xmx().isBlank()) {
+            serviceConfig.put("heap_xmx", svc.getHeap_xmx());
         }
         if (svc.getListener_port() != null) {
             serviceConfig.put("listener_port", svc.getListener_port());
@@ -1732,6 +1788,10 @@ public class ClusterController {
             }
             if (service.getNode_id() == null || service.getNode_id() <= 0) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Every service assignment must include a positive node id."));
+            }
+            String heapError = heapRangeError(service.getHeap_size(), service.getHeap_xms(), service.getHeap_xmx());
+            if (heapError != null) {
+                return ResponseEntity.badRequest().body(Map.of("error", heapError + " Host: " + service.getHost_id() + "."));
             }
             Integer jmxPort = jmxPortForService(service);
             if (jmxPort != null && (jmxPort < 1 || jmxPort > 65535)) {
@@ -2843,23 +2903,22 @@ public class ClusterController {
 
         for (io.translab.tantor.server.domain.ExternalClusterNode node : nodes) {
             Optional<io.translab.tantor.server.domain.DiscoveryAgent> agentMatch = agents.stream()
-                    .filter(agent -> isFreshOnlineAgent(agent) && matchesDiscoveryAgent(agent, node.getHost()))
-                    .findFirst()
-                    .or(() -> allAgents.stream()
-                            .filter(agent -> isFreshOnlineAgent(agent) && matchesDiscoveryAgent(agent, node.getHost()))
-                            .filter(agent -> agent.getClusterId() == null || agent.getClusterId().equals(cluster.getId()))
-                            .findFirst());
+                    .filter(agent -> matchesDiscoveryAgent(agent, node.getHost()))
+                    .findFirst();
+            boolean agentOnline = agentMatch.filter(this::isFreshOnlineAgent).isPresent();
+            boolean hostIsIp = looksLikeIpAddress(node.getHost());
 
             Map<String, Object> summary = new LinkedHashMap<>();
             summary.put("id", node.getId().toString());
             summary.put("hostId", "");
             summary.put("nodeId", node.getNodeId());
             summary.put("hostname", agentMatch.map(io.translab.tantor.server.domain.DiscoveryAgent::getHostname)
-                    .filter(value -> value != null && !value.isBlank())
-                    .orElse(node.getHost()));
-            summary.put("ipAddress", node.getHost());
+                    .filter(value -> value != null && !value.isBlank() && !looksLikeIpAddress(value))
+                    .orElse(hostIsIp ? "" : node.getHost()));
+            summary.put("ipAddress", hostIsIp ? node.getHost()
+                    : agentMatch.map(agent -> firstIp(agent.getIpAddresses())).orElse(""));
             summary.put("role", externalNodeRole(node));
-            summary.put("status", agentMatch.isPresent() ? "Managed" : "Bootstrap connected");
+            summary.put("status", agentOnline ? "Managed" : "Bootstrap connected");
             summary.put("lastHeartbeat", agentMatch
                     .map(io.translab.tantor.server.domain.DiscoveryAgent::getLastHeartbeat)
                     .orElse(node.getLastSeen()));
@@ -2930,6 +2989,10 @@ public class ClusterController {
         } catch (Exception ignored) {
             return ipAddresses.replaceAll("\\[|\\]|\\\"", "").split(",")[0].trim();
         }
+    }
+
+    private boolean looksLikeIpAddress(String value) {
+        return value != null && (value.matches("^\\d{1,3}(?:\\.\\d{1,3}){3}$") || value.contains(":"));
     }
 
     private String extractBootstrapHost(String bootstrap) {
@@ -3046,7 +3109,20 @@ public class ClusterController {
         Set<String> cleanupHosts = new HashSet<>();
         for (ClusterServiceAssignment svc : cluster.getServices()) {
             if (cleanupHosts.add(svc.getHostId())) {
-                deploymentService.deleteClusterFromHost(cluster.getId(), svc.getHostId(), cluster.getKafkaVersion(), cluster.getConfigJson());
+                List<Map<String, Object>> dataServices = new ArrayList<>();
+                boolean cleanupKafka = false;
+                for (ClusterServiceAssignment onHost : cluster.getServices()) {
+                    if (!svc.getHostId().equals(onHost.getHostId())) continue;
+                    if ("schema_registry".equals(onHost.getRole()) || "kafka_connect".equals(onHost.getRole())) {
+                        Map<String, Object> details = new LinkedHashMap<>(parseConfigJson(onHost.getConfigJson()));
+                        details.put("kind", onHost.getRole());
+                        dataServices.add(details);
+                    } else {
+                        cleanupKafka = true;
+                    }
+                }
+                deploymentService.deleteClusterFromHost(cluster.getId(), svc.getHostId(),
+                        cluster.getKafkaVersion(), cluster.getConfigJson(), dataServices, cleanupKafka);
             }
         }
         return true;

@@ -210,7 +210,9 @@ public class DashboardController {
         row.put("reason", reason);
         row.put("createdAt", cluster.getCreatedAt());
         row.put("bootstrapServers", cluster.getBootstrapServers());
-        row.put("hostCount", assignedHosts.isEmpty() && cluster.getServices() != null ? cluster.getServices().size() : assignedHosts.size());
+        if ("EXTERNAL".equalsIgnoreCase(cluster.getMode())) {
+            row.put("hostCount", assignedHosts.isEmpty() && cluster.getServices() != null ? cluster.getServices().size() : assignedHosts.size());
+        }
         row.put("latestTaskStatus", latestTask == null ? null : latestTask.getStatus());
         row.put("latestTaskCommand", latestTask == null ? null : latestTask.getCommand());
         return row;

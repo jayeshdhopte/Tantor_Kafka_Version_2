@@ -128,10 +128,10 @@ class CanonicalClusterNodeResolverTest {
                 .containsExactly(1, 2);
         assertThat(response.nodes()).extracting(node -> node.identity().role())
                 .containsExactly(CanonicalNodeRole.BROKER, CanonicalNodeRole.BROKER);
-        assertThat(response.nodes()).allSatisfy(node -> {
-            assertThat(node.agentStatus()).isEqualTo(CanonicalAgentStatus.ONLINE);
-            assertThat(node.telemetryStatus()).isEqualTo(CanonicalTelemetryStatus.LIVE);
-        });
+        assertThat(response.nodes()).extracting(node -> node.agentStatus())
+                .containsExactly(CanonicalAgentStatus.NOT_ENROLLED, CanonicalAgentStatus.ONLINE);
+        assertThat(response.nodes()).allSatisfy(node ->
+                assertThat(node.telemetryStatus()).isEqualTo(CanonicalTelemetryStatus.LIVE));
         assertThat(response.nodes().get(1).hostname()).isEqualTo("broker-2.example.test");
         assertThat(response.nodes().get(1).ipAddress()).isEqualTo("192.168.20.22");
         verify(hostRepository, never()).findById("192.168.20.22");

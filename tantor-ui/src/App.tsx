@@ -19,6 +19,7 @@ const ClusterDetails = React.lazy(() => import('./pages/ClusterDetails').then(m 
 const ClusterOverview = React.lazy(() => import('./pages/ClusterOverview').then(m => ({ default: m.ClusterOverview })));
 const Topics = React.lazy(() => import('./pages/Topics').then(m => ({ default: m.Topics })));
 const TopicDetails = React.lazy(() => import('./pages/TopicDetails').then(m => ({ default: m.TopicDetails })));
+const TopicEditSettings = React.lazy(() => import('./pages/TopicEditSettings').then(m => ({ default: m.TopicEditSettings })));
 const Consumers = React.lazy(() => import('./pages/Consumers').then(m => ({ default: m.Consumers })));
 const ConfigEditor = React.lazy(() => import('./pages/ConfigEditor').then(m => ({ default: m.ConfigEditor })));
 const Partitions = React.lazy(() => import('./pages/Partitions').then(m => ({ default: m.Partitions })));
@@ -90,6 +91,7 @@ function App() {
                     <Route path="partitions" element={<Partitions />} />
                     <Route path="topics" element={<Topics />} />
                     <Route path="topics/:topicName" element={<TopicDetails />} />
+                    <Route path="topics/:topicName/edit" element={<TopicEditSettings />} />
                     <Route path="consumers" element={<Consumers />} />
                     <Route path="config" element={<ConfigEditor />} />
                     <Route path="actions" element={<ClusterActions />} />

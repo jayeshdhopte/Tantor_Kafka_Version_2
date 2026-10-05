@@ -114,7 +114,6 @@ public class CanonicalClusterNodeResolver {
 
     private List<CanonicalNodeContract> resolveExternalNodes(CanonicalClusterContract clusterContract) {
         List<DiscoveryAgent> boundAgents = discoveryAgentRepository.findByClusterId(clusterContract.clusterUuid());
-        CanonicalAgentStatus agentStatus = externalAgentStatus(boundAgents);
         List<CanonicalNodeContract> resolved = new ArrayList<>();
 
         for (ExternalClusterNode externalNode
@@ -135,7 +134,7 @@ public class CanonicalClusterNodeResolver {
                     externalNode.getHost(),
                     displayAddress.hostname(),
                     displayAddress.ipAddress(),
-                    agentStatus,
+                    displayAddress.agentStatus(),
                     externalTelemetryStatus(externalNode.getLastSeen())));
         }
         return uniqueAndSorted(resolved);
@@ -259,15 +258,6 @@ public class CanonicalClusterNodeResolver {
                 : CanonicalTelemetryStatus.STALE;
     }
 
-    private CanonicalAgentStatus externalAgentStatus(List<DiscoveryAgent> agents) {
-        if (agents.isEmpty()) {
-            return CanonicalAgentStatus.NOT_ENROLLED;
-        }
-        return agents.stream().anyMatch(this::isFreshOnlineDiscoveryAgent)
-                ? CanonicalAgentStatus.ONLINE
-                : CanonicalAgentStatus.OFFLINE;
-    }
-
     private boolean isFreshOnlineDiscoveryAgent(DiscoveryAgent agent) {
         if (!"ONLINE".equalsIgnoreCase(agent.getStatus()) || agent.getLastHeartbeat() == null) {
             return false;
@@ -298,13 +288,15 @@ public class CanonicalClusterNodeResolver {
                     : agent.getHostname() != null && agent.getHostname().equalsIgnoreCase(reportedHost);
             if (match) {
                 return new DisplayAddress(
-                        firstNonBlank(agent.getHostname(), reportedAsIp ? null : reportedHost),
-                        reportedAsIp ? reportedHost : agentIps.stream().findFirst().orElse(null));
+                        looksLikeIpAddress(agent.getHostname()) ? (reportedAsIp ? null : reportedHost)
+                                : firstNonBlank(agent.getHostname(), reportedAsIp ? null : reportedHost),
+                        reportedAsIp ? reportedHost : agentIps.stream().findFirst().orElse(null),
+                        isFreshOnlineDiscoveryAgent(agent) ? CanonicalAgentStatus.ONLINE : CanonicalAgentStatus.OFFLINE);
             }
         }
         return reportedAsIp
-                ? new DisplayAddress(null, reportedHost)
-                : new DisplayAddress(reportedHost, null);
+                ? new DisplayAddress(null, reportedHost, CanonicalAgentStatus.NOT_ENROLLED)
+                : new DisplayAddress(reportedHost, null, CanonicalAgentStatus.NOT_ENROLLED);
     }
 
     private List<String> parseIpAddresses(String raw) {
@@ -340,5 +332,5 @@ public class CanonicalClusterNodeResolver {
         return null;
     }
 
-    private record DisplayAddress(String hostname, String ipAddress) {}
+    private record DisplayAddress(String hostname, String ipAddress, CanonicalAgentStatus agentStatus) {}
 }

@@ -97,8 +97,8 @@ export function ClusterDetails() {
     cluster.status,
     cluster.overallHealth,
   );
-  const isHealthy = runtimeTone === 'state-positive';
-  const badgeClass = isHealthy ? 'badge-healthy' : 'badge-unhealthy';
+  const badgeClass = runtimeTone === 'state-positive' ? 'badge-healthy'
+    : runtimeTone === 'state-warning' ? 'badge-warning' : 'badge-unhealthy';
   const runtimeLabel = cluster.mode === 'EXTERNAL' ? 'External' : 'Internal';
 
   if (isLogsView) {

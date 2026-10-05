@@ -1,6 +1,7 @@
 package io.translab.tantor.server.web;
 
 import io.translab.tantor.server.service.ClusterNameConflictException;
+import io.translab.tantor.server.service.NodeNameConflictException;
 import io.translab.tantor.server.service.CanonicalClusterNotFoundException;
 import io.translab.tantor.server.service.CanonicalIdentityException;
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +35,11 @@ public class ApiExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(error("CLUSTER_NAME_CONFLICT", cleanMessage(ex)));
     }
 
+    @ExceptionHandler(NodeNameConflictException.class)
+    public ResponseEntity<ApiError> handleNodeNameConflict(NodeNameConflictException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(error("NODE_NAME_CONFLICT", cleanMessage(ex)));
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ApiError> handleIllegalArgument(IllegalArgumentException ex) {
         return ResponseEntity.badRequest().body(error("BAD_REQUEST", cleanMessage(ex)));
@@ -46,6 +52,10 @@ public class ApiExceptionHandler {
         if (cause != null && cause.contains("ux_kf_clusters_active_name_ci")) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(error(
                     "DATA_CONFLICT", "A cluster with this name already exists. Choose a different name."));
+        }
+        if (cause != null && cause.contains("ux_kf_discovery_agents_node_name_ci")) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(error(
+                    "NODE_NAME_CONFLICT", "This node-name is already registered to a different host-id."));
         }
         return ResponseEntity.status(HttpStatus.CONFLICT).body(error(
                 "DATA_CONFLICT", "A data integrity conflict occurred. Please check your input."));

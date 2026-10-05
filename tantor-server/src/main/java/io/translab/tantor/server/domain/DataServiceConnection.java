@@ -55,6 +55,10 @@ public class DataServiceConnection {
     @Column(name = "certificate_data", columnDefinition = "TEXT")
     private String certificateData;
 
+    /** Display name only; certificate bytes remain server-side. */
+    @Column(name = "certificate_file_name")
+    private String certificateFileName;
+
 
     /** AES-256/GCM encrypted truststore password. Never returned in API responses. */
     @Column(name = "truststore_password_encrypted")

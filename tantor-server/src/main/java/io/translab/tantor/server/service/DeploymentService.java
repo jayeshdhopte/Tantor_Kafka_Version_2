@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -431,6 +432,12 @@ public class DeploymentService {
 
     @Transactional
     public UUID deleteClusterFromHost(UUID clusterId, String hostId, String version, String configJsonStr) {
+        return deleteClusterFromHost(clusterId, hostId, version, configJsonStr, List.of(), true);
+    }
+
+    @Transactional
+    public UUID deleteClusterFromHost(UUID clusterId, String hostId, String version, String configJsonStr,
+                                      List<Map<String, Object>> dataServices, boolean cleanupKafka) {
         Task task = createTask(clusterId, hostId, "DELETE_CLUSTER");
         try {
             Map<String, Object> params = new java.util.HashMap<>();
@@ -442,10 +449,11 @@ public class DeploymentService {
             }
             mergeConfigParams(params, configJsonStr);
             applyDefaultKafkaPaths(params);
+            params.put("data_services", objectMapper.writeValueAsString(dataServices));
+            params.put("cleanup_kafka", Boolean.toString(cleanupKafka));
             task.setParameters(objectMapper.writeValueAsString(params));
         } catch (JsonProcessingException e) {
-            log.error("Failed to serialize cleanup parameters", e);
-            task.setParameters("{}");
+            throw new IllegalStateException("Failed to serialize cluster cleanup parameters", e);
         }
         taskRepository.save(task);
         log.info("Dispatched DELETE_CLUSTER task for host {} in cluster {}", hostId, clusterId);

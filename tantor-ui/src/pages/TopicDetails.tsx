@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
-  AlertTriangle, AlertOctagon, ArrowLeft, BarChart3, ChevronDown, ChevronRight,
-  Edit3, Gauge, MessageSquare, MoreVertical, RefreshCw, Search, Settings2,
+  AlertTriangle, ArrowLeft, BarChart3, ChevronDown, ChevronRight,
+  Gauge, MessageSquare, MoreVertical, RefreshCw, Search, Settings2,
   ShieldCheck, Users, X, Plus
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
@@ -181,10 +181,6 @@ export function TopicDetails() {
   const [consumerSearch, setConsumerSearch] = useState('');
   const [configs, setConfigs] = useState<TopicConfig[]>([]);
   const [configSearch, setConfigSearch] = useState('');
-  const [editingConfig, setEditingConfig] = useState<TopicConfig | null>(null);
-  const [configValue, setConfigValue] = useState('');
-  const [savingConfig, setSavingConfig] = useState(false);
-  const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
   const [statistics, setStatistics] = useState<TopicStatistics | null>(null);
   const [statisticsLoading, setStatisticsLoading] = useState(false);
   const [acls, setAcls] = useState<AclRow[]>([]);
@@ -373,35 +369,6 @@ export function TopicDetails() {
     }
   };
 
-  const saveConfig = async () => {
-    if (!canManage) return;
-    if (!editingConfig) return;
-    setSavingConfig(true);
-    try {
-      const response = await fetch(baseUrl + '/configs/' + encodeURIComponent(editingConfig.name), {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ value: configValue })
-      });
-      if (!response.ok) throw new Error(await responseError(response));
-      setEditingConfig(null);
-      await loadSimpleTab('configs');
-      await loadDetail();
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Failed to update setting');
-    } finally {
-      setSavingConfig(false);
-    }
-  };
-
-  const handleCancelConfigEdit = () => {
-    if (editingConfig && configValue !== (editingConfig.value || '')) {
-      setShowUnsavedWarning(true);
-    } else {
-      setEditingConfig(null);
-    }
-  };
-
   const filteredConsumers = useMemo(() => consumers.filter(group =>
     group.groupId.toLowerCase().includes(consumerSearch.toLowerCase())), [consumerSearch, consumers]);
   const filteredConfigs = useMemo(() => configs.filter(config =>
@@ -436,6 +403,7 @@ export function TopicDetails() {
                 onClose={() => setActionMenu(false)}
                 minWidth={180}
               >
+                <button onClick={() => { navigate(`/clusters/${id}/topics/${encodeURIComponent(topicName)}/edit`); setActionMenu(false); }}>Edit settings</button>
                 <button onClick={() => { setConfirmAction('clear'); setActionMenu(false); }}>Clear messages</button>
                 <button onClick={() => { setConfirmAction('recreate'); setActionMenu(false); }}>Recreate topic</button>
                 <button onClick={() => { setConfirmAction('remove'); setActionMenu(false); }}>Remove topic</button>
@@ -540,8 +508,8 @@ export function TopicDetails() {
                 <RefreshCw className={tabLoading ? 'spin' : ''} size={15} />
               </button>
             </div>
-            <div className="detail-table-wrap"><table className="detail-table settings-table"><thead><tr><th>Key</th><th>Value</th><th>Default Value</th><th>Source</th><th /></tr></thead>
-              <tbody>{tabLoading && configs.length === 0 ? <LoadingRow columns={5} /> : filteredConfigs.map(config => <tr key={config.name}><td>{config.name}</td><td>{config.sensitive ? '******' : config.value ?? '-'}</td><td>{config.defaultValue ?? '-'}</td><td>{config.source.toLowerCase().split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}</td><td className="setting-actions">{canManage && !config.readOnly && !config.sensitive && <button title="Edit setting" onClick={() => { setEditingConfig(config); setConfigValue(config.value || ''); }}><Edit3 size={16} /></button>}</td></tr>)}</tbody>
+            <div className="detail-table-wrap"><table className="detail-table settings-table"><thead><tr><th>Key</th><th>Value</th><th>Default Value</th><th>Source</th></tr></thead>
+              <tbody>{tabLoading && configs.length === 0 ? <LoadingRow columns={4} /> : filteredConfigs.map(config => <tr key={config.name}><td>{config.name}</td><td>{config.sensitive ? '******' : config.value ?? '-'}</td><td>{config.defaultValue ?? '-'}</td><td>{config.source.toLowerCase().split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}</td></tr>)}</tbody>
             </table></div>
           </div>
         )}
@@ -641,75 +609,6 @@ export function TopicDetails() {
           onClose={() => setConfirmAction(null)}
           onConfirm={runAction}
         />
-      )}
-      {canManage && editingConfig && createPortal(
-        <div className="topic-modal-backdrop" onMouseDown={handleCancelConfigEdit}>
-          <div className="topic-modal config-modal figma-topic-modal" onMouseDown={event => event.stopPropagation()} style={{ width: '480px' }}>
-            <header className="create-topic-header">
-              <div className="modal-title-area">
-                <h2>Topic setting</h2>
-                <h3 style={{ textTransform: 'none', color: 'var(--button-primary)', fontSize: '15px' }}>
-                  {editingConfig.name.charAt(0).toUpperCase() + editingConfig.name.slice(1)}
-                </h3>
-              </div>
-              <button className="create-topic-close" onClick={handleCancelConfigEdit} aria-label="Close modal">
-                <X size={20} />
-              </button>
-            </header>
-            <div className="figma-topic-modal-body" style={{ padding: '24px 32px' }}>
-              <label className="figma-form-field full-width">
-                <span>Value</span>
-                <input
-                  autoFocus
-                  value={configValue}
-                  onChange={event => setConfigValue(event.target.value)}
-                />
-              </label>
-              <p style={{ margin: '8px 0 0 0', fontSize: 'var(--text-sm)', color: 'var(--text-tertiary)', fontFamily: 'Satoshi, sans-serif' }}>
-                Default value {editingConfig.defaultValue ?? '-1'}
-              </p>
-            </div>
-            <footer className="create-topic-footer">
-              <button type="button" className="topic-button outline cancel-btn" onClick={handleCancelConfigEdit}>
-                Cancel
-              </button>
-              <button className="topic-button filled create-btn" onClick={saveConfig} disabled={savingConfig}>
-                {savingConfig ? 'Saving...' : 'Save setting'}
-              </button>
-            </footer>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {showUnsavedWarning && createPortal(
-        <div className="topic-modal-backdrop" onMouseDown={() => setShowUnsavedWarning(false)}>
-          <div className="topic-modal figma-topic-modal figma-confirm-modal" onMouseDown={event => event.stopPropagation()} style={{ width: '543px', borderRadius: '16px', padding: 0 }}>
-            <div className="confirm-modal-banner">
-              <button onClick={() => setShowUnsavedWarning(false)} className="confirm-modal-close-btn" aria-label="Close warning">
-                <X size={20} />
-              </button>
-            </div>
-            <div className="confirm-modal-body">
-              <div className="confirm-modal-title-row">
-                <AlertOctagon size={24} color="#FFFFFF" fill="var(--color-danger)" style={{ marginRight: '8px' }} />
-                <h2>Your details are not saved.</h2>
-              </div>
-              <p className="confirm-modal-desc">
-                Would you like to save the settings?
-              </p>
-              <div className="confirm-modal-footer">
-                <button type="button" className="confirm-btn-outline" onClick={() => { setShowUnsavedWarning(false); setEditingConfig(null); }}>
-                  Discard
-                </button>
-                <button className="confirm-btn-filled" onClick={() => { setShowUnsavedWarning(false); saveConfig(); }}>
-                  Save settings
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>,
-        document.body
       )}
     </section>
   );

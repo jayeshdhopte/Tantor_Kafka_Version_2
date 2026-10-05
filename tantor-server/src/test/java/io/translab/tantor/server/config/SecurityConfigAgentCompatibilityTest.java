@@ -38,6 +38,7 @@ class SecurityConfigAgentCompatibilityTest {
         mockMvc.perform(get("/api/v1/agents/host-1/tasks")).andExpect(status().isOk());
         mockMvc.perform(post("/api/v1/ui/external-clusters/discovery/report")).andExpect(status().isOk());
         mockMvc.perform(post("/api/v1/ui/external-clusters/discovery/heartbeat")).andExpect(status().isOk());
+        mockMvc.perform(post("/api/v1/ui/external-clusters/discovery/install-check")).andExpect(status().isOk());
         mockMvc.perform(get("/api/v1/ui/external-clusters/discovery/test/tasks")).andExpect(status().isOk());
         mockMvc.perform(get("/api/v1/ui/clusters/external/test/tasks")).andExpect(status().isOk());
         mockMvc.perform(post("/api/v1/ui/external-clusters/discovery/test/tasks/complete"))
@@ -56,6 +57,7 @@ class SecurityConfigAgentCompatibilityTest {
                 "/api/v1/agents/register",
                 "/api/v1/ui/external-clusters/discovery/report",
                 "/api/v1/ui/external-clusters/discovery/heartbeat",
+                "/api/v1/ui/external-clusters/discovery/install-check",
                 "/api/v1/ui/external-clusters/discovery/{name}/tasks/complete",
                 "/api/v1/ui/external-clusters/discovery/{name}/metrics",
                 "/api/v1/ui/external-clusters/bootstrap/register"

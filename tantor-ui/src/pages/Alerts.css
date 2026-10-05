@@ -1,18 +1,15 @@
-/* Import Satoshi Font or use fallback sans-serif fonts */
-@import url('https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;500&display=swap');
-
 .alerts-container {
   display: flex;
   flex-direction: column;
   gap: 24px;
   background: #FFFFFF;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
+  border: 0;
+  border-radius: 0;
   padding: 24px;
   min-height: calc(100vh - 120px);
   margin: 20px;
   box-sizing: border-box;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+  box-shadow: none;
 }
 
 .alerts-wrapper {
@@ -77,10 +74,10 @@
 }
 
 .alerts-status-badge.needs-attention {
-  background: #ffedd5;
-  color: #ea580c;
+  background: #fff0f0;
+  color: #b42333;
   font-weight: 600;
-  border: 1px solid rgba(234, 88, 12, 0.15);
+  border: 1px solid #f5b8c0;
 }
 
 .alerts-status-badge.healthy {
@@ -88,6 +85,12 @@
   color: #15803d;
   font-weight: 600;
   border: 1px solid rgba(21, 128, 61, 0.15);
+}
+
+.alerts-status-badge.unavailable {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
 }
 
 .alerts-subtitle {
@@ -159,7 +162,7 @@
   font-size: 14px;
 }
 
-/* KPI Gradient Banner */
+/* Summary */
 .alerts-content-body {
   display: flex;
   flex-direction: column;
@@ -171,10 +174,10 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  padding: 16px;
+  padding: 0;
   gap: 10px;
-  background: linear-gradient(273.74deg, #FAE1E8 38.03%, #DF678B 80.94%, #3E1363 99.36%), #F2EBFF;
-  border-radius: 16px;
+  background: transparent;
+  border-radius: 0;
   width: 100%;
   box-sizing: border-box;
 }
@@ -196,6 +199,7 @@
   padding: 16px;
   gap: 16px;
   background: #FFFFFF;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
   flex: 1;
 }
@@ -267,10 +271,10 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  padding: 16px;
+  padding: 0;
   gap: 16px;
-  background: #FAFAFA;
-  border-radius: 16px;
+  background: transparent;
+  border-radius: 0;
   width: 100%;
   box-sizing: border-box;
 }
@@ -371,6 +375,7 @@
   align-items: flex-start;
   padding: 16px;
   background: #FFFFFF;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
   width: 100%;
   box-sizing: border-box;
@@ -453,7 +458,7 @@
   align-items: center;
   padding: 2px 8px;
   border: 1px solid #818181;
-  border-radius: 100px;
+  border-radius: 4px;
   font-family: 'Satoshi', 'Inter', system-ui, sans-serif;
   font-style: normal;
   font-weight: 400;
@@ -461,6 +466,28 @@
   line-height: 16px;
   text-align: center;
   color: #818181;
+}
+
+.alerts-detail-severity {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font: 600 12px/16px 'Satoshi', 'Inter', system-ui, sans-serif;
+  text-transform: capitalize;
+}
+
+.alerts-detail-severity.bad {
+  background: #fff0f0;
+  color: #b42333;
+}
+
+.alerts-detail-severity.warn {
+  background: #fff4db;
+  color: #8c5600;
+}
+
+.alerts-detail-severity.info {
+  background: #eaf4ff;
+  color: #145d91;
 }
 
 .alerts-detail-desc {
@@ -509,7 +536,7 @@
   font-size: 14px;
   line-height: 19px;
   color: #818181;
-  word-break: break-all;
+  overflow-wrap: anywhere;
 }
 
 .meta-block-val.mono {
@@ -537,9 +564,9 @@
   justify-content: center;
   align-items: center;
   padding: 4px 8px;
-  background: rgba(42, 199, 146, 0.25);
-  border-radius: 100px;
-  color: #069B68;
+  background: #fff0f0;
+  border-radius: 4px;
+  color: #b42333;
   font-family: 'Satoshi', 'Inter', system-ui, sans-serif;
   font-style: normal;
   font-weight: 400;
@@ -573,6 +600,10 @@
 
 /* Responsive adjustments */
 @media (max-width: 900px) {
+  .alerts-header {
+    flex-wrap: wrap;
+  }
+
   .alerts-kpi-row {
     flex-direction: column;
     align-items: stretch;

@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net"
@@ -158,16 +159,58 @@ func (e *Engine) removeParcel(ctx context.Context, t *api.Task) (*api.TaskResult
 }
 
 func (e *Engine) deleteCluster(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
+	var logs strings.Builder
+	if raw := t.Parameters["data_services"]; raw != "" {
+		var services []map[string]interface{}
+		if err := json.Unmarshal([]byte(raw), &services); err != nil {
+			return e.fail(t, fmt.Sprintf("Invalid data-service cleanup plan: %v", err)), nil
+		}
+		for _, service := range services {
+			parameters := make(map[string]string, len(service))
+			for key, value := range service {
+				switch typed := value.(type) {
+				case string:
+					parameters[key] = typed
+				case float64, bool:
+					parameters[key] = fmt.Sprint(typed)
+				case nil:
+				default:
+					return e.fail(t, "Invalid data-service cleanup parameter"), nil
+				}
+			}
+			kind := ""
+			switch parameters["kind"] {
+			case "schema_registry":
+				kind = dataservice.Schema
+			case "kafka_connect":
+				kind = dataservice.Connect
+			default:
+				return e.fail(t, "Unknown data-service cleanup role"), nil
+			}
+			output, err := dataservice.Clean(ctx, e.exec, kind, &api.Task{Parameters: parameters})
+			logs.WriteString(output)
+			if err != nil {
+				return e.fail(t, fmt.Sprintf("%s cleanup failed: %v\nLogs: %s", kind, err, logs.String())), nil
+			}
+		}
+	}
+	if t.Parameters["cleanup_kafka"] != "" && t.Parameters["cleanup_kafka"] != "true" && t.Parameters["cleanup_kafka"] != "false" {
+		return e.fail(t, "Invalid Kafka cleanup flag"), nil
+	}
+	if t.Parameters["cleanup_kafka"] == "false" {
+		return &api.TaskResult{TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS", LogOutput: logs.String()}, nil
+	}
 	deployer := kafka.NewDeployer(e.cfg, e.client, e.exec)
 	logOutput, err := deployer.Clean(ctx, t)
 	if err != nil {
-		return e.fail(t, fmt.Sprintf("Cluster cleanup failed: %v\nLogs: %s", err, logOutput)), nil
+		return e.fail(t, fmt.Sprintf("Cluster cleanup failed: %v\nLogs: %s%s", err, logs.String(), logOutput)), nil
 	}
+	logs.WriteString(logOutput)
 	return &api.TaskResult{
 		TaskID:    t.TaskID,
 		HostID:    e.cfg.Agent.HostID,
 		Status:    "SUCCESS",
-		LogOutput: logOutput,
+		LogOutput: logs.String(),
 	}, nil
 }
 

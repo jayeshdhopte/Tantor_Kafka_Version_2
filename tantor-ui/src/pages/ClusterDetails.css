@@ -242,9 +242,9 @@
 
 .agent-status-badge.not-linked,
 .agent-status-badge.not-connected {
-  background-color: #f5f4f1;
-  color: #5f5e5a;
-  border: 1px solid #e2e0db;
+  background-color: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
 }
 
 .cluster-tabs {
@@ -607,6 +607,11 @@
 .cd-status-badge.badge-unhealthy {
   background: #FFECEC;
   color: #EF4D5F;
+}
+
+.cd-status-badge.badge-warning {
+  background: #fff6df;
+  color: #7a5407;
 }
 
 .cd-status-badge.warning,

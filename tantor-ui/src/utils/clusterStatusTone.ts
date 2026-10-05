@@ -1,4 +1,4 @@
-export type ClusterStatusTone = 'state-positive' | 'state-negative';
+export type ClusterStatusTone = 'state-positive' | 'state-warning' | 'state-negative';
 
 const POSITIVE_STATES = [
   'ONLINE',
@@ -25,7 +25,6 @@ const NEGATIVE_STATES = [
   'OFFLINE',
   'FAILED',
   'FAILURE',
-  'DEGRADED',
   'UNKNOWN',
   'ERROR',
   'STOPPED',
@@ -37,6 +36,8 @@ const NEGATIVE_STATES = [
   'DOWN',
 ];
 
+const WARNING_STATES = ['PARTIAL', 'PARTIALLY CONNECTED', 'DEGRADED', 'WARNING'];
+
 const normalizeState = (value: unknown) => String(value || '')
   .trim()
   .toUpperCase()
@@ -47,15 +48,16 @@ const includesState = (value: string, state: string) =>
 
 /** Uses the first recognizable state, allowing callers to pass runtime-first fallbacks. */
 export function isPositiveClusterState(...values: unknown[]): boolean {
-  for (const rawValue of values) {
-    const value = normalizeState(rawValue);
-    if (!value) continue;
-    if (NEGATIVE_STATES.some(state => includesState(value, state))) return false;
-    if (POSITIVE_STATES.some(state => includesState(value, state))) return true;
-  }
-  return false;
+  return clusterStatusTone(...values) === 'state-positive';
 }
 
 export function clusterStatusTone(...values: unknown[]): ClusterStatusTone {
-  return isPositiveClusterState(...values) ? 'state-positive' : 'state-negative';
+  for (const rawValue of values) {
+    const value = normalizeState(rawValue);
+    if (!value) continue;
+    if (WARNING_STATES.some(state => includesState(value, state))) return 'state-warning';
+    if (NEGATIVE_STATES.some(state => includesState(value, state))) return 'state-negative';
+    if (POSITIVE_STATES.some(state => includesState(value, state))) return 'state-positive';
+  }
+  return 'state-negative';
 }

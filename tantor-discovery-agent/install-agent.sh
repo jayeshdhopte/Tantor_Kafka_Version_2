@@ -195,7 +195,8 @@ Installation paths:
 
 Validation:
   --require-server-reachable       Fail installation if backend TCP host:port is
-                                   not reachable during installation.
+                                   not reachable during installation. Backend API
+                                   and post-start agent validation are always required.
   -h, --help                       Show this help.
 
 Generic example:
@@ -837,7 +838,7 @@ case "$RHEL_MAJOR" in
 esac
 
 for cmd in uname getent id install systemctl groupadd useradd usermod mktemp runuser \
-  stat readlink dirname grep sort tr awk chown chmod mv journalctl sleep; do
+  stat readlink dirname grep sort tr awk chown chmod mv journalctl sleep tail curl sha256sum hostname; do
   command -v "$cmd" >/dev/null 2>&1 || die "Required command not found: $cmd. Ensure the standard RHEL base utilities are installed offline."
 done
 
@@ -1085,10 +1086,54 @@ check_backend_tcp() {
   if [[ "$REQUIRE_SERVER_REACHABLE" == "true" ]]; then
     die "Cannot connect to backend $host:$port from this VM. Check route/firewall/backend listener."
   fi
-  warn "Backend $host:$port is not reachable right now. Installation will continue; the agent will retry at runtime."
+  warn "Backend $host:$port is not reachable right now. The required API check will determine whether installation can continue."
 }
 
 check_backend_tcp "$SERVER_HOST" "$SERVER_PORT"
+
+# The runtime uses the machine ID when --host-id is omitted. Match that same
+# identity so the post-start check cannot accidentally validate another agent.
+PROBE_AGENT_ID="$HOST_ID"
+if [[ -z "$PROBE_AGENT_ID" ]]; then
+  _machine_id=""
+  [[ ! -r /etc/machine-id ]] || read -r _machine_id < /etc/machine-id || true
+  _machine_id="$(printf '%s' "$_machine_id" | tr -d '[:space:]')"
+  [[ -n "$_machine_id" ]] || _machine_id="$(hostname)"
+  PROBE_AGENT_ID="host-$(printf '%s' "$_machine_id" | sha256sum | awk '{print substr($1, 1, 16)}')"
+fi
+
+escape_curl_config() {
+  local value="${1//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  printf '%s' "$value"
+}
+
+check_backend_api() {
+  local since="${1:-}" curl_config="" secret=""
+  local args=(--silent --show-error --fail --max-time 5 --request POST
+    --data-urlencode "agentId=$PROBE_AGENT_ID")
+  [[ -z "$since" ]] || args+=(--data-urlencode "since=$since")
+
+  case "$AUTH_TYPE" in
+    bearer)
+      secret="$(<"$TOKEN_FILE_SOURCE")"
+      curl_config="$(printf 'header = "Authorization: Bearer %s"\n' "$(escape_curl_config "$secret")")"
+      ;;
+    basic)
+      secret="$(<"$PASSWORD_FILE_SOURCE")"
+      curl_config="$(printf 'user = "%s:%s"\n' "$(escape_curl_config "$AUTH_USERNAME")" "$(escape_curl_config "$secret")")"
+      ;;
+  esac
+
+  printf '%s\n' "$curl_config" | curl --config - "${args[@]}" \
+    "$SERVER_URL/api/v1/ui/external-clusters/discovery/install-check"
+}
+
+_api_status="$(check_backend_api)" || die \
+  "Backend API validation failed at $SERVER_URL. TCP reachability alone is insufficient; verify the backend is healthy and supports the discovery install-check endpoint."
+_api_time="$(printf '%s\n' "$_api_status" | awk -F= '$1 == "serverTime" { print $2; exit }')"
+[[ -n "$_api_time" ]] || die "Backend API install-check returned an invalid response."
+log "Backend API validation passed. Agent registration and discovery will be checked after startup."
 
 check_jmx_exporter() {
   local endpoint="$1"
@@ -1515,6 +1560,14 @@ fi
 # -----------------------------------------------------------------------------
 systemctl daemon-reload
 systemctl enable "$SERVICE_NAME.service" >/dev/null
+# Stop the previous process before taking the server-time baseline. Otherwise
+# an old agent report could make an upgrade appear validated before this build runs.
+if systemctl is-active --quiet "$SERVICE_NAME.service"; then
+  systemctl stop "$SERVICE_NAME.service" || die "Could not stop the previous agent service for validation."
+fi
+_api_status="$(check_backend_api)" || die "Backend API became unavailable before the agent could start."
+INSTALL_BASELINE="$(printf '%s\n' "$_api_status" | awk -F= '$1 == "serverTime" { print $2; exit }')"
+[[ -n "$INSTALL_BASELINE" ]] || die "Backend API did not return an install baseline timestamp."
 systemctl restart "$SERVICE_NAME.service"
 _service_active="false"
 _stable_checks=0
@@ -1537,6 +1590,42 @@ if [[ "$_service_active" != "true" ]]; then
   journalctl -u "$SERVICE_NAME.service" -n 100 --no-pager || true
   exit 1
 fi
+
+_validation_deadline=$((SECONDS + 120))
+_validation_reason="No post-start agent report has reached the backend."
+_validated="false"
+while (( SECONDS < _validation_deadline )); do
+  if ! systemctl is-active --quiet "$SERVICE_NAME.service"; then
+    _validation_reason="Agent service stopped before backend validation completed."
+    break
+  fi
+  if _api_status="$(check_backend_api "$INSTALL_BASELINE")"; then
+    if grep -Fxq 'registered=true' <<< "$_api_status" \
+      && grep -Fxq 'heartbeatAccepted=true' <<< "$_api_status" \
+      && grep -Fxq 'discoveryReceived=true' <<< "$_api_status"; then
+      _validated="true"
+      break
+    fi
+    if ! grep -Fxq 'registered=true' <<< "$_api_status"; then
+      _validation_reason="The backend has not registered this agent ($PROBE_AGENT_ID)."
+    elif ! grep -Fxq 'heartbeatAccepted=true' <<< "$_api_status"; then
+      _validation_reason="The backend has not accepted a new heartbeat from this agent."
+    else
+      _validation_reason="No successful Kafka discovery report from this agent has reached the backend. Check scan paths, Kafka access, and agent logs."
+    fi
+  else
+    _validation_reason="The backend install-check API is unavailable after agent startup."
+  fi
+  sleep 3
+done
+
+if [[ "$_validated" != "true" ]]; then
+  warn "Agent service was installed, but installation validation failed: $_validation_reason"
+  warn "The service is left running for diagnostics; installation is not marked successful."
+  tail -n 60 "$LOG_FILE" >&2 || true
+  exit 1
+fi
+log "Backend confirmed agent registration, fresh heartbeat, and an accepted Kafka discovery report."
 
 # -----------------------------------------------------------------------------
 # Final summary.

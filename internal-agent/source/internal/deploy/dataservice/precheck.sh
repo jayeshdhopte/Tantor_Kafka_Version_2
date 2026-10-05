@@ -23,9 +23,9 @@ if sockets=$(ss -H -ltn 2>&1); then
 else fail "Cannot inspect listening ports: $sockets"; fi
 if [[ "$kind" == kafka-connect ]]; then
  if [[ -d "$plugin" ]]; then
-  jars=$(find -L "$plugin" -mindepth 1 -maxdepth 2 -type f -name '*.jar' -print 2>/dev/null); find_status=$?
-  if (( find_status == 0 )) && [[ -n "$jars" ]]; then pass "Connector JARs staged in $plugin"; else fail "Stage readable connector JARs in $plugin (or repair broken plugin links)"; fi
- else fail "Plugin directory $plugin does not exist; pre-stage connector JARs"; fi
+  if [[ -r "$plugin" && -x "$plugin" ]]; then pass "Plugin directory $plugin is accessible (connector JARs are optional)"; else fail "Plugin directory $plugin is not accessible"; fi
+ elif [[ -e "$plugin" || -L "$plugin" ]]; then fail "Plugin path $plugin is not a directory"
+ else pass "Plugin directory $plugin will be created during installation"; fi
  ancestor=$working
  while [[ ! -d "$ancestor" && "$ancestor" != / ]]; do ancestor=$(dirname -- "$ancestor"); done
  free_mb=$(df -Pm -- "$ancestor" 2>/dev/null | awk 'NR==2 {print $4}')

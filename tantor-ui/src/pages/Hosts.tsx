@@ -236,7 +236,7 @@ export function Hosts() {
                     </td>
                     <td>
                       <div className="availability-cell">
-                        <span className={`availability-badge ${host.status === 'OFFLINE' ? 'unavailable' :
+                        <span className={`availability-badge ${['OFFLINE', 'REMOVED'].includes(host.status || '') ? 'unavailable' :
                             host.status === 'CRITICAL' ? 'critical' :
                               ['OCCUPIED_INTERNAL', 'OCCUPIED_EXTERNAL'].includes(host.status || '') ? 'occupied' : 'available'
                           }`}>

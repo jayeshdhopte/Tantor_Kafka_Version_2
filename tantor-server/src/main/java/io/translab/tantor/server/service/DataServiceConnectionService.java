@@ -1,9 +1,11 @@
 package io.translab.tantor.server.service;
 
 import io.translab.tantor.server.domain.DataServiceConnection;
+import io.translab.tantor.server.domain.ExternalCluster;
 import io.translab.tantor.server.dto.ConnectionResponse;
 import io.translab.tantor.server.dto.SaveConnectionRequest;
 import io.translab.tantor.server.repository.DataServiceConnectionRepository;
+import io.translab.tantor.server.repository.ExternalClusterRepository;
 import io.translab.tantor.server.security.EncryptionService;
 import io.translab.tantor.server.util.SslUtils;
 import lombok.RequiredArgsConstructor;
@@ -32,8 +34,23 @@ public class DataServiceConnectionService {
     private static final Duration HEALTH_CHECK_TIMEOUT = Duration.ofSeconds(5);
 
     private final DataServiceConnectionRepository repository;
+    private final ExternalClusterRepository externalClusterRepository;
     private final EncryptionService encryptionService;
     private final io.translab.tantor.server.audit.AuditService auditService;
+
+    public record ClusterTruststoreInfo(boolean available, String certificateType, String displayName) {}
+
+    public ClusterTruststoreInfo getClusterTruststoreInfo(UUID clusterId) {
+        return externalClusterRepository.findById(clusterId)
+                .filter(cluster -> hasText(cluster.getTruststoreContentEncrypted()))
+                .map(cluster -> {
+                    String type = supportedClusterTruststoreType(cluster.getTruststoreType());
+                    return type == null
+                            ? new ClusterTruststoreInfo(false, null, null)
+                            : new ClusterTruststoreInfo(true, type, "Cluster truststore");
+                })
+                .orElseGet(() -> new ClusterTruststoreInfo(false, null, null));
+    }
 
     // ── Public read API ────────────────────────────────────────────────────────
 
@@ -111,8 +128,14 @@ public class DataServiceConnectionService {
         conn.setProtocol(req.getProtocol().trim().toLowerCase());
         conn.setHost(req.getHost().trim());
         conn.setPort(req.getPort());
-        conn.setCertificateType(normalizeCertificateType(req.getCertificateType()));
-        conn.setCertificateData(req.getCertificateData());
+        if (hasText(req.getCertificateData())) {
+            conn.setCertificateType(normalizeCertificateType(req.getCertificateType()));
+            conn.setCertificateData(req.getCertificateData());
+            conn.setCertificateFileName(safeFileName(req.getCertificateFileName(), conn.getCertificateType()));
+        } else if ("https".equalsIgnoreCase(req.getProtocol()) && !hasText(conn.getCertificateData())) {
+            ExternalCluster cluster = externalClusterRepository.findById(clusterId).orElse(null);
+            if (cluster != null) inheritClusterTruststore(conn, cluster);
+        }
 
         conn.setConnectionName(connectionName);
 
@@ -350,6 +373,35 @@ public class DataServiceConnectionService {
         return normalized;
     }
 
+    private void inheritClusterTruststore(DataServiceConnection conn, ExternalCluster cluster) {
+        String type = supportedClusterTruststoreType(cluster.getTruststoreType());
+        if (type == null || !hasText(cluster.getTruststoreContentEncrypted())) return;
+        conn.setCertificateType(type);
+        conn.setCertificateData(encryptionService.decrypt(cluster.getTruststoreContentEncrypted()));
+        conn.setCertificateFileName("Cluster truststore");
+        if (hasText(cluster.getTruststorePasswordEncrypted())) {
+            conn.setTruststorePasswordEncrypted(cluster.getTruststorePasswordEncrypted());
+        }
+    }
+
+    private String supportedClusterTruststoreType(String type) {
+        if (type == null) return null;
+        String normalized = type.trim().toUpperCase(Locale.ROOT);
+        return "PEM".equals(normalized) || "PKCS12".equals(normalized) ? normalized : null;
+    }
+
+    private String safeFileName(String fileName, String certificateType) {
+        String fallback = "PEM".equals(certificateType) ? "Saved certificate" : "Saved truststore";
+        if (!hasText(fileName)) return fallback;
+        String normalized = fileName.replace('\\', '/');
+        String name = normalized.substring(normalized.lastIndexOf('/') + 1).trim();
+        return name.isBlank() ? fallback : name.substring(0, Math.min(name.length(), 255));
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
     private String buildRestEndpoint(String protocol, String host, int port) {
         return protocol + "://" + host + ":" + port;
     }
@@ -434,6 +486,7 @@ public class DataServiceConnectionService {
                 .port(conn.getPort())
                 .restEndpoint(conn.getRestEndpoint())
                 .certificateType(conn.getCertificateType())
+                .certificateFileName(conn.getCertificateFileName())
                 .certificateConfigured(conn.getCertificateData() != null
                         && !conn.getCertificateData().isBlank())
 

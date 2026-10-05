@@ -342,9 +342,6 @@ public class PrometheusMonitoringService {
             if (Boolean.TRUE.equals(cluster.getJmxEnabled()) && isBrokerRole(role)) {
                 int port = validExporterPort(service.getJmxExporterPort()) ? service.getJmxExporterPort() : jmxPort(cluster);
                 addJmxTarget(targets, cluster, hostIp, port, role, nodeId);
-                if (port != DEFAULT_JMX_PORT) {
-                    addJmxTarget(targets, cluster, hostIp, DEFAULT_JMX_PORT, role, nodeId);
-                }
                 
                 // Add node-level kafka_exporter target
                 addTargetIfAbsent(targets, hostIp + ":" + kafkaExporterPortBase,
