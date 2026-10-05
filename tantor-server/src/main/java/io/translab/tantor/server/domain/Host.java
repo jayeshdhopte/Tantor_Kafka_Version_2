@@ -30,7 +30,7 @@ public class Host {
     @Column(name = "os_details")
     private String osDetails;
 
-    @Column(name = "agent_version")
+    @Column(name = "agent_version", length = 128)
     private String agentVersion;
 
     @Column(name = "agent_path")
