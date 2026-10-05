@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -16,6 +17,24 @@ import java.util.UUID;
 public class TargetedConfigChangeController {
     private final TargetedConfigChangeService service;
     private final RoleAuthenticationUtil roles;
+
+    public record FileValuesRequest(String role, List<Integer> targetNodeIds) {}
+
+    @PostMapping("/file-values")
+    public ResponseEntity<?> fileValues(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                        @PathVariable UUID clusterId,
+                                        @RequestBody FileValuesRequest request) {
+        if (!roles.canAccess(authorization, RoleAuthenticationUtil.CONFIGURATION_READ)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        try {
+            return ResponseEntity.ok(Map.of("values", service.readStaticProperties(clusterId,
+                    request.role(), request.targetNodeIds())));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of("message", e.getMessage() == null
+                    ? "Unable to read active Kafka configuration." : e.getMessage()));
+        }
+    }
 
     @PostMapping("/preview")
     public ResponseEntity<?> preview(@RequestHeader(value = "Authorization", required = false) String authorization,

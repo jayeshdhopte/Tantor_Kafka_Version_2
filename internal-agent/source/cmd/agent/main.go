@@ -19,8 +19,8 @@ import (
 )
 
 var (
-	version   = "1.0.0-prod.16-reporting.9-dataservices.1-configchange.2"
-	commit    = "scoped-kafka-stop"
+	version   = "1.0.0-prod.16-reporting.9-dataservices.1-configchange.3"
+	commit    = "static-config-table"
 	buildDate = "2026-10-05"
 )
 

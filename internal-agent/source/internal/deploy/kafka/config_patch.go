@@ -136,6 +136,51 @@ func (d *Deployer) ReadConfigProperty(_ context.Context, task *api.Task) (string
 	return string(result), nil
 }
 
+// ReadConfigProperties returns editable properties from the active node file.
+// Protected and sensitive keys are omitted before the result leaves the agent.
+func (d *Deployer) ReadConfigProperties(_ context.Context, task *api.Task) (string, error) {
+	path, err := validatedPatchPath(task)
+	if err != nil {
+		return "", err
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read active config: %w", err)
+	}
+	properties, err := parseReadableProperties(string(content))
+	if err != nil {
+		return "", err
+	}
+	result, err := json.Marshal(map[string]interface{}{"properties": properties})
+	if err != nil {
+		return "", err
+	}
+	return string(result), nil
+}
+
+func parseReadableProperties(content string) (map[string]string, error) {
+	properties := make(map[string]string)
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "!") {
+			continue
+		}
+		separator := strings.IndexAny(trimmed, "=:")
+		if separator < 0 {
+			continue
+		}
+		key := strings.TrimSpace(trimmed[:separator])
+		if validatePatchKey(key) != nil {
+			continue
+		}
+		if _, duplicate := properties[key]; duplicate {
+			return nil, fmt.Errorf("duplicate active property %s", key)
+		}
+		properties[key] = strings.TrimSpace(trimmed[separator+1:])
+	}
+	return properties, nil
+}
+
 func validatePatchKey(key string) error {
 	lower := strings.ToLower(key)
 	if !patchKeyPattern.MatchString(key) || protectedPatchKeys[lower] ||

@@ -484,6 +484,28 @@ public class DeploymentService {
     }
 
     @Transactional
+    public UUID readKafkaProperties(UUID clusterId, String hostId, String role, String nodeId,
+                                    String configJsonStr, String configPath) {
+        if (configPath == null || configPath.isBlank()) {
+            throw new IllegalArgumentException("A concrete config file is required.");
+        }
+        Task task = createTask(clusterId, hostId, "READ_KAFKA_PROPERTIES");
+        try {
+            Map<String, Object> params = new java.util.HashMap<>();
+            mergeConfigParams(params, configJsonStr);
+            params.put("config_path", configPath);
+            params.put("role", role);
+            params.put("service_role", role);
+            params.put("node_id", nodeId);
+            task.setParameters(objectMapper.writeValueAsString(params));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Unable to queue Kafka properties read", e);
+        }
+        taskRepository.save(task);
+        return task.getId();
+    }
+
+    @Transactional
     public UUID deleteClusterFromHost(UUID clusterId, String hostId, String version, String configJsonStr) {
         Task task = createTask(clusterId, hostId, "DELETE_CLUSTER");
         try {

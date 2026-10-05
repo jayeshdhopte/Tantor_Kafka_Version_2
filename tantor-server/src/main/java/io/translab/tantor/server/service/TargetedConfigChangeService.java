@@ -48,6 +48,42 @@ public class TargetedConfigChangeService {
         private String value;
     }
 
+    public Map<Integer, Map<String, String>> readStaticProperties(UUID clusterId, String role,
+                                                                    List<Integer> targetNodeIds) {
+        if (!"BROKER".equalsIgnoreCase(role) && !"CONTROLLER".equalsIgnoreCase(role)) {
+            throw new IllegalArgumentException("Select brokers or controllers.");
+        }
+        if (targetNodeIds == null || targetNodeIds.isEmpty()) {
+            throw new IllegalArgumentException("Select at least one node.");
+        }
+        Cluster cluster = clusters.findWithServicesById(clusterId)
+                .orElseThrow(() -> new IllegalArgumentException("Managed cluster not found."));
+        Map<Integer, UUID> tasks = new LinkedHashMap<>();
+        for (Integer nodeId : new LinkedHashSet<>(targetNodeIds)) {
+            if (nodeId == null) throw new IllegalArgumentException("Invalid node ID.");
+            ClusterServiceAssignment service = findService(cluster, role, nodeId);
+            Map<String, Object> config = mergedConfig(cluster, service);
+            config.put("mode", cluster.getMode());
+            config.put("version", cluster.getKafkaVersion());
+            tasks.put(nodeId, deployment.readKafkaProperties(clusterId, service.getHostId(), service.getRole(),
+                    String.valueOf(nodeId), json(config), configPath(cluster, service, config)));
+        }
+        Map<Integer, Map<String, String>> values = new LinkedHashMap<>();
+        for (Map.Entry<Integer, UUID> entry : tasks.entrySet()) {
+            Task result = taskAwaiter.await(entry.getValue(), 90);
+            Object raw = readMap(result.getLogOutput()).get("properties");
+            if (!(raw instanceof Map<?, ?> properties)) {
+                throw new IllegalStateException("Agent did not return Kafka properties for node " + entry.getKey());
+            }
+            Map<String, String> nodeValues = new TreeMap<>();
+            properties.forEach((key, value) -> {
+                if (key instanceof String name && value instanceof String text) nodeValues.put(name, text);
+            });
+            values.put(entry.getKey(), nodeValues);
+        }
+        return values;
+    }
+
     public Map<String, Object> preview(UUID clusterId, ChangeRequest request) {
         Cluster internal = clusters.findWithServicesById(clusterId).orElse(null);
         if (internal == null && !externalClusters.existsById(clusterId)) {

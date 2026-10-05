@@ -80,6 +80,8 @@ func (e *Engine) Execute(ctx context.Context, t *api.Task) (*api.TaskResult, err
 		return e.patchKafkaConfig(ctx, t)
 	case "READ_KAFKA_PROPERTY":
 		return e.readKafkaProperty(ctx, t)
+	case "READ_KAFKA_PROPERTIES":
+		return e.readKafkaProperties(ctx, t)
 	case "DELETE_CLUSTER":
 		return e.deleteCluster(ctx, t)
 	case "ROLLBACK_DEPLOYMENT":
@@ -342,6 +344,15 @@ func (e *Engine) readKafkaProperty(ctx context.Context, t *api.Task) (*api.TaskR
 	output, err := deployer.ReadConfigProperty(ctx, t)
 	if err != nil {
 		return e.fail(t, fmt.Sprintf("Kafka property read failed: %v", err)), nil
+	}
+	return &api.TaskResult{TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS", LogOutput: output}, nil
+}
+
+func (e *Engine) readKafkaProperties(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
+	deployer := kafka.NewDeployer(e.cfg, e.client, e.exec)
+	output, err := deployer.ReadConfigProperties(ctx, t)
+	if err != nil {
+		return e.fail(t, fmt.Sprintf("Kafka properties read failed: %v", err)), nil
 	}
 	return &api.TaskResult{TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS", LogOutput: output}, nil
 }

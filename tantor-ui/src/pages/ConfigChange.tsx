@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Check, GitCompare, Loader2, Plus, RefreshCw, Settings, ShieldCheck, Trash2 } from 'lucide-react';
+import { Check, Loader2, Plus, RefreshCw, Settings, ShieldCheck, Trash2 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import './ConfigChange.css';
 
@@ -28,6 +28,13 @@ export function ConfigChange() {
   const [propertyToAdd, setPropertyToAdd] = useState('');
   const [staticKey, setStaticKey] = useState('');
   const [staticValue, setStaticValue] = useState('');
+  const [fileValues, setFileValues] = useState<Record<string, Record<string, string>> | null>(null);
+  const [staticLoading, setStaticLoading] = useState(false);
+  const [staticReadError, setStaticReadError] = useState('');
+  const [staticDraftValues, setStaticDraftValues] = useState<Record<string, string>>({});
+  const [staticRemovedKeys, setStaticRemovedKeys] = useState<string[]>([]);
+  const [staticAddedKeys, setStaticAddedKeys] = useState<string[]>([]);
+  const [staticAddKey, setStaticAddKey] = useState('');
   const [staticPreview, setStaticPreview] = useState<Preview | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [busy, setBusy] = useState('');
@@ -52,11 +59,11 @@ export function ConfigChange() {
   const services = useMemo(() => (payload?.serviceTopology || []).filter(service => service.role.toLowerCase().includes(role.toLowerCase())), [payload, role]);
   const ids = useMemo(() => Array.from(new Set(services.map(service => service.nodeId))).sort((a, b) => a - b), [services]);
   const targetIds = scope === 'ALL' ? ids : selected;
-  const eligibleStaticTargets = services.filter(service => targetIds.includes(service.nodeId)
+  const eligibleStaticTargets = useMemo(() => services.filter(service => targetIds.includes(service.nodeId)
     && !service.role.toLowerCase().includes('broker + controller')
-    && !service.role.toLowerCase().includes('broker_controller'));
+    && !service.role.toLowerCase().includes('broker_controller')), [services, targetIds]);
   const openStaticTargets = () => navigate(`/clusters/${id}/config?targets=${eligibleStaticTargets.map(service => service.nodeId).join(',')}`);
-  const staticTargetIds = eligibleStaticTargets.map(service => service.nodeId);
+  const staticTargetIds = useMemo(() => eligibleStaticTargets.map(service => service.nodeId), [eligibleStaticTargets]);
   const suggestedStaticKeys = Array.from(new Set((payload?.staticConfigs?.configFiles || [])
     .filter(file => file.nodeId !== undefined && staticTargetIds.includes(file.nodeId))
     .flatMap(file => Object.keys(file.properties || {}))
@@ -81,6 +88,31 @@ export function ConfigChange() {
     nodeId,
     value: payload?.dynamicConfigs?.[String(nodeId)]?.[name]?.value ?? null,
   }));
+  useEffect(() => {
+    if (!id || !payload || clusterMode === 'EXTERNAL' || staticTargetIds.length === 0) return;
+    const controller = new AbortController();
+    Promise.resolve().then(() => { setStaticLoading(true); setStaticReadError(''); setFileValues(null); setStaticPreview(null); });
+    void (async () => {
+      try {
+        const response = await fetch(`/api/v1/clusters/${id}/config/change/file-values`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ role, targetNodeIds: staticTargetIds }), signal: controller.signal,
+        });
+        const result = await response.json() as { values?: Record<string, Record<string, string>>; message?: string };
+        if (!response.ok || !result.values) throw new Error(result.message || 'Unable to read active Kafka files.');
+        setFileValues(result.values);
+      } catch (reason) {
+        if (!controller.signal.aborted) setStaticReadError(reason instanceof Error ? reason.message : 'Unable to read active Kafka files.');
+      } finally { if (!controller.signal.aborted) setStaticLoading(false); }
+    })();
+    return () => controller.abort();
+  }, [id, payload, clusterMode, role, staticTargetIds]);
+  const fileKeys = Array.from(new Set(Object.values(fileValues || {}).flatMap(properties => Object.keys(properties))))
+    .filter(name => !protectedKeys.has(name) && !/(password|secret|token|jaas|credential|keystore|truststore)/i.test(name))
+    .filter(name => role !== 'BROKER' || staticTargetIds.every(nodeId =>
+      payload?.dynamicConfigs?.[String(nodeId)]?.[name]?.isReadOnly === true)).sort();
+  const staticVisibleKeys = Array.from(new Set([...fileKeys, ...staticAddedKeys]))
+    .filter(name => !staticRemovedKeys.includes(name)).sort();
 
   const changeRequest = { role, scope, targetNodeIds: scope === 'ALL' ? ids : selected, key, value };
   const requestPreview = async (candidateKey = key, candidateValue = value) => {
@@ -111,17 +143,18 @@ export function ConfigChange() {
     finally { setBusy(''); }
   };
   const staticRequest = { role, scope: 'SPECIFIC', targetNodeIds: staticTargetIds, key: staticKey.trim(), value: staticValue };
-  const reviewStatic = async () => {
+  const reviewStatic = async (candidateKey = staticKey, candidateValue = staticValue) => {
     if (!id) return;
     setBusy('static-preview'); setError(''); setStaticPreview(null);
     try {
       const response = await fetch(`/api/v1/clusters/${id}/config/change/preview`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(staticRequest),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...staticRequest, key: candidateKey, value: candidateValue }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.message || 'Static change preview failed.');
       if (result.classification !== 'ROLLING_RESTART_REQUIRED') throw new Error('Kafka classifies this property as dynamic. Use the broker dynamic change form.');
-      setStaticPreview(result as Preview);
+      setStaticKey(candidateKey); setStaticValue(candidateValue); setStaticPreview(result as Preview);
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Static change preview failed.'); }
     finally { setBusy(''); }
   };
@@ -144,9 +177,25 @@ export function ConfigChange() {
     ? <button className="cc-primary" disabled={eligibleStaticTargets.length === 0} onClick={openStaticTargets}>Configure selected {role.toLowerCase()}s</button>
     : <>
       {targetIds.length !== staticTargetIds.length && <p className="cc-error">Combined broker/controller processes are excluded from role-only rolling changes.</p>}
-      <div className="cc-property-grid"><label>Kafka property<input list="cc-static-keys" value={staticKey} onChange={event => { setStaticKey(event.target.value); setStaticPreview(null); }} placeholder="For example, num.network.threads" /><datalist id="cc-static-keys">{suggestedStaticKeys.map(name => <option key={name} value={name} />)}</datalist></label><label>New value<input value={staticValue} onChange={event => { setStaticValue(event.target.value); setStaticPreview(null); }} placeholder="New property value" /></label></div>
-      <button className="cc-primary" disabled={!canManage || !staticKey.trim() || staticTargetIds.length === 0 || !!busy} onClick={() => void reviewStatic()}><GitCompare size={16} /> Preview rolling change and precheck</button>
-      {staticPreview && <div className="cc-preview"><h4><ShieldCheck size={17} /> Change preview · {staticPreview.classification}</h4><p>Current values were read from each node's active file. Agents verify them again before writing.</p><div className="cc-preview-table"><div><strong>Node</strong><strong>Current value</strong><strong>New value</strong></div>{staticPreview.targets.map(target => <div key={target.nodeId}><span>{target.nodeId}</span><code>{target.oldValue ?? 'Unset'}</code><code>{target.newValue}</code></div>)}</div><p>Cluster health: <strong>{staticPreview.healthy ? 'Passed' : 'Failed'}</strong>{staticPreview.clusterLocked ? ' · Another cluster job is active' : ''}</p>{!staticPreview.healthy && <p className="cc-error">{Object.values(staticPreview.healthFailures).join('; ')}</p>}<button className="cc-primary" disabled={!canManage || !staticPreview.healthy || staticPreview.clusterLocked || !!busy} onClick={() => void applyStatic()}>{busy === 'static-apply' ? 'Queueing…' : `Start rolling change on ${staticPreview.targets.length} node${staticPreview.targets.length === 1 ? '' : 's'}`}</button></div>}
+      {staticLoading && <p className="cc-loading"><Loader2 className="spin" size={16} /> Reading active {role.toLowerCase()} properties from selected nodes…</p>}
+      {staticReadError && <p className="cc-error">{staticReadError} <button type="button" onClick={() => void refresh()}>Retry</button></p>}
+      {fileValues && <>
+        <div className="cc-table-wrap"><table className="cc-property-table">
+          <thead><tr><th>Property</th><th>Current value in file</th><th>New value</th><th>Actions</th></tr></thead>
+          <tbody>{staticVisibleKeys.map(name => <tr key={name} className={staticPreview?.key === name ? 'cc-reviewed-row' : ''}>
+            <td><code>{name}</code></td>
+            <td><div className="cc-value-list">{staticTargetIds.map(nodeId => {
+              const current = fileValues[String(nodeId)]?.[name];
+              return <div key={nodeId}><span>Node {nodeId}</span><code>{current === undefined ? 'Unset' : current === '' ? '(Empty)' : current}</code></div>;
+            })}</div></td>
+            <td><input aria-label={`New value for ${name}`} value={staticDraftValues[name] ?? ''} disabled={!canManage || !!busy} onChange={event => { setStaticDraftValues(current => ({ ...current, [name]: event.target.value })); if (staticKey === name) setStaticPreview(null); }} placeholder="Enter new value" /></td>
+            <td><div className="cc-row-actions"><button type="button" title={`Review ${name} and run precheck`} aria-label={`Review ${name} and run precheck`} disabled={!canManage || !!busy} onClick={() => void reviewStatic(name, staticDraftValues[name] ?? '')}><Check size={17} /></button><button type="button" title={`Remove ${name} from this view`} aria-label={`Remove ${name} from this view`} disabled={!canManage || !!busy} onClick={() => { setStaticRemovedKeys(current => [...current, name]); setStaticDraftValues(current => { const next = { ...current }; delete next[name]; return next; }); if (staticKey === name) setStaticPreview(null); }}><Trash2 size={16} /></button></div></td>
+          </tr>)}</tbody>
+        </table></div>
+        {staticVisibleKeys.length === 0 && <p className="cc-empty-properties">No restart-required properties were found in the selected active files. Add a property below.</p>}
+        {canManage && <div className="cc-add-property"><input list="cc-static-keys" aria-label="Property to add" value={staticAddKey} disabled={!!busy} onChange={event => setStaticAddKey(event.target.value)} placeholder="Kafka property name" /><datalist id="cc-static-keys">{suggestedStaticKeys.filter(name => !staticVisibleKeys.includes(name)).map(name => <option key={name} value={name} />)}</datalist><button type="button" disabled={!/^[A-Za-z][A-Za-z0-9._-]{0,127}$/.test(staticAddKey.trim()) || staticVisibleKeys.includes(staticAddKey.trim()) || protectedKeys.has(staticAddKey.trim()) || /(password|secret|token|jaas|credential|keystore|truststore)/i.test(staticAddKey) || !!busy} onClick={() => { const name = staticAddKey.trim(); setStaticAddedKeys(current => [...current, name]); setStaticRemovedKeys(current => current.filter(key => key !== name)); setStaticAddKey(''); }}><Plus size={16} /> Add property</button></div>}
+      </>}
+      {staticPreview && <div className="cc-preview"><h4><ShieldCheck size={17} /> Change preview · {staticPreview.key} · {staticPreview.classification}</h4><p>Current values were read from each node's active file. Agents verify them again before writing.</p><div className="cc-preview-table"><div><strong>Node</strong><strong>Current value</strong><strong>New value</strong></div>{staticPreview.targets.map(target => <div key={target.nodeId}><span>{target.nodeId}</span><code>{target.oldValue ?? 'Unset'}</code><code>{target.newValue}</code></div>)}</div><p>Cluster health: <strong>{staticPreview.healthy ? 'Passed' : 'Failed'}</strong>{staticPreview.clusterLocked ? ' · Another cluster job is active' : ''}</p>{!staticPreview.healthy && <p className="cc-error">{Object.values(staticPreview.healthFailures).join('; ')}</p>}<button className="cc-primary" disabled={!canManage || !staticPreview.healthy || staticPreview.clusterLocked || !!busy} onClick={() => void applyStatic()}>{busy === 'static-apply' ? 'Queueing…' : `Start rolling change on ${staticPreview.targets.length} node${staticPreview.targets.length === 1 ? '' : 's'}`}</button></div>}
     </>;
 
   return <div className="cc-page">

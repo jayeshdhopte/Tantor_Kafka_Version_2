@@ -7,6 +7,17 @@ import (
 
 func valuePointer(value string) *string { return &value }
 
+func TestParseReadablePropertiesFiltersSensitiveAndRejectsDuplicates(t *testing.T) {
+	content := "# ignored\nnum.io.threads=8\nlog.retention.hours:72\nsasl.jaas.config=private\nnode.id=1\n"
+	values, err := parseReadableProperties(content)
+	if err != nil || len(values) != 2 || values["num.io.threads"] != "8" || values["log.retention.hours"] != "72" {
+		t.Fatalf("unexpected safe properties: %v, %v", values, err)
+	}
+	if _, err := parseReadableProperties(content + "num.io.threads=9\n"); err == nil {
+		t.Fatal("duplicate active property must be rejected")
+	}
+}
+
 func TestPatchPropertiesPreservesUnrelatedSettings(t *testing.T) {
 	input := "# Kafka node\nnode.id=102\nnum.network.threads=3\nlog.dirs=/data/kafka\n"
 	output, changed, err := patchProperties(input,
