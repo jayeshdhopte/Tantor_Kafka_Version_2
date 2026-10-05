@@ -27,9 +27,11 @@
 .add-services-prechecks h3 { margin: 0 0 6px; color: #36145d; }
 .add-services-precheck { margin-top: 16px; padding: 14px; border: 1px solid #e5e7eb; border-radius: 8px; }
 .add-services-precheck-log { max-height: 220px; overflow: auto; margin: 10px 0 0; padding: 12px; background: #080d18; color: #e5f1ff; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
-.cluster-services-menu { padding: 6px; background: white; border: 1px solid #e5e7eb; border-radius: 8px; box-shadow: 0 6px 24px #0002; }
-.cluster-services-menu button { background: white; border: 0; padding: 12px; color: #36145d; cursor: pointer; border-radius: 5px; }
+.cluster-services-menu { min-width: 240px; padding: 6px; background: white; border: 1px solid #e5e7eb; border-radius: 8px; box-shadow: 0 6px 24px #0002; }
+.cluster-services-menu [role="menu"] { display: flex; flex-direction: column; gap: 2px; }
+.cluster-services-menu button[role="menuitem"] { display: flex; align-items: center; justify-content: flex-start; gap: 10px; width: 100%; min-height: 42px; padding: 10px 12px; background: white; border: 0; color: #36145d; cursor: pointer; border-radius: 5px; text-align: left; white-space: nowrap; }
+.cluster-services-menu button[role="menuitem"] svg { flex: 0 0 15px; }
 .cluster-services-menu button:hover, .cluster-services-menu button:focus-visible { background: #faf5ff; }
-.cluster-services-menu button.danger { color: #b42318; display: flex; align-items: center; gap: 8px; width: 100%; }
+.cluster-services-menu button.danger { color: #b42318; }
 .cluster-services-menu button.danger:hover, .cluster-services-menu button.danger:focus-visible { background: #fef3f2; }
 @media (max-width: 600px) { .add-services-modal .cd-deployment-choice-grid, .add-services-modal .cd-grid-2 { grid-template-columns: 1fr; } }

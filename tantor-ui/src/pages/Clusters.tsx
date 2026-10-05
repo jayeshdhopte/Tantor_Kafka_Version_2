@@ -468,7 +468,7 @@ export function Clusters() {
           {(servicesMenu.cluster.mode === 'EXTERNAL'
             ? !['DELETED', 'DELETING'].includes(servicesMenu.cluster.status)
             : servicesMenu.cluster.status === 'SUCCESS') &&
-            <button role="menuitem" autoFocus onClick={() => { setServicesCluster(servicesMenu.cluster); setServicesMenu(null); }}>Add services to this cluster</button>}
+            <button role="menuitem" autoFocus onClick={() => { setServicesCluster(servicesMenu.cluster); setServicesMenu(null); }}><Plus size={15} /> Add service</button>}
           {!['DELETED', 'DELETING'].includes(servicesMenu.cluster.status) &&
             <button role="menuitem" onClick={() => { setConfigCluster(servicesMenu.cluster); setServicesMenu(null); }}><Settings size={15} /> Configuration change</button>}
           <button role="menuitem" className="danger" onClick={event => {
