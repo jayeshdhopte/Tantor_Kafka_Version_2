@@ -298,16 +298,16 @@ export function DeploymentLogs() {
               display: 'flex',
               flexDirection: 'row',
               alignItems: 'center',
-              padding: '10px 16px',
+              padding: '10px 44px 10px 16px',
               width: '100%',
               height: '40px',
               background: "var(--bg-surface)",
-              border: '1px solid var(--border-focus)',
+              border: '1px solid var(--border-default)',
               borderRadius: 'var(--radius-md)',
               fontFamily: 'Satoshi, sans-serif',
               fontWeight: 'var(--font-regular)',
               fontSize: 'var(--text-base)',
-              color: 'var(--border-focus)',
+              color: 'var(--text-primary)',
               appearance: 'none',
               cursor: 'pointer'
             }}
@@ -318,7 +318,7 @@ export function DeploymentLogs() {
               </option>
             ))}
           </select>
-          <div style={{ position: 'absolute', right: '16px', top: '10px', pointerEvents: 'none', color: 'var(--border-focus)' }}>
+          <div style={{ position: 'absolute', right: '16px', top: '10px', pointerEvents: 'none', color: 'var(--text-tertiary)' }}>
             <ChevronDown size={20} />
           </div>
         </div>

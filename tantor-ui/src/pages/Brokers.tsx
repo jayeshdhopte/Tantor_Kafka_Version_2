@@ -8,6 +8,7 @@ type RoleFilter = 'all' | 'broker' | 'controller' | 'broker_controller';
 interface Broker {
   brokerId: number;
   hostname: string;
+  ipAddress?: string | null;
   role: string;
   brokerHealth: string; // HEALTHY | DEGRADED | OFFLINE
   controller: boolean;
@@ -37,9 +38,26 @@ export function Brokers() {
 
   const fetchBrokers = useCallback(async () => {
     try {
-      const res = await fetch(`/api/v1/clusters/${id}/brokers`);
+      const [res, nodesResponse] = await Promise.all([
+        fetch(`/api/v1/clusters/${id}/brokers`),
+        fetch(`/api/v1/clusters/${id}/nodes`).catch(() => null),
+      ]);
       if (!res.ok) throw new Error('Failed to fetch brokers');
-      setBrokers(await res.json());
+      const rows: Broker[] = await res.json();
+      const canonical = nodesResponse?.ok ? await nodesResponse.json() : null;
+      const nodes: { identity: { nodeId: number; role: string }; hostname: string | null; ipAddress: string | null }[] = canonical?.nodes ?? [];
+      const byId = new Map(nodes.map(node => [node.identity.nodeId, node]));
+      setBrokers(rows.map(row => {
+        const node = byId.get(row.brokerId);
+        const reportedHost = row.hostname || '';
+        const reportedAsIp = /^\d{1,3}(?:\.\d{1,3}){3}$/.test(reportedHost) || reportedHost.includes(':');
+        return {
+          ...row,
+          hostname: node ? node.hostname || '' : reportedAsIp ? '' : reportedHost,
+          ipAddress: node ? node.ipAddress : reportedAsIp ? reportedHost : null,
+          role: node?.identity.role?.toLowerCase() || row.role,
+        };
+      }));
       setError(null);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to fetch brokers');
@@ -90,11 +108,15 @@ export function Brokers() {
     .filter(b => matchesRoleFilter(b, roleFilter))
     .filter(b =>
       b.hostname.toLowerCase().includes(search.toLowerCase()) ||
+      (b.ipAddress || '').toLowerCase().includes(search.toLowerCase()) ||
       b.brokerId.toString().includes(search)
     )
     .sort((a, b) => {
       const aVal = a[sortField];
       const bVal = b[sortField];
+      if (aVal == null || bVal == null) {
+        return aVal == null && bVal == null ? 0 : aVal == null ? 1 : -1;
+      }
       if (typeof aVal === 'string' && typeof bVal === 'string')
         return sortOrder === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
       return sortOrder === 'asc'
@@ -222,8 +244,9 @@ export function Brokers() {
                 ID
               </th>
               <th onClick={() => handleSort('hostname')} className="sortable">
-                Host IP
+                Hostname
               </th>
+              <th onClick={() => handleSort('ipAddress')} className="sortable">IP Address</th>
               <th>Role</th>
               <th onClick={() => handleSort('cpuUsagePct')} className="sortable">
                 CPU
@@ -250,7 +273,8 @@ export function Brokers() {
                 </td>
 
                 {/* Hostname */}
-                <td className="font-mono">{broker.hostname}</td>
+                <td className="font-mono">{broker.hostname || 'Not reported'}</td>
+                <td className="font-mono">{broker.ipAddress || 'Not reported'}</td>
 
                 {/* Role */}
                 <td>

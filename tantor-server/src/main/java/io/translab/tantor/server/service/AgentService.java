@@ -433,9 +433,23 @@ public class AgentService {
             return;
         }
         String status = currentTask.getStatus();
+        if ("PRECHECK_SCHEMA".equals(command) || "INSTALL_SCHEMA".equals(command)
+                || "VERIFY_SCHEMA_REGISTRY".equals(command) || "PRECHECK_CONNECT".equals(command)
+                || "INSTALL_CONNECT".equals(command) || "VERIFY_CONNECT".equals(command)) {
+            return;
+        }
+        if ("DELETED".equals(cluster.getStatus())) {
+            return;
+        }
+        if (("DELETING".equals(cluster.getStatus()) || "DELETE_FAILED".equals(cluster.getStatus()))
+                && !"DELETE_CLUSTER".equals(command)) {
+            return;
+        }
         
         if ("FAILED".equals(status)) {
-            if ("UPGRADE_KAFKA".equals(command) && upgradeRollbackCompleted(currentTask)) {
+            if ("DELETE_CLUSTER".equals(command)) {
+                cluster.setStatus("DELETE_FAILED");
+            } else if ("UPGRADE_KAFKA".equals(command) && upgradeRollbackCompleted(currentTask)) {
                 cluster.setStatus("SUCCESS");
             } else {
                 cluster.setStatus("FAILED");
@@ -443,16 +457,19 @@ public class AgentService {
         } else if ("VALIDATING".equals(status)) {
             cluster.setStatus("VALIDATING");
         } else if ("RUNNING".equals(status) || "IN_PROGRESS".equals(status)) {
-            cluster.setStatus("DELETE_CLUSTER".equals(command) ? "DELETING" : "RUNNING");
+            if (!"DELETE_CLUSTER".equals(command) || !"DELETE_FAILED".equals(cluster.getStatus())) {
+                cluster.setStatus("DELETE_CLUSTER".equals(command) ? "DELETING" : "RUNNING");
+            }
         } else if ("SUCCESS".equals(status)) {
             boolean allSuccess = true;
+            boolean cleanupFailed = false;
             for (io.translab.tantor.server.domain.ClusterServiceAssignment svc : cluster.getServices()) {
                 List<Task> hostTasks = currentTask.getClusterId() != null
                     ? taskRepository.findByClusterIdAndHostIdAndCommandOrderByCreatedAtDesc(currentTask.getClusterId(), svc.getHostId(), command)
                     : taskRepository.findByHostIdAndCommandOrderByCreatedAtDesc(svc.getHostId(), command);
                 if (hostTasks.isEmpty() || !"SUCCESS".equals(hostTasks.get(0).getStatus())) {
                     allSuccess = false;
-                    break;
+                    cleanupFailed |= !hostTasks.isEmpty() && "FAILED".equals(hostTasks.get(0).getStatus());
                 }
             }
             if (allSuccess) {
@@ -472,6 +489,8 @@ public class AgentService {
                 } else {
                     cluster.setStatus("SUCCESS");
                 }
+            } else if ("DELETE_CLUSTER".equals(command)) {
+                cluster.setStatus(cleanupFailed ? "DELETE_FAILED" : "DELETING");
             }
         }
         // Preserve the actor that initiated the deployment. This callback runs asynchronously without the user security context, so replacing updatedBy with system caused completed deployment audit events to be attributed to system.

@@ -15,6 +15,10 @@ interface ConnectorRow {
   tasks: number;
   runningTasks: number;
   config: Record<string, string>;
+  status: {
+    connector?: { state?: string; worker_id?: string; trace?: string };
+    tasks?: { id: number; state: string; worker_id?: string; trace?: string }[];
+  };
 }
 
 interface ConnectorPlugin {
@@ -47,6 +51,13 @@ interface SavedConnection {
   certificateConfigured: boolean;
   truststoreConfigured: boolean;
   certificateType?: string;
+  certificateFileName?: string;
+}
+
+interface ClusterTruststoreInfo {
+  available: boolean;
+  certificateType?: string;
+  displayName?: string;
 }
 
 interface DiscoveredConnection {
@@ -133,6 +144,8 @@ export function KafkaConnect() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'clusters' | 'connectors' | 'plugins'>('clusters');
+  const [selectedConnectorName, setSelectedConnectorName] = useState<string | null>(null);
+  const [connectorDetailTab, setConnectorDetailTab] = useState<'tasks' | 'config'>('tasks');
   const [showCreate, setShowCreate] = useState(false);
   const [showConnection, setShowConnection] = useState(false);
   const [connectorJson, setConnectorJson] = useState(connectorTemplate);
@@ -141,6 +154,7 @@ export function KafkaConnect() {
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ Multi-instance state Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const [savedConnections, setSavedConnections] = useState<SavedConnection[]>([]);
+  const [clusterTruststore, setClusterTruststore] = useState<ClusterTruststoreInfo | null>(null);
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(initialSession?.selectedConnectionId ?? null);
   const loadRequestId = useRef(0);
 
@@ -165,6 +179,16 @@ export function KafkaConnect() {
     () => savedConnections.find(c => c.id === selectedConnectionId) ?? null,
     [savedConnections, selectedConnectionId]
   );
+
+  useEffect(() => {
+    if (!id) return;
+    const controller = new AbortController();
+    fetch(`/api/v1/clusters/${id}/data-services/cluster-truststore`, { signal: controller.signal })
+      .then(response => response.ok ? response.json() : null)
+      .then(info => { if (!controller.signal.aborted) setClusterTruststore(info); })
+      .catch(() => { if (!controller.signal.aborted) setClusterTruststore(null); });
+    return () => controller.abort();
+  }, [id]);
 
   /**
    * Safely appends ?connectionId=... to any URL using URLSearchParams.
@@ -224,7 +248,7 @@ export function KafkaConnect() {
       setProtocol(conn.protocol || 'http');
       setCustomIp(conn.host || '');
       setCustomPort(conn.port ? String(conn.port) : '');
-      setCertType(conn.certificateType || 'PEM');
+      setCertType(conn.certificateType || clusterTruststore?.certificateType || 'PEM');
       setFormIsDefault(conn.isDefault);
     } else {
       setEditingConnectionId(null);
@@ -232,7 +256,7 @@ export function KafkaConnect() {
       setProtocol('http');
       setCustomIp('');
       setCustomPort('');
-      setCertType('PEM');
+      setCertType(clusterTruststore?.certificateType || 'PEM');
       setFormIsDefault(false);
     }
     setCertFile(null);
@@ -255,6 +279,7 @@ export function KafkaConnect() {
         port: parseInt(customPort.trim()) || 8083,
         certificateType: certType,
         certificateData: certData,
+        certificateFileName: certData ? certFile?.name : undefined,
         truststorePassword: certPassword || undefined,
         isDefault: formIsDefault
       };
@@ -352,6 +377,7 @@ export function KafkaConnect() {
     const connectionId = value || null;
     if (!connectionId || connectionId === selectedConnectionId) return;
     loadRequestId.current += 1;
+    setSelectedConnectorName(null);
     setSelectedConnectionId(connectionId);
     setSummary(null);
     setError(null);
@@ -366,7 +392,7 @@ export function KafkaConnect() {
     setCustomIp(discovered.host || '');
     setCustomPort(discovered.port ? String(discovered.port) : '8083');
     setFormIsDefault(true);
-    setCertType('PEM');
+    setCertType(existing?.certificateType || clusterTruststore?.certificateType || 'PEM');
     setCertFile(null);
     setCertFileName('');
     setCertPassword('');
@@ -462,6 +488,7 @@ export function KafkaConnect() {
     connectors: summary?.connectorCount ?? 0,
     runningTasks: summary?.runningTasks ?? 0
   }], [summary, selectedConn]);
+  const selectedConnector = summary?.connectors.find(connector => connector.name === selectedConnectorName) ?? null;
 
   const connectorPayloads = (): Record<string, unknown>[] => {
     const parsed = JSON.parse(connectorJson);
@@ -894,7 +921,7 @@ export function KafkaConnect() {
               ) : summary && summary.connectors.length > 0 ? (
                 summary.connectors.map(connector => (
                   <tr key={connector.name}>
-                    <td>{connector.name}</td>
+                    <td><button type="button" className="ds-connector-link" onClick={() => { setSelectedConnectorName(connector.name); setConnectorDetailTab('tasks'); }}>{connector.name}</button></td>
                     <td>{connector.class || '-'}</td>
                     <td><span className={statusClass(connector.state)}>{connector.state.charAt(0) + connector.state.slice(1).toLowerCase()}</span></td>
                     <td>{connector.runningTasks} / {connector.tasks}</td>
@@ -948,14 +975,56 @@ export function KafkaConnect() {
       </div>
       </>}
 
+      {selectedConnector && createPortal(
+        <div className="ds-modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setSelectedConnectorName(null); }}>
+          <div className="ds-modal ds-connector-details" role="dialog" aria-modal="true" aria-label={`Connector ${selectedConnector.name}`}>
+            <div className="ds-modal-header">
+              <div>
+                <h3>{selectedConnector.name}</h3>
+                <span className={statusClass(selectedConnector.state)}>{selectedConnector.state}</span>
+              </div>
+              <button type="button" className="ds-close-btn" onClick={() => setSelectedConnectorName(null)} aria-label="Close connector details"><X size={20} /></button>
+            </div>
+            <div className="ds-connector-detail-tabs" role="tablist" aria-label="Connector details">
+              <button type="button" role="tab" aria-selected={connectorDetailTab === 'tasks'} className={connectorDetailTab === 'tasks' ? 'active' : ''} onClick={() => setConnectorDetailTab('tasks')}>Tasks</button>
+              <button type="button" role="tab" aria-selected={connectorDetailTab === 'config'} className={connectorDetailTab === 'config' ? 'active' : ''} onClick={() => setConnectorDetailTab('config')}>Config</button>
+            </div>
+            <div className="ds-connector-detail-body" role="tabpanel">
+              {connectorDetailTab === 'tasks' ? (
+                selectedConnector.status?.tasks?.length ? (
+                  <table className="ds-table ds-kc-table">
+                    <thead><tr><th>Task ID</th><th>Status</th><th>Worker</th></tr></thead>
+                    <tbody>{selectedConnector.status.tasks.map(task => (
+                      <tr key={task.id}>
+                        <td>{task.id}</td>
+                        <td><span className={statusClass(task.state)}>{task.state}</span>{task.trace && <pre className="ds-connector-task-trace">{task.trace}</pre>}</td>
+                        <td>{task.worker_id || '-'}</td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                ) : <p className="ds-connector-detail-empty">No tasks reported for this connector.</p>
+              ) : Object.keys(selectedConnector.config ?? {}).length ? (
+                <table className="ds-table ds-kc-table ds-connector-config-table">
+                  <thead><tr><th>Property</th><th>Value</th></tr></thead>
+                  <tbody>{Object.entries(selectedConnector.config ?? {}).sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => (
+                    <tr key={key}><td>{key}</td><td>{value == null ? '' : String(value)}</td></tr>
+                  ))}</tbody>
+                </table>
+              ) : <p className="ds-connector-detail-empty">No configuration reported for this connector.</p>
+              }
+            </div>
+          </div>
+        </div>, document.body
+      )}
+
       {/* Ã¢â€â‚¬Ã¢â€â‚¬ Connection modal Ã¢â€â‚¬Ã¢â€â‚¬ */}
       {canManage && showConnection && createPortal(
         <div className="ds-modal-backdrop" role="dialog" aria-modal="true">
           <div className="ds-modal ds-connection-modal" style={{ width: '680px', borderRadius: 'var(--radius-lg)', background: "var(--bg-surface)", padding: 'var(--space-6)', boxShadow: '0px 22px 60px rgba(0, 0, 0, 0.24)' }}>
             <div className="ds-modal-header" style={{ border: 'none', padding: '0 0 20px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <h3 style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-medium)', fontSize: '18px', color: 'var(--button-primary-active)', margin: 0 }}>Add Kafka Connect Connection</h3>
-                <span className="ds-muted-line" style={{ fontFamily: 'Satoshi, sans-serif', fontSize: 'var(--text-sm)', color: 'var(--text-tertiary)', marginTop: '4px', display: 'block' }}>New connection</span>
+                <h3 style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-medium)', fontSize: '18px', color: 'var(--button-primary-active)', margin: 0 }}>{editingConnectionId ? 'Edit Kafka Connect Connection' : 'Add Kafka Connect Connection'}</h3>
+                <span className="ds-muted-line" style={{ fontFamily: 'Satoshi, sans-serif', fontSize: 'var(--text-sm)', color: 'var(--text-tertiary)', marginTop: '4px', display: 'block' }}>{editingConnectionId ? formConnectionName : 'New connection'}</span>
               </div>
               <button type="button" className="ds-icon-button" onClick={() => setShowConnection(false)} title="Close" style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-tertiary)' }}>
                 <X size={20} />
@@ -1071,6 +1140,18 @@ export function KafkaConnect() {
                     />
                   </label>
                   {certFileName && <span className="ds-secret-note" style={{ fontFamily: 'Satoshi, sans-serif', fontSize: 'var(--text-xs)', color: 'var(--color-success)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}><CheckCircle size={14} /> {certFileName}</span>}
+                  {!certFileName && editingConnectionId && selectedConn?.certificateConfigured && (
+                    <div className="ds-saved-certificate">
+                      <FileDown size={16} aria-hidden="true" />
+                      <span>Saved file: {selectedConn.certificateFileName || (selectedConn.certificateType === 'PEM' ? 'Certificate (name unavailable)' : 'Truststore (name unavailable)')}. Kept unless replaced.</span>
+                    </div>
+                  )}
+                  {!certFileName && !selectedConn?.certificateConfigured && protocol === 'https' && clusterTruststore?.available && (
+                    <div className="ds-saved-certificate">
+                      <FileDown size={16} aria-hidden="true" />
+                      <span>{clusterTruststore.displayName} ({clusterTruststore.certificateType}) will be used when saved.</span>
+                    </div>
+                  )}
                 </div>
               </div>
 

@@ -1333,6 +1333,15 @@
   background: #16A34A;
 }
 
+.kafka-running-badge.state-negative {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.kafka-running-badge.state-negative .status-dot {
+  background: #b91c1c;
+}
+
 .monitoring-status-pills-row {
   display: flex;
   align-items: center;

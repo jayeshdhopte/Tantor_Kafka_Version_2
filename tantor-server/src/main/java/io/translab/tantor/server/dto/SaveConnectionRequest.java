@@ -36,6 +36,8 @@ public class SaveConnectionRequest {
     private String certificateType;
     /** Base64-encoded certificate content (PEM text or PKCS12 binary). */
     private String certificateData;
+    /** Original file name for display; only used when certificateData is supplied. */
+    private String certificateFileName;
     /** Plaintext password — encrypted before persistence. Null = keep existing. */
     private String truststorePassword;
     /**

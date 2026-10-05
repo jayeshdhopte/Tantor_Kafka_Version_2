@@ -71,6 +71,7 @@ public class SecurityConfig {
                                         auth.requestMatchers(HttpMethod.POST,
                                                         "/api/v1/ui/external-clusters/discovery/report",
                                                         "/api/v1/ui/external-clusters/discovery/heartbeat",
+                                                        "/api/v1/ui/external-clusters/discovery/install-check",
                                                         "/api/v1/ui/external-clusters/discovery/service-tasks/claim",
                                                         "/api/v1/ui/external-clusters/discovery/service-tasks/*/complete",
                                                         "/api/v1/ui/external-clusters/discovery/*/tasks/complete",

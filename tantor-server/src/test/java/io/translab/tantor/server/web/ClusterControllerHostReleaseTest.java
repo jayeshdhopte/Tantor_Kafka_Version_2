@@ -30,6 +30,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Map;
@@ -40,6 +41,7 @@ import java.time.OffsetDateTime;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -69,7 +71,20 @@ class ClusterControllerHostReleaseTest {
     ClusterController controller;
 
     @Test
-    void deletingClusterReleasesOccupiedHost() {
+    void newConnectDeploymentUsesStableInternalTopicNames() {
+        ClusterController.KafkaConnectAddonReq addon = new ClusterController.KafkaConnectAddonReq();
+        addon.setHost_id("connect-host");
+        addon.setArtifact_url("https://repo.example/connect.tgz");
+        Map<String, Object> payload = ReflectionTestUtils.invokeMethod(controller, "connectAddonPayload",
+                addon, UUID.randomUUID(), "broker:9092", "/opt/kafka", 1);
+
+        assertThat(payload).containsEntry("config_topic", "connect-configs")
+                .containsEntry("offset_topic", "connect-offsets")
+                .containsEntry("status_topic", "connect-status");
+    }
+
+    @Test
+    void deletingClusterKeepsOccupiedHostUntilAgentConfirmsCleanup() {
         UUID clusterId = UUID.randomUUID();
         String hostId = "agent-vm-229";
 
@@ -94,17 +109,94 @@ class ClusterControllerHostReleaseTest {
         when(roleAuthenticationUtil.canAccess(any(), anyString())).thenReturn(true);
         when(externalClusterRepository.findById(clusterId)).thenReturn(Optional.empty());
         when(clusterRepository.findById(clusterId)).thenReturn(Optional.of(cluster));
-        when(hostRepository.findById(hostId)).thenReturn(Optional.of(host));
         when(deploymentService.deleteClusterFromHost(
-                clusterId, hostId, cluster.getKafkaVersion(), cluster.getConfigJson()))
+                clusterId, hostId, cluster.getKafkaVersion(), cluster.getConfigJson(), List.of(), true))
                 .thenReturn(UUID.randomUUID());
 
         controller.deleteCluster("Bearer test-token", clusterId);
 
-        assertThat(host.getClusterId()).isNull();
-        assertThat(host.getStatus()).isEqualTo("ONLINE");
-        verify(hostRepository).save(host);
-        verify(clusterRepository).purgeById(clusterId);
+        assertThat(cluster.getStatus()).isEqualTo("DELETING");
+        assertThat(host.getClusterId()).isEqualTo(clusterId);
+        assertThat(host.getStatus()).isEqualTo("OCCUPIED");
+        verify(hostRepository, never()).save(host);
+        verify(clusterRepository, never()).purgeById(clusterId);
+    }
+
+    @Test
+    void deletionIncludesManagedDataServicesOnTheirOwnHosts() {
+        UUID clusterId = UUID.randomUUID();
+        Cluster cluster = new Cluster();
+        cluster.setId(clusterId);
+        cluster.setMode("INTERNAL");
+        cluster.setConfigJson("{}");
+        ClusterServiceAssignment broker = new ClusterServiceAssignment();
+        broker.setHostId("kafka-host");
+        broker.setRole("broker");
+        ClusterServiceAssignment schema = new ClusterServiceAssignment();
+        schema.setHostId("kafka-host");
+        schema.setRole("schema_registry");
+        schema.setConfigJson("{\"bootstrap_servers\":\"broker:9092\",\"rest_port\":8081}");
+        ClusterServiceAssignment connect = new ClusterServiceAssignment();
+        connect.setHostId("connect-host");
+        connect.setRole("kafka_connect");
+        connect.setConfigJson("{\"bootstrap_servers\":\"broker:9092\",\"rest_port\":8083}");
+        cluster.setServices(List.of(broker, schema, connect));
+        ReflectionTestUtils.setField(controller, "objectMapper", new ObjectMapper());
+        when(roleAuthenticationUtil.canAccess(any(), anyString())).thenReturn(true);
+        when(externalClusterRepository.findById(clusterId)).thenReturn(Optional.empty());
+        when(clusterRepository.findById(clusterId)).thenReturn(Optional.of(cluster));
+
+        controller.deleteCluster("Bearer test-token", clusterId);
+
+        verify(deploymentService).deleteClusterFromHost(org.mockito.ArgumentMatchers.eq(clusterId),
+                org.mockito.ArgumentMatchers.eq("kafka-host"), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq("{}"), org.mockito.ArgumentMatchers.argThat(services ->
+                        services.size() == 1 && "schema_registry".equals(services.get(0).get("kind"))
+                                && Integer.valueOf(8081).equals(services.get(0).get("rest_port"))),
+                org.mockito.ArgumentMatchers.eq(true));
+        verify(deploymentService).deleteClusterFromHost(org.mockito.ArgumentMatchers.eq(clusterId),
+                org.mockito.ArgumentMatchers.eq("connect-host"), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq("{}"), org.mockito.ArgumentMatchers.argThat(services ->
+                        services.size() == 1 && "kafka_connect".equals(services.get(0).get("kind"))
+                                && Integer.valueOf(8083).equals(services.get(0).get("rest_port"))),
+                org.mockito.ArgumentMatchers.eq(false));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void externalHostsKeepHostnameAndIpSeparateEvenWhenAgentIsOffline() {
+        ReflectionTestUtils.setField(controller, "objectMapper", new ObjectMapper());
+        UUID clusterId = UUID.randomUUID();
+        ExternalCluster cluster = new ExternalCluster();
+        cluster.setId(clusterId);
+        ExternalClusterNode known = new ExternalClusterNode();
+        known.setId(UUID.randomUUID());
+        known.setHost("192.168.3.21");
+        known.setNodeId(1);
+        known.setIsBroker(true);
+        ExternalClusterNode unknown = new ExternalClusterNode();
+        unknown.setId(UUID.randomUUID());
+        unknown.setHost("192.168.3.22");
+        unknown.setNodeId(2);
+        unknown.setIsController(true);
+        DiscoveryAgent agent = new DiscoveryAgent();
+        agent.setClusterId(clusterId);
+        agent.setHostname("broker-1.example.test");
+        agent.setIpAddresses("[\"192.168.3.21\"]");
+        agent.setStatus("OFFLINE");
+        when(discoveryAgentRepository.findByClusterId(clusterId)).thenReturn(List.of(agent));
+        when(discoveryAgentRepository.findAll()).thenReturn(List.of(agent));
+
+        List<Map<String, Object>> hosts = ReflectionTestUtils.invokeMethod(
+                controller, "externalClusterHosts", cluster, List.of(known, unknown));
+
+        assertThat(hosts).hasSize(2);
+        assertThat(hosts.get(0)).containsEntry("hostname", "broker-1.example.test")
+                .containsEntry("ipAddress", "192.168.3.21")
+                .containsEntry("role", "broker");
+        assertThat(hosts.get(1)).containsEntry("hostname", "")
+                .containsEntry("ipAddress", "192.168.3.22")
+                .containsEntry("role", "controller");
     }
 
     @Test
@@ -155,6 +247,59 @@ class ClusterControllerHostReleaseTest {
         assertThat(body.getNodePaths().get(1).isHasTelemetry()).isFalse();
         assertThat(body.getNodePaths().get(1).getInstallDir()).isNull();
         assertThat(body.getNodePaths().get(1).getConfig()).isNull();
+    }
+
+    @Test
+    void externalOverviewKeepsNodeRowsOrderedWhileHeartbeatValuesChange() {
+        UUID clusterId = UUID.randomUUID();
+        ExternalCluster cluster = new ExternalCluster();
+        cluster.setId(clusterId);
+        cluster.setName("external-test");
+        cluster.setKafkaMode("kraft");
+
+        ExternalClusterNode first = new ExternalClusterNode();
+        first.setId(UUID.randomUUID());
+        first.setClusterId(clusterId);
+        first.setNodeId(1);
+        first.setHost("node-1");
+        first.setIsController(true);
+
+        ExternalClusterNode second = new ExternalClusterNode();
+        second.setId(UUID.randomUUID());
+        second.setClusterId(clusterId);
+        second.setNodeId(2);
+        second.setHost("node-2");
+        second.setIsController(true);
+        second.setInstallDir("/srv/kafka");
+        second.setLastSeen(OffsetDateTime.now());
+
+        DiscoveryAgent agent = new DiscoveryAgent();
+        agent.setId("agent-2");
+        agent.setHostname("node-2");
+        agent.setClusterId(clusterId);
+        agent.setStatus("OFFLINE");
+        agent.setLastHeartbeat(OffsetDateTime.now());
+
+        when(clusterRepository.findById(clusterId)).thenReturn(Optional.empty());
+        when(externalClusterRepository.findById(clusterId)).thenReturn(Optional.of(cluster));
+        when(externalClusterNodeRepository.findByClusterId(clusterId))
+                .thenReturn(List.of(second, first), List.of(first, second));
+        when(discoveryAgentRepository.findByClusterId(clusterId)).thenReturn(List.of(agent));
+        when(discoveryAgentRepository.findAll()).thenReturn(List.of(agent));
+
+        var before = controller.getClusterOverview(clusterId).getBody();
+        agent.setStatus("ONLINE");
+        var after = controller.getClusterOverview(clusterId).getBody();
+
+        assertThat(before).isNotNull();
+        assertThat(after).isNotNull();
+        assertThat(before.getControllers()).extracting(row -> row.getNodeId()).containsExactly(1, 2);
+        assertThat(after.getControllers()).extracting(row -> row.getNodeId()).containsExactly(1, 2);
+        assertThat(before.getNodePaths()).extracting(row -> row.getNodeId()).containsExactly(1, 2);
+        assertThat(after.getNodePaths()).extracting(row -> row.getNodeId()).containsExactly(1, 2);
+        assertThat(before.getNodePaths().get(1).isHasTelemetry()).isFalse();
+        assertThat(after.getNodePaths().get(1).isHasTelemetry()).isTrue();
+        assertThat(after.getNodePaths().get(1).getInstallDir()).isEqualTo("/srv/kafka");
     }
 
     @Test

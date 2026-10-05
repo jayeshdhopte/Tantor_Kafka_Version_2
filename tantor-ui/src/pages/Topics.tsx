@@ -419,7 +419,7 @@ export function Topics() {
                   Topic Name
                 </div>
               </th>
-              <th>Partiation</th>
+              <th>Partition</th>
               <th>Out of Sync Replica</th>
               <th>Replication Factor</th>
               <th>Message</th>

@@ -22,6 +22,8 @@ public class ConnectionResponse {
     private Integer port;
     private String restEndpoint;
     private String certificateType;
+    /** File name or source label only; certificate content is never returned. */
+    private String certificateFileName;
     /** True when certificate data has been stored (content is not returned). */
     private boolean certificateConfigured;
 

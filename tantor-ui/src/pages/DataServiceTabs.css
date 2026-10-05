@@ -425,6 +425,38 @@
   white-space: nowrap;
 }
 
+.ds-connector-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--button-primary-active);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ds-connector-link:hover { text-decoration: underline; }
+.ds-connector-link:focus-visible { outline: 2px solid var(--button-primary); outline-offset: 3px; }
+
+.ds-modal.ds-connector-details {
+  width: min(760px, 100%);
+  height: min(620px, calc(100vh - 48px));
+  border-radius: 8px;
+}
+
+.ds-connector-details .ds-modal-header { align-items: flex-start; gap: 16px; }
+.ds-connector-details .ds-modal-header h3 { overflow-wrap: anywhere; margin-bottom: 8px; }
+.ds-connector-detail-tabs { display: flex; gap: 24px; padding: 0 24px; border-bottom: 1px solid #ECECF1; }
+.ds-connector-detail-tabs button { border: 0; border-bottom: 2px solid transparent; background: none; padding: 12px 2px; color: var(--text-tertiary); font: inherit; cursor: pointer; }
+.ds-connector-detail-tabs button.active { border-bottom-color: var(--button-primary); color: var(--button-primary-active); }
+.ds-connector-detail-body { overflow: auto; padding: 24px; flex: 1; }
+.ds-connector-detail-body .ds-table { width: 100%; }
+.ds-connector-config-table td { overflow-wrap: anywhere; white-space: pre-wrap; }
+.ds-connector-config-table td:first-child { width: 42%; font-weight: 600; }
+.ds-connector-task-trace { max-width: 100%; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+.ds-connector-detail-empty { color: var(--text-tertiary); text-align: center; padding: 48px 0; }
+
 .ds-kc-connectors-table .ds-status {
   min-height: 20px;
   padding: 0 8px;
@@ -1681,6 +1713,22 @@
   background: #121016;
 }
 
+.ds-saved-certificate {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 8px;
+  color: #256447;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.ds-saved-certificate svg {
+  flex: none;
+}
+
 .ds-version-schema-code {
   margin: 0;
   padding: 24px;
@@ -2310,10 +2358,29 @@
 .ds-sr-versions-panel {
   border-color: #D2D2D7;
   border-radius: 8px;
+  overflow: visible;
 }
 
 .ds-sr-versions-table {
   table-layout: fixed;
+}
+
+.ds-sr-versions-table .ds-version-expand-row td {
+  height: auto;
+  vertical-align: top;
+}
+
+.ds-sr-versions-table .ds-version-schema-code {
+  max-height: none;
+  overflow: visible;
+  scrollbar-gutter: auto;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .ds-sr-versions-panel {
+    overflow-x: auto;
+  }
 }
 
 .ds-sr-versions-table thead {

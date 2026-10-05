@@ -98,11 +98,11 @@
   }
 }
 
-.table-card {
+.consumers-tab .table-card {
   background-color: #fff;
   border-radius: 0.75rem;
   box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  border: 1px solid var(--border-color);
+  border: 1px solid #cbd5e1;
   overflow: hidden;
 }
 
@@ -114,7 +114,8 @@
 .consumer-groups-table {
   width: 100%;
   min-width: 840px;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   table-layout: fixed;
   font-family: 'Satoshi', sans-serif;
 }
@@ -132,7 +133,7 @@
 .consumer-groups-table th {
   color: var(--button-primary-active);
   background: var(--bg-surface);
-  border-bottom: 1px solid var(--border-default);
+  border-bottom: 1px solid #cbd5e1;
   font-size: var(--text-md);
   font-weight: var(--font-medium);
 }
@@ -140,9 +141,12 @@
 .consumer-groups-table td {
   color: var(--text-heading);
   background: var(--bg-surface);
-  border-bottom: 1px solid var(--border-default);
   font-size: var(--text-base);
   font-weight: var(--font-regular);
+}
+
+.consumer-groups-table tbody tr + tr td {
+  border-top: 1px solid #cbd5e1;
 }
 
 .consumer-groups-table th:first-child,

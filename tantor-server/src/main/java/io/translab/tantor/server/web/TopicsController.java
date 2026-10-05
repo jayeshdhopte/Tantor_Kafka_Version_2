@@ -144,6 +144,19 @@ public class TopicsController {
         return ResponseEntity.ok(topicOperationsService.getTopicConfigs(clusterId, topicName));
     }
 
+    @PutMapping("/topics/{topicName}/configs")
+    public ResponseEntity<Void> updateConfigs(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable UUID clusterId, @PathVariable String topicName,
+            @RequestBody TopicConfigsUpdateRequest request) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.TOPIC_MUTATION)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        topicOperationsService.updateTopicConfigs(clusterId, topicName, request.getValues(), request.getResets());
+        clusterChanged(clusterId, "TOPIC_CONFIG_CHANGED", Map.of("topic", topicName));
+        return ResponseEntity.noContent().build();
+    }
+
     @PutMapping("/topics/{topicName}/configs/{key}")
     public ResponseEntity<Void> alterConfig(
             @RequestHeader(value = "Authorization", required = false) String authorization,
@@ -243,5 +256,11 @@ public class TopicsController {
     @Data
     public static class ConfigValueRequest {
         private String value;
+    }
+
+    @Data
+    public static class TopicConfigsUpdateRequest {
+        private Map<String, String> values;
+        private List<String> resets;
     }
 }

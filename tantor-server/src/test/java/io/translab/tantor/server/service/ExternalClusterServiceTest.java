@@ -792,6 +792,107 @@ class ExternalClusterServiceTest {
         assertThat(summary.get("stateLabel")).isEqualTo("Agent disconnected - no recent heartbeat");
     }
 
+    @Test
+    void installValidationRequiresRegistrationHeartbeatAndDiscoveryAfterBaseline() {
+        ExternalClusterRepository clusterRepository = mock(ExternalClusterRepository.class);
+        DiscoveryAgentRepository agentRepository = mock(DiscoveryAgentRepository.class);
+        ExternalClusterService service = service(clusterRepository, agentRepository, mock(KafkaAdminService.class));
+        java.util.concurrent.atomic.AtomicReference<DiscoveryAgent> storedAgent =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        when(agentRepository.findById("host-test"))
+                .thenAnswer(invocation -> Optional.ofNullable(storedAgent.get()));
+        when(agentRepository.save(any(DiscoveryAgent.class)))
+                .thenAnswer(invocation -> {
+                    DiscoveryAgent agent = invocation.getArgument(0);
+                    storedAgent.set(agent);
+                    return agent;
+                });
+        when(clusterRepository.findByStatusNot("DELETED")).thenReturn(List.of());
+
+        OffsetDateTime baseline = OffsetDateTime.now().minusSeconds(2);
+        assertThat(service.installValidation("host-test", baseline).registered()).isFalse();
+
+        ExternalClusterService.ExternalDiscoveryReport heartbeat =
+                new ExternalClusterService.ExternalDiscoveryReport();
+        heartbeat.setHostId("host-test");
+        heartbeat.setHostname("test-host");
+        heartbeat.setBootstrapServers("test-host:9092");
+        heartbeat.setRunning(true);
+        service.recordDiscoveryAgentHeartbeat(heartbeat);
+
+        var afterHeartbeat = service.installValidation("host-test", baseline);
+        assertThat(afterHeartbeat.registered()).isTrue();
+        assertThat(afterHeartbeat.heartbeatAccepted()).isTrue();
+        assertThat(afterHeartbeat.discoveryReceived()).isFalse();
+
+        ExternalClusterService.ExternalDiscoveryReport discovery =
+                new ExternalClusterService.ExternalDiscoveryReport();
+        discovery.setHostId("host-test");
+        discovery.setName("test-kafka");
+        discovery.setHostname("test-host");
+        discovery.setBootstrapServers("test-host:9092");
+        discovery.setRunning(true);
+        service.recordDiscoveryReport(discovery);
+
+        var validated = service.installValidation("host-test", baseline);
+        assertThat(validated.registered()).isTrue();
+        assertThat(validated.heartbeatAccepted()).isTrue();
+        assertThat(validated.discoveryReceived()).isTrue();
+        assertThat(service.installValidation("host-test", validated.serverTime()).discoveryReceived())
+                .isFalse();
+        assertThat(service.installValidation("another-host", baseline).discoveryReceived()).isFalse();
+    }
+
+    @Test
+    void duplicateNodeNameIsRejectedButSameHostCanReportAgain() {
+        ExternalClusterRepository clusterRepository = mock(ExternalClusterRepository.class);
+        DiscoveryAgentRepository agentRepository = mock(DiscoveryAgentRepository.class);
+        ExternalClusterService service = service(clusterRepository, agentRepository, mock(KafkaAdminService.class));
+        when(clusterRepository.findByStatusNot("DELETED")).thenReturn(List.of());
+        when(agentRepository.existsNodeNameOwnedByAnotherHost("kafka-node-1", "host-b"))
+                .thenReturn(true);
+
+        ExternalClusterService.ExternalDiscoveryReport first = new ExternalClusterService.ExternalDiscoveryReport();
+        first.setHostId("host-a");
+        first.setHostname("Kafka-Node-1");
+        first.setName("test-kafka");
+        first.setBootstrapServers("localhost:9092");
+        service.recordDiscoveryReport(first);
+        service.recordDiscoveryReport(first);
+
+        ExternalClusterService.ExternalDiscoveryReport duplicate = new ExternalClusterService.ExternalDiscoveryReport();
+        duplicate.setHostId("host-b");
+        duplicate.setHostname(" kafka-node-1 ");
+        duplicate.setName("test-kafka");
+        duplicate.setBootstrapServers("localhost:9092");
+        assertThatThrownBy(() -> service.recordDiscoveryReport(duplicate))
+                .isInstanceOf(NodeNameConflictException.class)
+                .hasMessageContaining("different host-id");
+
+        ExternalClusterService.ExternalDiscoveryReport heartbeat = new ExternalClusterService.ExternalDiscoveryReport();
+        heartbeat.setHostId("host-b");
+        heartbeat.setHostname("KAFKA-NODE-1");
+        heartbeat.setBootstrapServers("localhost:9092");
+        assertThatThrownBy(() -> service.recordDiscoveryAgentHeartbeat(heartbeat))
+                .isInstanceOf(NodeNameConflictException.class);
+        org.mockito.Mockito.verify(agentRepository, org.mockito.Mockito.times(2))
+                .save(any(DiscoveryAgent.class));
+    }
+
+    @Test
+    void discoveryAgentRequiresStableHostId() {
+        ExternalClusterService service = service(mock(ExternalClusterRepository.class),
+                mock(DiscoveryAgentRepository.class), mock(KafkaAdminService.class));
+        ExternalClusterService.ExternalDiscoveryReport report = new ExternalClusterService.ExternalDiscoveryReport();
+        report.setName("test-kafka");
+        report.setHostname("kafka-node-1");
+        report.setBootstrapServers("localhost:9092");
+
+        assertThatThrownBy(() -> service.recordDiscoveryReport(report))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("stable host-id");
+    }
+
     private ExternalClusterService service(ExternalClusterRepository externalClusterRepository) {
         return service(
                 mock(ClusterRepository.class),

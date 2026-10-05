@@ -1027,6 +1027,27 @@ input:checked+.cd-toggle-slider:before {
   cursor: pointer;
 }
 
+.cd-artifact-upload-trigger.cd-secondary-btn.compact {
+  width: auto;
+  height: 32px;
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 6px 10px;
+  white-space: nowrap;
+}
+
+.cd-field .cd-artifact-upload-notice {
+  color: var(--color-success);
+  font-size: 12px;
+}
+
+.cd-modal-backdrop.cd-artifact-upload-backdrop { z-index: 1100; }
+.cd-artifact-upload-modal { width: min(500px, 100%); }
+.cd-artifact-upload-modal form { min-height: 0; overflow: auto; }
+.cd-artifact-upload-modal .cd-config-modal-body { gap: 16px; }
+.cd-artifact-upload-modal input[type="file"] { height: auto; }
+.cd-artifact-upload-error { margin: 0; color: var(--color-danger); font-size: 13px; }
+
 .cd-secondary-btn.compact.cd-fix-prereqs-btn {
   flex: 0 0 auto;
   width: auto;
@@ -1253,24 +1274,24 @@ input:checked+.cd-toggle-slider:before {
 
 .cd-node-config-top {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+  flex-wrap: wrap;
   margin-bottom: 24px;
 }
 
 .cd-config-controls {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  width: min(208px, 100%);
 }
 
 .cd-heap-field {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  gap: 4px;
   color: #332849;
   font-size: 14px;
   font-weight: 500;
@@ -1278,7 +1299,8 @@ input:checked+.cd-toggle-slider:before {
 }
 
 .cd-heap-field input {
-  width: 80px;
+  box-sizing: border-box;
+  width: 100%;
   height: 40px;
   background: #FFFFFF;
   border: 1px solid #CCCCCC;

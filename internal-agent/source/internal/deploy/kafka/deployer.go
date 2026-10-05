@@ -2138,6 +2138,22 @@ func (d *Deployer) persistIPTables(ctx context.Context) error {
 	return nil
 }
 
+func heapSizesForTask(params map[string]string) (string, string) {
+	heapSize := strings.TrimSpace(params["heap_size"])
+	if heapSize == "" {
+		heapSize = "1G"
+	}
+	heapXms := strings.TrimSpace(params["heap_xms"])
+	if heapXms == "" {
+		heapXms = heapSize
+	}
+	heapXmx := strings.TrimSpace(params["heap_xmx"])
+	if heapXmx == "" {
+		heapXmx = heapSize
+	}
+	return heapXms, heapXmx
+}
+
 func (d *Deployer) createSystemdService(ctx context.Context, user, installDir string, t *api.Task) error {
 	out, _, _ := d.exec.Run(ctx, "readlink", "-f", "/usr/bin/java")
 	javaHome := filepath.Dir(filepath.Dir(strings.TrimSpace(out)))
@@ -2145,10 +2161,7 @@ func (d *Deployer) createSystemdService(ctx context.Context, user, installDir st
 		javaHome = "/usr" // fallback
 	}
 
-	heapSize := t.Parameters["heap_size"]
-	if heapSize == "" {
-		heapSize = "1G"
-	}
+	heapXms, heapXmx := heapSizesForTask(t.Parameters)
 
 	jmxPort := kafkaJMXPortForTask(t)
 	dataDir := t.Parameters["kafka_data_dir"]
@@ -2173,7 +2186,8 @@ func (d *Deployer) createSystemdService(ctx context.Context, user, installDir st
 		Group         string
 		JavaHome      string
 		InstallDir    string
-		HeapSize      string
+		HeapXms       string
+		HeapXmx       string
 		JmxPort       string
 		JmxAgentPath  string
 		JmxConfigPath string
@@ -2184,7 +2198,8 @@ func (d *Deployer) createSystemdService(ctx context.Context, user, installDir st
 		Group:         user,
 		JavaHome:      javaHome,
 		InstallDir:    installDir,
-		HeapSize:      heapSize,
+		HeapXms:       heapXms,
+		HeapXmx:       heapXmx,
 		JmxPort:       jmxPort,
 		JmxAgentPath:  jmxAgentPath,
 		JmxConfigPath: jmxConfigPath,

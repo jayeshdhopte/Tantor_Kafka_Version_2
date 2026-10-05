@@ -3,13 +3,11 @@ import react from '@vitejs/plugin-react'
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
-  const envDir = '..'
-  const env = loadEnv(mode, envDir, '')
+  const env = loadEnv(mode, '..', '')
   const apiTarget = env.VITE_API_PROXY_TARGET || 'http://localhost:8443'
   const artifactTarget = env.VITE_ARTIFACT_PROXY_TARGET || 'http://localhost:8081'
 
   return {
-    envDir,
     plugins: [react()],
     build: {
       // Vite 7 uses Rollup rather than Vite 8's Rolldown bundler. Keep normal

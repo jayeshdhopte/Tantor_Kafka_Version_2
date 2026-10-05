@@ -3,7 +3,6 @@
 window.__TANTOR_CONFIG__ = window.__TANTOR_CONFIG__ || {
   environment: "development",
   publicOrigin: window.location.origin,
-  authEnabled: false,
   apiBasePath: "/api",
   artifactApiBasePath: "/api/v1/artifacts"
 };

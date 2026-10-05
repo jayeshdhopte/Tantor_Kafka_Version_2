@@ -1,6 +1,6 @@
 import { SchemaRegistryFields, KafkaConnectFields } from '../components/ServiceConfigurationFields';
 import { validateServicePath as validatePath, defaultSchemaRegistryConfig, defaultKafkaConnectConfig, type SchemaRegistryConfig, type KafkaConnectConfig } from '../components/serviceConfiguration';
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { confirmAction, notifyAction } from '../components/confirmUtils';
@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { AgentConnectivityModal } from '../components/AgentConnectivityModal';
 import { runtimeConfig } from '../config/runtimeConfig';
+import { usePermissions } from '../hooks/usePermissions';
 import './ClusterDeployment.css';
 
 type Host = {
@@ -108,6 +109,8 @@ type ServiceAssignment = {
   configuration_mode: ConfigMode;
   properties_template: string;
   heap_size: string;
+  heap_xms: string;
+  heap_xmx: string;
   listener_port?: number;
   controller_port?: number;
   jmx_port?: number;
@@ -144,7 +147,15 @@ type PropertyRow = {
 type NodeConfigState = {
   mode: ConfigMode;
   rows: PropertyRow[];
+  heapMin: string;
   heapSize: string;
+};
+
+const heapSizeInMiB = (value: string): number | null => {
+  const match = /^([1-9]\d*)([mMgG])$/.exec(value.trim());
+  if (!match) return null;
+  const amount = Number(match[1]) * (match[2].toUpperCase() === 'G' ? 1024 : 1);
+  return Number.isSafeInteger(amount) ? amount : null;
 };
 
 type PrereqResult = {
@@ -404,6 +415,7 @@ const CustomRefreshIcon = ({ size = 20, color = '#818181', className = '' }: { s
 
 export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   const navigate = useNavigate();
+  const { canManage } = usePermissions();
   const [searchParams] = useSearchParams();
   const addClusterId = searchParams.get('mode') === 'add' ? searchParams.get('clusterId') : null;
   const isAddNodeMode = Boolean(addClusterId);
@@ -413,6 +425,13 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   const [existingCluster, setExistingCluster] = useState<ExistingCluster | null>(null);
   const [loadingHosts, setLoadingHosts] = useState(true);
   const [loadingVersions, setLoadingVersions] = useState(true);
+  const [showArtifactUpload, setShowArtifactUpload] = useState(false);
+  const [uploadingArtifact, setUploadingArtifact] = useState(false);
+  const [uploadArtifactVersion, setUploadArtifactVersion] = useState('');
+  const [uploadArtifactDirectory, setUploadArtifactDirectory] = useState('');
+  const [uploadArtifactFile, setUploadArtifactFile] = useState<File | null>(null);
+  const [uploadArtifactError, setUploadArtifactError] = useState('');
+  const [uploadArtifactNotice, setUploadArtifactNotice] = useState('');
   const [schemaArtifacts, setSchemaArtifacts] = useState<SchemaArtifact[]>([]);
   const [loadingCluster, setLoadingCluster] = useState(false);
 
@@ -544,6 +563,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     setLoadingVersions(true);
     try {
       const res = await fetch('/api/v1/artifacts?serviceType=KAFKA');
+      if (!res.ok) throw new Error('Failed to load Kafka artifacts');
       const data = await res.json();
       const mapped = (data.content || []).map((a: KafkaVersionRaw) => ({
         version: a.version,
@@ -559,9 +579,62 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       if (firstAvailable) setKafkaVersion(current => current || firstAvailable.version);
     } catch (e) {
       console.error(e);
-      setVersions([]);
     } finally {
       setLoadingVersions(false);
+    }
+  };
+
+  const uploadKafkaArtifact = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const version = uploadArtifactVersion.trim();
+    const file = uploadArtifactFile;
+    if (!canManage || !file || !version || uploadingArtifact) return;
+    if (!/\.(tgz|tar\.gz)$/i.test(file.name)) {
+      setUploadArtifactError('Select a Kafka .tgz or .tar.gz archive.');
+      return;
+    }
+    if (versions.some(item => item.available && item.version === version)) {
+      setUploadArtifactError(`Kafka ${version} is already available. Select it from the list.`);
+      return;
+    }
+
+    const form = new FormData();
+    form.append('file', file);
+    form.append('serviceType', 'KAFKA');
+    form.append('version', version);
+    if (uploadArtifactDirectory.trim()) form.append('storageDirectory', uploadArtifactDirectory.trim());
+    form.append('overwrite', 'false');
+
+    setUploadingArtifact(true);
+    setUploadArtifactError('');
+    try {
+      const response = await fetch('/api/v1/artifacts', { method: 'POST', body: form });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.detail || result.message || result.error || 'Artifact upload failed.');
+
+      setVersions(current => [
+        ...current.filter(item => item.version !== version),
+        {
+          id: result.id,
+          version,
+          available: true,
+          scala_version: '2.13',
+          release_date: new Date().toLocaleDateString(),
+          size_mb: parseFloat((file.size / 1024 / 1024).toFixed(1)),
+          filename: result.fileName || file.name,
+        },
+      ]);
+      changeKafkaVersion(version);
+      setShowArtifactUpload(false);
+      setUploadArtifactVersion('');
+      setUploadArtifactDirectory('');
+      setUploadArtifactFile(null);
+      setUploadArtifactNotice(`Uploaded Kafka ${version}.`);
+      void loadVersions();
+    } catch (error) {
+      setUploadArtifactError(error instanceof Error ? error.message : 'Artifact upload failed.');
+    } finally {
+      setUploadingArtifact(false);
     }
   };
 
@@ -759,12 +832,12 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
 
   const serviceConfigFor = (hostId: string, kind: ConfigKind): NodeConfigState => {
     const existing = configsByService[configKey(hostId, kind)];
-    return existing || { mode: 'default', rows: defaultRowsForKind(kind), heapSize: defaultHeapForKind(kind) };
+    return existing || { mode: 'default', rows: defaultRowsForKind(kind), heapMin: defaultHeapForKind(kind), heapSize: defaultHeapForKind(kind) };
   };
 
   const updateServiceConfig = (hostId: string, kind: ConfigKind, patch: Partial<NodeConfigState>) => {
     setConfigsByService(prev => {
-      const current = prev[configKey(hostId, kind)] || { mode: 'default', rows: defaultRowsForKind(kind), heapSize: defaultHeapForKind(kind) };
+      const current = prev[configKey(hostId, kind)] || { mode: 'default', rows: defaultRowsForKind(kind), heapMin: defaultHeapForKind(kind), heapSize: defaultHeapForKind(kind) };
       return {
         ...prev,
         [configKey(hostId, kind)]: { ...current, ...patch },
@@ -911,6 +984,19 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     });
   });
 
+  const heapValidationErrors = selectedHosts.flatMap(host => {
+    const role = rolesByHost[host.id] || defaultRoleForMode;
+    return configKindsForRole(role).flatMap(kind => {
+      const cfg = serviceConfigFor(host.id, kind);
+      const min = heapSizeInMiB(cfg.heapMin);
+      const max = heapSizeInMiB(cfg.heapSize);
+      if (min === null || max === null) {
+        return [`${host.hostname}: ${configFileName(kind)} Min Heap and Max Heap must be positive sizes such as 512M or 1G.`];
+      }
+      return min > max ? [`${host.hostname}: ${configFileName(kind)} Min Heap cannot exceed Max Heap.`] : [];
+    });
+  });
+
   const configValidationErrors = [
     ...commonConfigKinds.flatMap(kind => commonConfigs[kind]
       .filter(row => row.required && !String(row.value).trim())
@@ -936,7 +1022,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       ].filter(Boolean);
     }),
   ];
-  const configBlockingIssues = [...missingRequiredConfigs, ...configValidationErrors, ...addonValidationErrors];
+  const configBlockingIssues = [...missingRequiredConfigs, ...heapValidationErrors, ...configValidationErrors, ...addonValidationErrors];
 
   const selectedPortValidationErrors = selectedHosts.flatMap(host => {
     const role = rolesByHost[host.id] || defaultRoleForMode;
@@ -1010,6 +1096,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       return next;
     };
     const services: ServiceAssignment[] = [];
+    const serviceHeap = (cfg: NodeConfigState) => ({ heap_size: cfg.heapSize, heap_xms: cfg.heapMin, heap_xmx: cfg.heapSize });
 
     const getHp = (hostId: string): HostPorts => hostPorts[hostId] || {
       listenerPort,
@@ -1026,27 +1113,27 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       const configFor = (kind: ConfigKind) => serviceConfigFor(host.id, kind);
       if (role === 'broker_controller') {
         const cfg = configFor('server');
-        services.push({ host_id: host.id, role: 'broker_controller', node_id: allocateNodeId(1), configuration_mode: cfg.mode, properties_template: serviceTemplate('server', cfg), heap_size: cfg.heapSize, listener_port: hp.listenerPort, controller_port: hp.controllerPort, jmx_port: hp.brokerJmxPort });
+        services.push({ host_id: host.id, role: 'broker_controller', node_id: allocateNodeId(1), configuration_mode: cfg.mode, properties_template: serviceTemplate('server', cfg), ...serviceHeap(cfg), listener_port: hp.listenerPort, controller_port: hp.controllerPort, jmx_port: hp.brokerJmxPort });
       } else if (role === 'broker_zookeeper') {
         const brokerCfg = configFor('server');
         const zookeeperCfg = configFor('zookeeper');
-        services.push({ host_id: host.id, role: 'broker', node_id: allocateNodeId(1), configuration_mode: brokerCfg.mode, properties_template: serviceTemplate('server', brokerCfg), heap_size: brokerCfg.heapSize, listener_port: hp.listenerPort, jmx_port: hp.brokerJmxPort });
-        services.push({ host_id: host.id, role: 'zookeeper', node_id: allocateNodeId(1001), configuration_mode: zookeeperCfg.mode, properties_template: serviceTemplate('zookeeper', zookeeperCfg), heap_size: zookeeperCfg.heapSize, controller_port: hp.controllerPort, zookeeper_peer_port: hp.zookeeperPeerPort, zookeeper_election_port: hp.zookeeperElectionPort });
+        services.push({ host_id: host.id, role: 'broker', node_id: allocateNodeId(1), configuration_mode: brokerCfg.mode, properties_template: serviceTemplate('server', brokerCfg), ...serviceHeap(brokerCfg), listener_port: hp.listenerPort, jmx_port: hp.brokerJmxPort });
+        services.push({ host_id: host.id, role: 'zookeeper', node_id: allocateNodeId(1001), configuration_mode: zookeeperCfg.mode, properties_template: serviceTemplate('zookeeper', zookeeperCfg), ...serviceHeap(zookeeperCfg), controller_port: hp.controllerPort, zookeeper_peer_port: hp.zookeeperPeerPort, zookeeper_election_port: hp.zookeeperElectionPort });
       } else if (role === 'separate') {
         const brokerCfg = configFor('broker');
         const controllerCfg = configFor('controller');
-        services.push({ host_id: host.id, role: 'broker', node_id: allocateNodeId(1), configuration_mode: brokerCfg.mode, properties_template: serviceTemplate('broker', brokerCfg), heap_size: brokerCfg.heapSize, listener_port: hp.listenerPort, jmx_port: hp.brokerJmxPort });
-        services.push({ host_id: host.id, role: 'controller', node_id: allocateNodeId(101), configuration_mode: controllerCfg.mode, properties_template: serviceTemplate('controller', controllerCfg), heap_size: controllerCfg.heapSize, controller_port: hp.controllerPort, jmx_port: hp.controllerJmxPort });
+        services.push({ host_id: host.id, role: 'broker', node_id: allocateNodeId(1), configuration_mode: brokerCfg.mode, properties_template: serviceTemplate('broker', brokerCfg), ...serviceHeap(brokerCfg), listener_port: hp.listenerPort, jmx_port: hp.brokerJmxPort });
+        services.push({ host_id: host.id, role: 'controller', node_id: allocateNodeId(101), configuration_mode: controllerCfg.mode, properties_template: serviceTemplate('controller', controllerCfg), ...serviceHeap(controllerCfg), controller_port: hp.controllerPort, jmx_port: hp.controllerJmxPort });
       } else if (role === 'controller') {
         const cfg = configFor('controller');
-        services.push({ host_id: host.id, role: 'controller', node_id: allocateNodeId(101), configuration_mode: cfg.mode, properties_template: serviceTemplate('controller', cfg), heap_size: cfg.heapSize, controller_port: hp.controllerPort, jmx_port: hp.controllerJmxPort });
+        services.push({ host_id: host.id, role: 'controller', node_id: allocateNodeId(101), configuration_mode: cfg.mode, properties_template: serviceTemplate('controller', cfg), ...serviceHeap(cfg), controller_port: hp.controllerPort, jmx_port: hp.controllerJmxPort });
       } else if (role === 'zookeeper') {
         const cfg = configFor('zookeeper');
-        services.push({ host_id: host.id, role: 'zookeeper', node_id: allocateNodeId(1001), configuration_mode: cfg.mode, properties_template: serviceTemplate('zookeeper', cfg), heap_size: cfg.heapSize, controller_port: hp.controllerPort, zookeeper_peer_port: hp.zookeeperPeerPort, zookeeper_election_port: hp.zookeeperElectionPort });
+        services.push({ host_id: host.id, role: 'zookeeper', node_id: allocateNodeId(1001), configuration_mode: cfg.mode, properties_template: serviceTemplate('zookeeper', cfg), ...serviceHeap(cfg), controller_port: hp.controllerPort, zookeeper_peer_port: hp.zookeeperPeerPort, zookeeper_election_port: hp.zookeeperElectionPort });
       } else {
         const kind: ConfigKind = deploymentMode === 'zookeeper' ? 'server' : 'broker';
         const cfg = configFor(kind);
-        services.push({ host_id: host.id, role: 'broker', node_id: allocateNodeId(1), configuration_mode: cfg.mode, properties_template: serviceTemplate(kind, cfg), heap_size: cfg.heapSize, listener_port: hp.listenerPort, jmx_port: hp.brokerJmxPort });
+        services.push({ host_id: host.id, role: 'broker', node_id: allocateNodeId(1), configuration_mode: cfg.mode, properties_template: serviceTemplate(kind, cfg), ...serviceHeap(cfg), listener_port: hp.listenerPort, jmx_port: hp.brokerJmxPort });
       }
     });
 
@@ -1845,10 +1932,11 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                   <input value={existingCluster?.kafkaClusterId || addClusterId || ''} disabled />
                 </label>
               )}
-              <label className="cd-field">
-                <span>Kafka Version</span>
+              <div className="cd-field">
+                <span id="cd-kafka-version-label">Kafka Version</span>
                 <div style={{ position: 'relative', width: '100%' }}>
                   <select
+                    aria-labelledby="cd-kafka-version-label"
                     value={kafkaVersion}
                     onChange={e => changeKafkaVersion(e.target.value)}
                     disabled={isAddNodeMode || loadingVersions || versions.length === 0}
@@ -1870,7 +1958,13 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                     <ChevronDown size={20} />
                   </div>
                 </div>
-              </label>
+                {canManage && !isAddNodeMode && (
+                  <button type="button" className="cd-secondary-btn compact cd-artifact-upload-trigger" onClick={() => { setUploadArtifactError(''); setUploadArtifactNotice(''); setShowArtifactUpload(true); }}>
+                    <Upload size={15} /> Upload Kafka artifact
+                  </button>
+                )}
+                {uploadArtifactNotice && <span className="cd-artifact-upload-notice" role="status">{uploadArtifactNotice}</span>}
+              </div>
               <div className="cd-field">
                 <span>Environment (optional)</span>
                 <div className="cd-env-buttons">
@@ -2416,6 +2510,41 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
           loadHosts();
         }} />
       )}
+      {showArtifactUpload && createPortal(
+        <div className="cd-modal-backdrop cd-artifact-upload-backdrop" onMouseDown={() => { if (!uploadingArtifact) setShowArtifactUpload(false); }}>
+          <div className="cd-config-modal cd-artifact-upload-modal" role="dialog" aria-modal="true" aria-labelledby="cd-artifact-upload-title" onMouseDown={event => event.stopPropagation()}>
+            <div className="cd-config-modal-header">
+              <h2 id="cd-artifact-upload-title">Upload Kafka artifact</h2>
+              <button type="button" className="cd-icon-btn" aria-label="Close upload" disabled={uploadingArtifact} onClick={() => setShowArtifactUpload(false)}><X size={18} /></button>
+            </div>
+            <form onSubmit={uploadKafkaArtifact}>
+              <div className="cd-config-modal-body">
+                <label className="cd-field">
+                  <span>Version</span>
+                  <input autoFocus required value={uploadArtifactVersion} onChange={event => setUploadArtifactVersion(event.target.value)} placeholder="e.g. 3.9.2" disabled={uploadingArtifact} />
+                </label>
+                <label className="cd-field">
+                  <span>Kafka binary (.tgz or .tar.gz)</span>
+                  <input type="file" accept=".tgz,.tar.gz" required onChange={event => setUploadArtifactFile(event.target.files?.[0] ?? null)} disabled={uploadingArtifact} />
+                </label>
+                <label className="cd-field">
+                  <span>Repository subdirectory (optional)</span>
+                  <input value={uploadArtifactDirectory} onChange={event => setUploadArtifactDirectory(event.target.value)} placeholder="custom/kafka" disabled={uploadingArtifact} />
+                </label>
+                {uploadArtifactError && <p className="cd-artifact-upload-error" role="alert">{uploadArtifactError}</p>}
+              </div>
+              <div className="cd-config-modal-footer">
+                <button type="button" className="cd-secondary-btn" onClick={() => setShowArtifactUpload(false)} disabled={uploadingArtifact}>Cancel</button>
+                <button type="submit" className="cd-primary-btn" disabled={uploadingArtifact || !uploadArtifactVersion.trim() || !uploadArtifactFile}>
+                  {uploadingArtifact ? <Loader2 size={16} className="spin" /> : <Upload size={16} />}
+                  {uploadingArtifact ? 'Uploading...' : 'Upload'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>,
+        document.body
+      )}
       {configModalHost && createPortal(
         <div className="cd-modal-backdrop" role="dialog" aria-modal="true" onClick={() => setConfigModalHostId(null)}>
           <div className="cd-config-modal" onClick={e => e.stopPropagation()}>
@@ -2441,7 +2570,15 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                       </div>
                       <div className="cd-config-controls">
                         <label className="cd-heap-field">
-                          <span>Heap</span>
+                          <span>Min Heap</span>
+                          <input
+                            value={cfg.heapMin}
+                            onChange={e => updateServiceConfig(configModalHost.id, kind, { heapMin: e.target.value })}
+                            placeholder={defaultHeapForKind(kind)}
+                          />
+                        </label>
+                        <label className="cd-heap-field">
+                          <span>Max Heap</span>
                           <input
                             value={cfg.heapSize}
                             onChange={e => updateServiceConfig(configModalHost.id, kind, { heapSize: e.target.value })}

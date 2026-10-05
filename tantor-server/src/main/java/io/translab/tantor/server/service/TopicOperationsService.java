@@ -139,6 +139,54 @@ public class TopicOperationsService {
         }
     }
 
+    public void updateTopicConfigs(UUID clusterId, String topicName,
+                                   Map<String, String> values, List<String> resets) {
+        Map<String, String> updates = values == null ? Map.of() : values;
+        List<String> deletions = resets == null ? List.of() : resets;
+        if (updates.isEmpty() && deletions.isEmpty()) {
+            throw new IllegalArgumentException("At least one topic setting change is required");
+        }
+
+        ConfigResource resource = topicResource(topicName);
+        try {
+            AdminClient admin = kafkaAdminService.getAdminClient(clusterId);
+            Config current = describeTopicConfig(admin, topicName);
+            List<AlterConfigOp> operations = new ArrayList<>();
+            Set<String> names = new HashSet<>();
+            for (Map.Entry<String, String> update : updates.entrySet()) {
+                String key = update.getKey();
+                validateEditableConfig(current, key, names);
+                if (update.getValue() == null) {
+                    throw new IllegalArgumentException("Configuration value is required for " + key);
+                }
+                operations.add(new AlterConfigOp(new ConfigEntry(key, update.getValue()), AlterConfigOp.OpType.SET));
+            }
+            for (String key : deletions) {
+                validateEditableConfig(current, key, names);
+                if (current.get(key).source() != ConfigEntry.ConfigSource.DYNAMIC_TOPIC_CONFIG) {
+                    throw new IllegalArgumentException("No topic override exists for " + key);
+                }
+                operations.add(new AlterConfigOp(new ConfigEntry(key, null), AlterConfigOp.OpType.DELETE));
+            }
+            admin.incrementalAlterConfigs(Map.of(resource, operations)).all().get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Interrupted while updating topic settings");
+        } catch (ExecutionException e) {
+            throw kafkaFailure("update topic settings", e);
+        }
+    }
+
+    private void validateEditableConfig(Config config, String key, Set<String> names) {
+        if (key == null || key.isBlank() || !names.add(key)) {
+            throw new IllegalArgumentException("Configuration keys must be unique and non-empty");
+        }
+        ConfigEntry entry = config.get(key);
+        if (entry == null || entry.isReadOnly() || entry.isSensitive()) {
+            throw new IllegalArgumentException("Configuration cannot be edited: " + key);
+        }
+    }
+
     public void resetTopicConfig(UUID clusterId, String topicName, String key) {
         ConfigResource resource = topicResource(topicName);
         AlterConfigOp op = new AlterConfigOp(new ConfigEntry(key, null), AlterConfigOp.OpType.DELETE);

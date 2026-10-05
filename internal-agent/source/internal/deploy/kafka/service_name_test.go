@@ -23,3 +23,18 @@ func TestGeneratedKafkaServiceName(t *testing.T) {
 		t.Fatalf("explicit unit precedence changed: %q", got)
 	}
 }
+
+func TestKafkaRolesUseGeneratedServiceTemplate(t *testing.T) {
+	for role, want := range map[string]string{
+		"broker": "broker",
+		"controller": "controller",
+		"broker_controller": "kafka",
+	} {
+		t.Run(role, func(t *testing.T) {
+			task := &api.Task{Parameters: map[string]string{"service_role": role}}
+			if got := serviceNameForTask(task); got != want {
+				t.Fatalf("service name = %q, want %q", got, want)
+			}
+		})
+	}
+}

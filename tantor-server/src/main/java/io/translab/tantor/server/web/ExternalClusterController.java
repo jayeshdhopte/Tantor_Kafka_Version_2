@@ -8,7 +8,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.http.MediaType;
 
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -83,6 +86,25 @@ public class ExternalClusterController {
             request.setIpAddresses("[\"" + remoteIp + "\"]");
         }
         return ResponseEntity.ok(externalClusterService.recordDiscoveryAgentHeartbeat(request));
+    }
+
+    @PostMapping(value = "/api/v1/ui/external-clusters/discovery/install-check", produces = MediaType.TEXT_PLAIN_VALUE)
+    public ResponseEntity<String> checkAgentInstallation(
+            @RequestParam String agentId,
+            @RequestParam(required = false) String since) {
+        if (agentId.isBlank() || agentId.length() > 128) {
+            return ResponseEntity.badRequest().body("Invalid agent ID.\n");
+        }
+        try {
+            OffsetDateTime baseline = since == null ? null : OffsetDateTime.parse(since);
+            var check = externalClusterService.installValidation(agentId, baseline);
+            return ResponseEntity.ok("serverTime=" + check.serverTime() + "\n"
+                    + "registered=" + check.registered() + "\n"
+                    + "heartbeatAccepted=" + check.heartbeatAccepted() + "\n"
+                    + "discoveryReceived=" + check.discoveryReceived() + "\n");
+        } catch (DateTimeParseException e) {
+            return ResponseEntity.badRequest().body("Invalid install baseline timestamp.\n");
+        }
     }
 
     @PostMapping("/api/v1/ui/external-clusters/discoveries/{discoveryKey}/connect")

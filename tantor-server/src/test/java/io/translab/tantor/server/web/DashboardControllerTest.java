@@ -1,5 +1,7 @@
 package io.translab.tantor.server.web;
 
+import io.translab.tantor.server.domain.Cluster;
+import io.translab.tantor.server.domain.ClusterServiceAssignment;
 import io.translab.tantor.server.domain.Host;
 import io.translab.tantor.server.repository.ActivityLogRepository;
 import io.translab.tantor.server.repository.AlertRepository;
@@ -12,6 +14,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -19,6 +22,48 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class DashboardControllerTest {
+
+    @Test
+    void internalClusterHealthDoesNotExposeServiceAssignmentsAsNodeCount() {
+        Cluster cluster = new Cluster();
+        cluster.setId(UUID.randomUUID());
+        cluster.setName("Internal cluster");
+        cluster.setMode("INTERNAL");
+        cluster.setStatus("PENDING");
+        ClusterServiceAssignment broker = new ClusterServiceAssignment();
+        broker.setHostId("shared-host");
+        broker.setRole("BROKER");
+        ClusterServiceAssignment controllerRole = new ClusterServiceAssignment();
+        controllerRole.setHostId("shared-host");
+        controllerRole.setRole("CONTROLLER");
+        cluster.setServices(List.of(broker, controllerRole));
+
+        ClusterRepository clusters = mock(ClusterRepository.class);
+        HostRepository hosts = mock(HostRepository.class);
+        AlertRepository alerts = mock(AlertRepository.class);
+        ActivityLogRepository activities = mock(ActivityLogRepository.class);
+        TaskRepository tasks = mock(TaskRepository.class);
+        HostParcelRepository parcels = mock(HostParcelRepository.class);
+        HostStatusService hostStatus = mock(HostStatusService.class);
+
+        when(clusters.findByStatusNot("DELETED")).thenReturn(List.of(cluster));
+        when(hosts.findAll()).thenReturn(List.of());
+        when(tasks.findAll()).thenReturn(List.of());
+        when(parcels.findAll()).thenReturn(List.of());
+        when(activities.findTop50ByOrderByCreatedAtDesc()).thenReturn(List.of());
+
+        DashboardController controller = new DashboardController(
+                clusters, hosts, alerts, activities, tasks, parcels, hostStatus);
+
+        Map<String, Object> response = controller.getDashboard().getBody();
+        assertThat(response).isNotNull();
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> clusterHealth = (List<Map<String, Object>>) response.get("clusterHealth");
+        assertThat(clusterHealth).singleElement().satisfies(row -> {
+            assertThat(row.get("mode")).isEqualTo("INTERNAL");
+            assertThat(row).doesNotContainKeys("hostCount", "nodeCount");
+        });
+    }
 
     @Test
     void offlineHostDiskUsageRemainsVisibleAndReturnsToLive() {
