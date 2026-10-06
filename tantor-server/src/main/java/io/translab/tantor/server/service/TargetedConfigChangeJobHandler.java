@@ -4,11 +4,13 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.translab.tantor.server.domain.*;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 /** Applies one dynamic broker property at a time; failure stops the remaining targets. */
 @Component
@@ -20,6 +22,12 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
     private final DeploymentService deployment;
     private final AgentTaskAwaiter taskAwaiter;
     private final ObjectMapper mapper;
+
+    @Value("${tantor.config-change.dynamic-verification-timeout-ms:30000}")
+    private long dynamicVerificationTimeoutMs = 30000;
+
+    @Value("${tantor.config-change.dynamic-verification-poll-ms:500}")
+    private long dynamicVerificationPollMs = 500;
 
     @Override
     public boolean supports(JobType type) { return type == JobType.TARGETED_CONFIG_CHANGE; }
@@ -50,16 +58,44 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
                     }
                     kafka.alterBrokerConfig(clusterId, brokerId, key, desired);
                 }
-                String actual = currentValue(clusterId, brokerId, key);
-                if (!desired.equals(actual)) {
-                    throw new IllegalStateException("Kafka did not report the requested value on broker " + brokerId + ".");
-                }
+                verifyDynamic(clusterId, brokerId, key, desired);
                 jobs.completeStep(step.getId(), "Verified " + key + " on broker " + brokerId + ".");
             } catch (Exception e) {
                 jobs.failStep(step.getId(), e.getMessage());
                 throw e;
             }
         }
+    }
+
+    private void verifyDynamic(UUID clusterId, int brokerId, String key, String desired) {
+        // Kafka may acknowledge the write before the broker exposes it through DescribeConfigs.
+        long timeoutMs = Math.max(0, dynamicVerificationTimeoutMs);
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs);
+        String lastObservation = "No value was observed";
+        while (true) {
+            if (Thread.currentThread().isInterrupted()) {
+                throw new IllegalStateException("Interrupted during dynamic configuration verification");
+            }
+            try {
+                String actual = currentValue(clusterId, brokerId, key);
+                if (desired.equals(actual)) return;
+                lastObservation = "last observed value=" + actual;
+            } catch (RuntimeException e) {
+                lastObservation = "last read failed: " + e.getMessage();
+            }
+            long remaining = deadline - System.nanoTime();
+            if (remaining <= 0) break;
+            try {
+                TimeUnit.NANOSECONDS.sleep(Math.min(remaining,
+                        TimeUnit.MILLISECONDS.toNanos(Math.max(1, dynamicVerificationPollMs))));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("Interrupted during dynamic configuration verification", e);
+            }
+        }
+        throw new IllegalStateException("Kafka did not report the requested value on broker " + brokerId
+                + " within " + timeoutMs + " ms: " + key + " expected=" + desired + ", "
+                + lastObservation + ". The change may already be applied; refresh the broker configuration before retrying.");
     }
 
     private void executeStatic(UUID clusterId, JobStep step, Map<String, Object> payload) {
