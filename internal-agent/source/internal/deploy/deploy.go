@@ -77,6 +77,8 @@ func (e *Engine) Execute(ctx context.Context, t *api.Task) (*api.TaskResult, err
 		return e.restartService(ctx, t)
 	case "UPDATE_KAFKA_CONFIG":
 		return e.updateKafkaConfig(ctx, t)
+	case "BACKUP_KAFKA_CONFIG":
+		return e.backupKafkaConfig(ctx, t)
 	case "PATCH_KAFKA_CONFIG":
 		return e.patchKafkaConfig(ctx, t)
 	case "READ_KAFKA_PROPERTY":
@@ -873,4 +875,13 @@ func (e *Engine) deleteMonitoring(ctx context.Context, t *api.Task) (*api.TaskRe
 		Status:    "SUCCESS",
 		LogOutput: "Monitoring services stopped and files removed.",
 	}, nil
+}
+
+func (e *Engine) backupKafkaConfig(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
+	d := kafka.NewDeployer(e.cfg, e.client, e.exec)
+	output, err := d.BackupDynamicConfig(ctx, t)
+	if err != nil {
+		return e.fail(t, fmt.Sprintf("Kafka config backup failed: %v", err)), nil
+	}
+	return &api.TaskResult{TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS", LogOutput: output}, nil
 }

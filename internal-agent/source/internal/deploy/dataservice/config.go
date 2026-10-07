@@ -22,7 +22,7 @@ type Settings struct {
 	Port, Replication, MinDisk                                           int
 	Bootstrap, KafkaBin, Compatibility, GroupID, SchemaTopic             string
 	OffsetTopic, ConfigTopic, StatusTopic, HAPeers                       string
-	Deferred                                                             bool
+	Deferred, SharedConnect                                              bool
 	Protected                                                            []string
 }
 
@@ -57,7 +57,13 @@ func Parse(kind string, task *api.Task) (Settings, error) {
 		return s, fmt.Errorf("unsupported data service %q", kind)
 	}
 	p := task.Parameters
-	s.Install = Value(p, "install_dir", "/opt/tantor/"+kind)
+	kafkaInstall := Value(p, "kafka_install_dir", "/opt/kafka")
+	defaultInstall := "/opt/tantor/" + kind
+	if kind == Connect {
+		defaultInstall = kafkaInstall
+	}
+	s.Install = Value(p, "install_dir", defaultInstall)
+	s.SharedConnect = kind == Connect && s.Install == kafkaInstall
 	defaultConfig := s.Install + "/config"
 	port := "8083"
 	if kind == Schema {
@@ -67,7 +73,11 @@ func Parse(kind string, task *api.Task) (Settings, error) {
 	s.Config = Value(p, "config_dir", defaultConfig)
 	s.Log = Value(p, "log_dir", "/var/log/tantor/"+kind)
 	s.Working = Value(p, "working_dir", "/var/lib/tantor/"+kind)
-	s.Plugin = Value(p, "plugin_dir", s.Install+"/plugins")
+	defaultPlugin := s.Install + "/plugins"
+	if s.SharedConnect {
+		defaultPlugin = s.Install + "/connect-plugins"
+	}
+	s.Plugin = Value(p, "plugin_dir", defaultPlugin)
 	s.Heap = Value(p, "heap_size", "1G")
 	s.User = Value(p, "service_user", "root")
 	s.Group = Value(p, "service_group", s.User)
@@ -118,7 +128,6 @@ func Parse(kind string, task *api.Task) (Settings, error) {
 			return s, err
 		}
 	}
-	kafkaInstall := Value(p, "kafka_install_dir", "/opt/kafka")
 	if err = SafePath(kafkaInstall); err != nil {
 		return s, err
 	}
@@ -153,8 +162,21 @@ func Parse(kind string, task *api.Task) (Settings, error) {
 			return s, err
 		}
 		for _, protected := range s.Protected {
-			if Overlaps(dir, protected) {
+			if Overlaps(dir, protected) && !s.allowedSharedPath(dir, protected, kafkaInstall) {
 				return s, fmt.Errorf("data-service path %s overlaps protected path %s", dir, protected)
+			}
+		}
+	}
+	if s.SharedConnect {
+		if Overlaps(s.Config, s.Install) && s.Config != s.Install+"/config" {
+			return s, fmt.Errorf("shared Connect config must use Kafka's config directory")
+		}
+		if Overlaps(s.Plugin, s.Install) && s.Plugin != s.Install+"/connect-plugins" {
+			return s, fmt.Errorf("shared Connect plugins must use Kafka's connect-plugins directory")
+		}
+		for _, dir := range []string{s.Log, s.Working} {
+			if Overlaps(dir, s.Install) {
+				return s, fmt.Errorf("Connect log/work paths must be outside the shared Kafka installation")
 			}
 		}
 	}
@@ -191,4 +213,10 @@ func Endpoints(value string) (string, error) {
 		endpoints = append(endpoints, net.JoinHostPort(host, port))
 	}
 	return strings.Join(endpoints, ","), nil
+}
+
+// Only these exact shared paths are permitted. Kafka storage and all runtime
+// trees remain protected, including paths redirected through symlinks.
+func (s Settings) allowedSharedPath(dir, protected, kafkaRoot string) bool {
+	return s.SharedConnect && protected == kafkaRoot && (dir == kafkaRoot || dir == kafkaRoot+"/config" || dir == kafkaRoot+"/connect-plugins")
 }

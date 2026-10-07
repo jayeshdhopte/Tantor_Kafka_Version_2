@@ -388,6 +388,7 @@ public class DeploymentService {
             String configVersion,
             String configPath
     ) {
+        requireConfigBackupAgent(hostId);
         Task task = createTask(clusterId, hostId, "UPDATE_KAFKA_CONFIG");
         
         try {
@@ -438,6 +439,7 @@ public class DeploymentService {
         if (configPath == null || configPath.isBlank() || changes == null || changes.isEmpty()) {
             throw new IllegalArgumentException("A concrete config file and property changes are required.");
         }
+        requireConfigBackupAgent(hostId);
         Task task = createTask(clusterId, hostId, "PATCH_KAFKA_CONFIG");
         try {
             Map<String, Object> params = new java.util.HashMap<>();
@@ -457,6 +459,37 @@ public class DeploymentService {
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Unable to queue Kafka config patch", e);
         }
+        taskRepository.save(task);
+        return task.getId();
+    }
+
+    private void requireConfigBackupAgent(String hostId) {
+        var host = hostRepository.findById(hostId).orElseThrow(() -> new IllegalArgumentException("Managed host is required for configuration backups."));
+        var version = java.util.regex.Pattern.compile("-configchange\\.([0-9]{1,6})(?:$|[.-])").matcher(java.util.Objects.toString(host.getAgentVersion(), ""));
+        if (!version.find() || Integer.parseInt(version.group(1)) < 4) {
+            throw new IllegalStateException("Update host " + hostId + " to internal agent configchange.4 or newer before changing configuration; mandatory backups with seven-day retention are unavailable on its current agent.");
+        }
+    }
+
+    @Transactional
+    public UUID backupKafkaConfig(UUID clusterId, String hostId, String role, String nodeId,
+                                  String configJsonStr, String configPath, String key,
+                                  Map<String, Object> snapshot, String version) {
+        requireConfigBackupAgent(hostId);
+        if (configPath == null || configPath.isBlank()) throw new IllegalArgumentException("A concrete configuration file is required for backup.");
+        Task task = createTask(clusterId, hostId, "BACKUP_KAFKA_CONFIG");
+        try {
+            Map<String, Object> params = new java.util.HashMap<>();
+            mergeConfigParams(params, configJsonStr);
+            params.put("config_path", configPath);
+            params.put("config_key", key);
+            params.put("role", role);
+            params.put("service_role", role);
+            params.put("node_id", nodeId);
+            params.put("config_version", version);
+            params.put("dynamic_snapshot_json", objectMapper.writeValueAsString(snapshot));
+            task.setParameters(objectMapper.writeValueAsString(params));
+        } catch (JsonProcessingException e) { throw new IllegalStateException("Unable to queue required config backup", e); }
         taskRepository.save(task);
         return task.getId();
     }

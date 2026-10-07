@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.translab.tantor.server.domain.Cluster;
 import io.translab.tantor.server.domain.ClusterServiceAssignment;
 import io.translab.tantor.server.domain.Task;
+import io.translab.tantor.server.domain.Job;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.repository.ExternalClusterRepository;
 import io.translab.tantor.server.repository.JobRepository;
@@ -21,9 +22,12 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class TargetedConfigChangeServiceTest {
@@ -90,6 +94,22 @@ class TargetedConfigChangeServiceTest {
         assertThatThrownBy(() -> service.preview(clusterId, request))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("cannot be changed");
+    }
+
+    @Test
+    void dynamicJobPersistsTheAgentAndConfigFileNeededForBackup() {
+        var broker = controller(202); broker.setRole("broker");
+        cluster.setServices(List.of(broker));
+        when(jobService.createJob(any(), anyList())).thenAnswer(invocation -> {
+            Job job = invocation.getArgument(0); job.setId(UUID.randomUUID()); return job;
+        });
+        var target = Map.<String,Object>of("nodeId",202,"oldValue","168");
+        var plan = Map.<String,Object>of("classification","DYNAMIC_ALLOWED","targets",List.of(target),"key","log.retention.hours","role","BROKER","scope","SPECIFIC");
+        org.springframework.test.util.ReflectionTestUtils.invokeMethod(service,"persistPlan",clusterId,
+                request("BROKER","SPECIFIC",List.of(202),"log.retention.hours","72"),plan);
+        verify(jobService).createJob(any(), argThat(steps -> steps.size()==1
+                && steps.get(0).getPayload().contains("host-202")
+                && steps.get(0).getPayload().contains("/opt/kafka/config/broker.properties")));
     }
 
     private ClusterServiceAssignment controller(int nodeId) {

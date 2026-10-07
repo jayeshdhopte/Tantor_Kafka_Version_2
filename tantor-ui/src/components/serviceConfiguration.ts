@@ -15,9 +15,8 @@ export const defaultSchemaRegistryConfig = (): SchemaRegistryConfig => ({
 });
 
 export const defaultKafkaConnectConfig = (): KafkaConnectConfig => ({
-  artifactId: '', port: 8083, heapSize: '1G', groupId: 'tantor-connect', installDir: '/opt/tantor/kafka-connect',
-  configDir: '/opt/tantor/kafka-connect/config', logDir: '/var/log/tantor/kafka-connect',
-  workingDir: '/var/lib/tantor/kafka-connect', pluginDir: '/opt/tantor/kafka-connect/plugins',
+  artifactId: '', port: 8083, heapSize: '1G', groupId: 'tantor-connect', installDir: '',
+  configDir: '', logDir: '', workingDir: '', pluginDir: '',
 });
 
 export function validateServicePath(value: string, label: string): string {

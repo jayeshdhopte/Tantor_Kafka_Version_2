@@ -12,6 +12,7 @@ import (
 	"io.translab/tantor-agent/internal/client"
 	"io.translab/tantor-agent/internal/collect"
 	"io.translab/tantor-agent/internal/config"
+	"io.translab/tantor-agent/internal/configbackup"
 	"io.translab/tantor-agent/internal/deploy"
 	"io.translab/tantor-agent/internal/executor"
 	"io.translab/tantor-agent/internal/task"
@@ -19,9 +20,9 @@ import (
 )
 
 var (
-	version   = "1.0.0-prod.16-reporting.9-dataservices.1-configchange.3"
-	commit    = "static-config-table"
-	buildDate = "2026-10-05"
+	version   = "1.0.0-prod.16-reporting.9-dataservices.3-configchange.4"
+	commit    = "config-backup-retention"
+	buildDate = "2026-10-07"
 )
 
 func main() {
@@ -73,6 +74,7 @@ func main() {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+	configbackup.Start(ctx)
 	taskEngine.Start(ctx)
 	slog.Info("Tantor Agent stopped cleanly")
 }

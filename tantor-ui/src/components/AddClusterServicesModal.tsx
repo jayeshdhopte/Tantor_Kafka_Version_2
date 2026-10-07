@@ -27,7 +27,7 @@ export function AddClusterServicesModal({ cluster, onClose }: { cluster: Cluster
   const [selected, setSelected] = useState<Role[]>([]);
   const [view, setView] = useState<'selection' | 'configuration' | 'prechecks'>('selection');
   const [schema, setSchema] = useState(defaultSchemaRegistryConfig);
-  const [connect, setConnect] = useState(defaultKafkaConnectConfig);
+  const [connect, setConnect] = useState(() => cluster.mode === 'EXTERNAL' ? { ...defaultKafkaConnectConfig(), installDir: '/opt/tantor/kafka-connect', configDir: '/opt/tantor/kafka-connect/config', pluginDir: '/opt/tantor/kafka-connect/plugins', logDir: '/var/log/tantor/kafka-connect', workingDir: '/var/lib/tantor/kafka-connect' } : defaultKafkaConnectConfig());
   const [hostIds, setHostIds] = useState<Record<Role, string>>({ schema_registry: '', kafka_connect: '' });
   const [hosts, setHosts] = useState<Host[]>([]);
   const [existing, setExisting] = useState<string[]>([]);
@@ -78,6 +78,12 @@ export function AddClusterServicesModal({ cluster, onClose }: { cluster: Cluster
     return () => { precheckRun.current += 1; document.body.style.overflow = overflow; previous?.focus(); };
   }, []);
 
+  useEffect(() => {
+    if (external || connect.artifactId) return;
+    const unified = artifacts.find(a => a.version === details?.kafkaVersion && (a.fileName || a.filename || '').toLowerCase().startsWith('tantor-unified-kafka-'));
+    if (unified) setConnect(current => ({ ...current, artifactId: current.artifactId || unified.id }));
+  }, [artifacts, details?.kafkaVersion, external, connect.artifactId]);
+
   const artifactsFor = (role: Role) => artifacts.filter(artifact => artifact.serviceType === role.toUpperCase()
     || (artifact.fileName || artifact.filename || '').toLowerCase().startsWith('tantor-unified-kafka-'));
   const issues = selected.flatMap(role => {
@@ -90,7 +96,7 @@ export function AddClusterServicesModal({ cluster, onClose }: { cluster: Cluster
       cfg.artifactId && !/^[0-9a-fA-F]{64}$/.test(artifactsFor(role).find(artifact => artifact.id === cfg.artifactId)?.sha256 || artifactsFor(role).find(artifact => artifact.id === cfg.artifactId)?.checksum || '') ? `${label}: artifact SHA-256 is missing.` : '',
       !Number.isInteger(cfg.port) || cfg.port < 1 || cfg.port > 65535 ? `${label}: enter a port between 1 and 65535.` : '',
       !/^[1-9]\d*[mMgG]$/.test(cfg.heapSize) ? `${label}: use a heap size such as 512M or 1G.` : '',
-      ...paths.map(path => validateServicePath(path, `${label} directory`)),
+      ...paths.map(path => role === 'kafka_connect' && !external && !path.trim() ? '' : validateServicePath(path, `${label} directory`)),
       role === 'kafka_connect' && !/^[A-Za-z0-9._-]{1,200}$/.test(connect.groupId) ? 'Kafka Connect: enter a valid worker group ID (letters, numbers, dots, underscores or hyphens).' : '',
     ].filter(Boolean);
   });
@@ -249,7 +255,7 @@ export function AddClusterServicesModal({ cluster, onClose }: { cluster: Cluster
               </label>
               {role === 'schema_registry'
                 ? <SchemaRegistryFields cfg={schema} artifacts={artifactsFor(role)} onChange={patch => setSchema(current => ({ ...current, ...patch }))} />
-                : <KafkaConnectFields cfg={connect} artifacts={artifactsFor(role)} onChange={patch => setConnect(current => ({ ...current, ...patch }))} />}
+                : <KafkaConnectFields unifiedDefault={!external} cfg={connect} artifacts={artifactsFor(role)} onChange={patch => setConnect(current => ({ ...current, ...patch }))} />}
             </section>)}
             {issues.length > 0 && <ul className="add-services-validation" aria-live="polite">{[...new Set(issues)].map(issue => <li key={issue}>{issue}</li>)}</ul>}
           </fieldset>}

@@ -62,12 +62,12 @@ func (d *Deployer) PatchConfig(ctx context.Context, task *api.Task) (string, err
 		return "", err
 	}
 	var logs strings.Builder
+	backup, err := d.backupConfig(ctx, task, configPath)
+	if err != nil {
+		return "", err
+	}
+	logs.WriteString("Rollback checkpoint (7-day retention): " + backup + "\n")
 	if changed {
-		backup, err := d.backupConfig(ctx, task, configPath)
-		if err != nil {
-			return "", err
-		}
-		logs.WriteString("Rollback checkpoint: " + backup + "\n")
 		if err := writePatchAtomically(configPath, []byte(updated)); err != nil {
 			return logs.String(), fmt.Errorf("write config patch: %w", err)
 		}
@@ -299,4 +299,47 @@ func writePatchAtomically(path string, content []byte) error {
 		return err
 	}
 	return os.Rename(temp.Name(), path)
+}
+
+// BackupDynamicConfig checkpoints the disk config and the requested property's
+// live Kafka state before the backend performs any Admin API mutation.
+func (d *Deployer) BackupDynamicConfig(ctx context.Context, task *api.Task) (string, error) {
+	if os.Geteuid() != 0 {
+		return "", fmt.Errorf("dynamic config backup requires a root agent")
+	}
+	configPath, err := validatedPatchPath(task)
+	if err != nil {
+		return "", err
+	}
+	key := task.Parameters["config_key"]
+	if err := validatePatchKey(key); err != nil {
+		return "", err
+	}
+	snapshot := task.Parameters["dynamic_snapshot_json"]
+	var decoded map[string]interface{}
+	if len(snapshot) > 16384 || json.Unmarshal([]byte(snapshot), &decoded) != nil || decoded["key"] != key || decoded["mode"] != "DYNAMIC" {
+		return "", fmt.Errorf("invalid dynamic configuration snapshot")
+	}
+	backup, err := d.backupConfig(ctx, task, configPath)
+	if err != nil {
+		return "", err
+	}
+	tmp, err := os.CreateTemp("", "tantor-dynamic-backup-")
+	if err != nil {
+		return "", err
+	}
+	defer os.Remove(tmp.Name())
+	_, err = tmp.WriteString(snapshot + "\n")
+	closeErr := tmp.Close()
+	if err != nil {
+		return "", err
+	}
+	if closeErr != nil {
+		return "", closeErr
+	}
+	dynamicPath := strings.TrimSuffix(backup, ".bak") + ".dynamic.json"
+	if _, detail, err := d.exec.RunSudo(ctx, "install", "-m", "0600", "--", tmp.Name(), dynamicPath); err != nil {
+		return "", fmt.Errorf("save dynamic checkpoint: %w (%s)", err, detail)
+	}
+	return "Configuration backup (7-day retention): " + backup + "\nLive dynamic property checkpoint: " + dynamicPath, nil
 }

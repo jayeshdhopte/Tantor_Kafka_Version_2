@@ -47,21 +47,40 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
             String desired = String.valueOf(payload.get("value"));
             String expected = String.valueOf(payload.get("expectedOldValue"));
             int count = ((Number) payload.get("expectedBrokerCount")).intValue();
+            String checkpoint = "";
             try {
                 jobs.startStep(step.getId());
                 var snapshot = health.inspect(clusterId, count, Set.of());
                 if (!snapshot.healthy()) throw new IllegalStateException("Health precheck failed: " + snapshot.failureReason());
-                String current = currentValue(clusterId, brokerId, key);
+                Map<?, ?> observed = currentEntry(clusterId, brokerId, key);
+                String current = observed.get("value") == null ? null : String.valueOf(observed.get("value"));
                 if (!desired.equals(current)) {
                     if (!expected.equals(current == null ? "" : current)) {
                         throw new IllegalStateException("Broker " + brokerId + " value changed since preview; refresh the plan.");
                     }
-                    kafka.alterBrokerConfig(clusterId, brokerId, key, desired);
                 }
+                String hostId = String.valueOf(payload.getOrDefault("hostId", ""));
+                String configPath = String.valueOf(payload.getOrDefault("configPath", ""));
+                if (hostId.isBlank() || configPath.isBlank()) throw new IllegalStateException("Refresh the change plan: managed host and configuration path are required for backup.");
+                Map<String, Object> dynamicSnapshot = new java.util.LinkedHashMap<>();
+                dynamicSnapshot.put("mode", "DYNAMIC"); dynamicSnapshot.put("key", key); dynamicSnapshot.put("previous", observed);
+                dynamicSnapshot.put("requestedValue", desired); dynamicSnapshot.put("brokerId", brokerId);
+                dynamicSnapshot.put("clusterId", clusterId.toString()); dynamicSnapshot.put("capturedAt", java.time.Instant.now().toString());
+                UUID backupTask = deployment.backupKafkaConfig(clusterId, hostId, String.valueOf(payload.get("role")),
+                        String.valueOf(brokerId), String.valueOf(payload.get("configJson")), configPath, key, dynamicSnapshot, "dynamic-" + step.getId());
+                jobs.attachAgentTask(step.getId(), backupTask);
+                Task backup = taskAwaiter.await(backupTask);
+                checkpoint = java.util.Objects.toString(backup.getLogOutput(), "");
+                if (Thread.currentThread().isInterrupted()) throw new IllegalStateException("Interrupted before configuration change");
+                // Agent round trips may take time; reject intervening changes rather than overwrite them.
+                Map<?, ?> latestEntry = currentEntry(clusterId, brokerId, key);
+                String latest = latestEntry.get("value") == null ? null : String.valueOf(latestEntry.get("value"));
+                if (!java.util.Objects.equals(observed, latestEntry)) throw new IllegalStateException("Broker " + brokerId + " value changed while backing up; refresh the plan.");
+                if (!desired.equals(latest)) kafka.alterBrokerConfig(clusterId, brokerId, key, desired);
                 verifyDynamic(clusterId, brokerId, key, desired);
-                jobs.completeStep(step.getId(), "Verified " + key + " on broker " + brokerId + ".");
+                jobs.completeStep(step.getId(), "Verified " + key + " on broker " + brokerId + ".\n" + backup.getLogOutput());
             } catch (Exception e) {
-                jobs.failStep(step.getId(), e.getMessage());
+                jobs.failStep(step.getId(), e.getMessage() + (checkpoint.isBlank() ? "" : "\n" + checkpoint));
                 throw e;
             }
         }
@@ -183,12 +202,14 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
     }
 
     private String currentValue(UUID clusterId, int brokerId, String key) {
-        Map<String, Object> configs = kafka.getBrokerConfigs(clusterId).get(brokerId);
-        if (configs == null || !(configs.get(key) instanceof Map<?, ?> entry)) {
-            throw new IllegalStateException("Broker " + brokerId + " or property " + key + " is unavailable.");
-        }
-        Object value = entry.get("value");
+        Object value = currentEntry(clusterId, brokerId, key).get("value");
         return value == null ? null : String.valueOf(value);
+    }
+
+    private Map<?, ?> currentEntry(UUID clusterId, int brokerId, String key) {
+        Map<String, Object> configs = kafka.getBrokerConfigs(clusterId).get(brokerId);
+        if (configs == null || !(configs.get(key) instanceof Map<?, ?> entry)) throw new IllegalStateException("Broker " + brokerId + " or property " + key + " is unavailable.");
+        return entry;
     }
 
     private Map<String, Object> read(String json) {

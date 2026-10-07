@@ -218,7 +218,7 @@ public class TargetedConfigChangeService {
         List<Map<String, Object>> targets = (List<Map<String, Object>>) plan.get("targets");
         List<JobStep> steps = new ArrayList<>();
         boolean staticChange = "ROLLING_RESTART_REQUIRED".equals(plan.get("classification"));
-        Cluster internal = staticChange ? clusters.findWithServicesById(clusterId).orElseThrow() : null;
+        Cluster internal = clusters.findWithServicesById(clusterId).orElseThrow(() -> new IllegalArgumentException("Configuration changes require a managed node agent for mandatory backups."));
         int brokerCount = kafka.getBrokerConfigs(clusterId).size();
         int order = 1;
         for (Map<String, Object> target : targets) {
@@ -246,9 +246,18 @@ public class TargetedConfigChangeService {
                 stepPayload.put("expectedBrokerCount", brokerCount);
                 step.setPayload(json(stepPayload));
             } else {
-                step.setPayload(json(Map.of("operation", "DYNAMIC", "brokerId", target.get("nodeId"), "key", plan.get("key"),
-                        "value", request.getValue(), "expectedOldValue", target.get("oldValue") == null ? "" : target.get("oldValue"),
-                        "expectedBrokerCount", brokerCount)));
+                int nodeId = ((Number) target.get("nodeId")).intValue();
+                ClusterServiceAssignment service = findService(internal, "BROKER", nodeId);
+                Map<String, Object> config = mergedConfig(internal, service);
+                config.put("mode", internal.getMode()); config.put("version", internal.getKafkaVersion());
+                Map<String, Object> payload = new LinkedHashMap<>();
+                payload.put("operation", "DYNAMIC"); payload.put("brokerId", nodeId);
+                payload.put("key", plan.get("key")); payload.put("value", request.getValue());
+                payload.put("expectedOldValue", target.get("oldValue") == null ? "" : target.get("oldValue"));
+                payload.put("expectedBrokerCount", brokerCount);
+                payload.put("hostId", service.getHostId()); payload.put("role", service.getRole());
+                payload.put("configPath", configPath(internal, service, config)); payload.put("configJson", json(config));
+                step.setPayload(json(payload));
             }
             steps.add(step);
         }
@@ -271,7 +280,7 @@ public class TargetedConfigChangeService {
     private ClusterServiceAssignment findService(Cluster cluster, String role, int nodeId) {
         if (cluster == null || cluster.getServices() == null) throw new IllegalArgumentException("No managed node topology is available.");
         return cluster.getServices().stream().filter(service -> service.getNodeId() != null
-                && service.getNodeId() == nodeId && role.equalsIgnoreCase(service.getRole()))
+                && service.getNodeId() == nodeId && (role.equalsIgnoreCase(service.getRole()) || ("BROKER".equals(role) && "broker_controller".equalsIgnoreCase(service.getRole()))))
                 .findFirst().orElseThrow(() -> new IllegalArgumentException("Dedicated " + role.toLowerCase(Locale.ROOT)
                         + " node " + nodeId + " is not managed by this cluster."));
     }
@@ -297,6 +306,6 @@ public class TargetedConfigChangeService {
         else base += "/kafka";
         boolean flat = cluster.getKafkaVersion() != null && cluster.getKafkaVersion().matches("^[vV]?[4-9].*");
         String directory = base + "/config" + (flat ? "" : "/kraft");
-        return directory + ("CONTROLLER".equalsIgnoreCase(service.getRole()) ? "/controller.properties" : "/broker.properties");
+        return directory + ("CONTROLLER".equalsIgnoreCase(service.getRole()) ? "/controller.properties" : "broker_controller".equalsIgnoreCase(service.getRole()) ? "/server.properties" : "/broker.properties");
     }
 }

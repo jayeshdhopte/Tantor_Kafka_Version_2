@@ -120,6 +120,27 @@ class DataServiceDeploymentTest {
     }
 
     @Test
+    void blankConnectPathsResolveToUnifiedKafkaAndRequireUpdatedAgent() {
+        var hosts = mock(HostRepository.class);
+        var host = new io.translab.tantor.server.domain.Host();
+        host.setAgentVersion("1.0.0-prod.16-reporting.9-dataservices.3-configchange.3");
+        when(hosts.findById("host-1")).thenReturn(Optional.of(host));
+        ReflectionTestUtils.setField(controller, "hostRepository", hosts);
+        var addon = connect();
+        addon.setArtifact_url("https://artifacts.example/unified.tar.gz");
+        Map<String, Object> payload = ReflectionTestUtils.invokeMethod(controller, "connectAddonPayload",
+                addon, UUID.randomUUID(), "broker:9092", "/custom/kafka", 2);
+        assertThat(payload).containsEntry("install_dir", "/custom/kafka")
+                .containsEntry("config_dir", "/custom/kafka/config")
+                .containsEntry("plugin_dir", "/custom/kafka/connect-plugins")
+                .containsEntry("log_dir", "/var/log/tantor/kafka-connect")
+                .containsEntry("working_dir", "/var/lib/tantor/kafka-connect");
+        host.setAgentVersion("1.0.0-prod.16-reporting.9-dataservices.2-configchange.3");
+        assertThatThrownBy(() -> ReflectionTestUtils.invokeMethod(controller, "connectAddonPayload",
+                addon, UUID.randomUUID(), "broker:9092", "/custom/kafka", 2)).hasMessageContaining("dataservices.3");
+    }
+
+    @Test
     void schedulesConnectChecksTopicsInstallationAndVerificationInOrder() {
         List<JobStep> steps = new ArrayList<>();
         ReflectionTestUtils.invokeMethod(controller, "appendKafkaConnectSteps", steps, "host-1");

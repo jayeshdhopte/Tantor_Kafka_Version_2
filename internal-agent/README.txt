@@ -19,3 +19,18 @@ is absent, Go 1.22+ is needed on the node to build from source. The optional
 TANTOR_SERVER_PORT environment variable overrides 8080 without an extra prompt.
 
 See ../docs/data-service-deployment.md for the UI and job flow.
+
+Kafka Connect unified-installation support (dataservices.3):
+Leave managed Connect directory fields blank to reuse the host's Kafka runtime,
+config/connect-distributed.properties, and connect-plugins. Existing properties
+are backed up; unrelated settings and plugin JARs are retained. This release
+requires the matching backend/UI changes. Updating the agent alone does not
+update the management UI. See ../docs/data-service-deployment.md.
+
+Kafka configuration backup update (configchange.4):
+Static and dynamic managed Kafka configuration changes require a successful
+node-side backup before mutation. Backups live beside the active properties
+file under .tantor-backups/<filename>/. Dynamic changes also save live value
+and source metadata as .dynamic.json. A root agent cleans managed checkpoints
+older than seven days at startup and hourly; active config files are preserved.
+Requires the matching updated backend. This package is not deployed automatically.

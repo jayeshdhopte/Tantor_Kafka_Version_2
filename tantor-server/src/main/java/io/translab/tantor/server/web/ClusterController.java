@@ -1396,6 +1396,12 @@ public class ClusterController {
         }
         validateAddonHeap(addon.getHeap_size(), "Kafka Connect");
         validateDataServiceAgent(addon.getHost_id());
+        if (addon.getInstall_dir() == null || addon.getInstall_dir().isBlank()) {
+            hostRepository.findById(addon.getHost_id()).ifPresent(host -> {
+                String blocked = io.translab.tantor.server.service.DataServiceAgentSupport.sharedConnectBlockReason(host.getAgentVersion());
+                if (blocked != null) throw new IllegalArgumentException(blocked);
+            });
+        }
         int port = addon.getPort() == null ? 8083 : addon.getPort();
         if (port < 1 || port > 65535) {
             throw new IllegalArgumentException("Kafka Connect port must be between 1 and 65535.");
@@ -1410,7 +1416,8 @@ public class ClusterController {
         }
         for (String path : new String[]{addon.getInstall_dir(), addon.getConfig_dir(), addon.getLog_dir(),
                 addon.getWorking_dir(), addon.getPlugin_dir()}) {
-            if (path == null || !path.startsWith("/") || "/".equals(path) || path.contains("..")) {
+            if (path == null || path.isBlank()) continue;
+            if (!path.startsWith("/") || "/".equals(path) || path.contains("..")) {
                 throw new IllegalArgumentException("Kafka Connect paths must be absolute, non-root paths without '..'.");
             }
         }
@@ -1479,11 +1486,17 @@ public class ClusterController {
         payload.put("checksum", addon.getChecksum() == null ? "" : addon.getChecksum());
         payload.put("connect_version", addon.getVersion() == null ? "" : addon.getVersion());
         payload.put("rest_port", addon.getPort() == null ? 8083 : addon.getPort());
-        payload.put("install_dir", addon.getInstall_dir());
-        payload.put("config_dir", addon.getConfig_dir());
-        payload.put("log_dir", addon.getLog_dir());
-        payload.put("working_dir", addon.getWorking_dir());
-        payload.put("plugin_dir", addon.getPlugin_dir());
+        String install = addon.getInstall_dir() == null || addon.getInstall_dir().isBlank() ? kafkaInstallDir : addon.getInstall_dir().trim();
+        boolean unified = install.equals(kafkaInstallDir);
+        if (unified) hostRepository.findById(addon.getHost_id()).ifPresent(host -> {
+            String blocked = io.translab.tantor.server.service.DataServiceAgentSupport.sharedConnectBlockReason(host.getAgentVersion());
+            if (blocked != null) throw new IllegalArgumentException(blocked);
+        });
+        payload.put("install_dir", install);
+        payload.put("config_dir", addon.getConfig_dir() == null || addon.getConfig_dir().isBlank() ? install + "/config" : addon.getConfig_dir().trim());
+        payload.put("log_dir", addon.getLog_dir() == null || addon.getLog_dir().isBlank() ? "/var/log/tantor/kafka-connect" : addon.getLog_dir().trim());
+        payload.put("working_dir", addon.getWorking_dir() == null || addon.getWorking_dir().isBlank() ? "/var/lib/tantor/kafka-connect" : addon.getWorking_dir().trim());
+        payload.put("plugin_dir", addon.getPlugin_dir() == null || addon.getPlugin_dir().isBlank() ? install + (unified ? "/connect-plugins" : "/plugins") : addon.getPlugin_dir().trim());
         payload.put("kafka_install_dir", kafkaInstallDir);
         payload.put("heap_size", addon.getHeap_size());
         payload.put("bootstrap_servers", kafkaClientBootstrapServers(bootstrapServers));
@@ -1619,11 +1632,11 @@ public class ClusterController {
         private String checksum;
         private String version;
         private Integer port = 8083;
-        private String install_dir = "/opt/tantor/kafka-connect";
-        private String config_dir = "/opt/tantor/kafka-connect/config";
-        private String log_dir = "/var/log/tantor/kafka-connect";
-        private String working_dir = "/var/lib/tantor/kafka-connect";
-        private String plugin_dir = "/opt/tantor/kafka-connect/plugins";
+        private String install_dir = "";
+        private String config_dir = "";
+        private String log_dir = "";
+        private String working_dir = "";
+        private String plugin_dir = "";
         private String heap_size = "1G";
         private String group_id = "tantor-connect";
     }

@@ -145,12 +145,12 @@ public class ConfigChangeJobHandler implements JobHandler {
             if (rollback) {
                 Map<String, Object> previous = (Map<String, Object>) payload.getOrDefault("previousByBroker", Map.of());
                 for (Map.Entry<String, Object> entry : previous.entrySet()) {
-                    kafkaAdminService.alterBrokerConfig(clusterId, Integer.parseInt(entry.getKey()), key, String.valueOf(entry.getValue()));
+                    alterDynamicWithBackup(clusterId, step, Integer.parseInt(entry.getKey()), key, String.valueOf(entry.getValue()));
                 }
             } else {
                 String value = required(payload, "configValue");
                 for (Integer brokerId : kafkaAdminService.getBrokerConfigs(clusterId).keySet()) {
-                    kafkaAdminService.alterBrokerConfig(clusterId, brokerId, key, value);
+                    alterDynamicWithBackup(clusterId, step, brokerId, key, value);
                 }
             }
             return;
@@ -208,6 +208,47 @@ public class ConfigChangeJobHandler implements JobHandler {
                 clusterRepository.save(cluster);
             });
         }
+    }
+
+    private Map<String, Object> readBackupConfig(String json) {
+        return json == null || json.isBlank() ? Map.of() : readMap(json);
+    }
+
+    private String backupConfigJson(Map<String, Object> config) {
+        try { return objectMapper.writeValueAsString(config); }
+        catch (Exception e) { throw new IllegalStateException("Cannot serialize backup configuration", e); }
+    }
+
+    private void alterDynamicWithBackup(UUID clusterId, JobStep step, int brokerId, String key, String value) {
+        Cluster cluster = clusterRepository.findWithServicesById(clusterId).orElseThrow(() -> new IllegalStateException("Managed node agent is required for mandatory config backup."));
+        ClusterServiceAssignment node = cluster.getServices().stream()
+                .filter(service -> service.getNodeId() != null && service.getNodeId() == brokerId
+                        && Set.of("broker", "broker_controller").contains(service.getRole().toLowerCase(java.util.Locale.ROOT)))
+                .findFirst().orElseThrow(() -> new IllegalStateException("No managed broker agent is available for config backup."));
+        Map<String, Object> config = new LinkedHashMap<>(readBackupConfig(cluster.getConfigJson()));
+        config.putAll(readBackupConfig(node.getConfigJson())); config.put("mode", cluster.getMode()); config.put("version", cluster.getKafkaVersion());
+        String base = String.valueOf(config.getOrDefault("kafka_install_base_dir", config.getOrDefault("kafka_install_dir", "/opt"))).replaceAll("/+$", "");
+        if (base.isBlank()) base = "/opt";
+        if (!base.endsWith("/kafka")) {
+            if (base.substring(base.lastIndexOf('/') + 1).startsWith("kafka_")) base = base.substring(0, base.lastIndexOf('/'));
+            base += "/kafka";
+        }
+        boolean flat = cluster.getKafkaVersion() != null && cluster.getKafkaVersion().matches("^[vV]?[4-9].*");
+        String path = base + "/config" + (flat ? "" : "/kraft") + ("broker_controller".equalsIgnoreCase(node.getRole()) ? "/server.properties" : "/broker.properties");
+        Map<String, Object> before = kafkaAdminService.getBrokerConfigs(clusterId).get(brokerId);
+        if (before == null || !(before.get(key) instanceof Map<?, ?> previous)) throw new IllegalStateException("Live property is unavailable for backup.");
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        snapshot.put("mode", "DYNAMIC"); snapshot.put("key", key); snapshot.put("previous", previous);
+        snapshot.put("requestedValue", value); snapshot.put("brokerId", brokerId); snapshot.put("clusterId", clusterId.toString());
+        snapshot.put("capturedAt", java.time.Instant.now().toString());
+        UUID taskId = deploymentService.backupKafkaConfig(clusterId, node.getHostId(), node.getRole(), String.valueOf(brokerId),
+                backupConfigJson(config), path, key, snapshot, "dynamic-" + step.getId());
+        Task backup = taskAwaiter.await(taskId);
+        jobService.appendStepLog(step.getId(), backup.getLogOutput());
+        if (Thread.currentThread().isInterrupted()) throw new IllegalStateException("Interrupted before configuration change");
+        Map<String, Object> latest = kafkaAdminService.getBrokerConfigs(clusterId).get(brokerId);
+        if (latest == null || !java.util.Objects.equals(previous, latest.get(key))) throw new IllegalStateException("Broker value changed while backing up; refresh the plan.");
+        kafkaAdminService.alterBrokerConfig(clusterId, brokerId, key, value);
     }
 
     private Map<String, Object> readMap(String json) {

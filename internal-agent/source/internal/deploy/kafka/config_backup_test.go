@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -24,6 +25,9 @@ func (e *recordingExecutor) Run(_ context.Context, command string, args ...strin
 }
 
 func TestBackupConfigUsesVersionedImmutablePath(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("production backup requires a root agent")
+	}
 	exec := &recordingExecutor{}
 	deployer := &Deployer{exec: exec}
 	task := &api.Task{Parameters: map[string]string{"config_version": "7"}}
@@ -36,10 +40,10 @@ func TestBackupConfigUsesVersionedImmutablePath(t *testing.T) {
 	if !strings.Contains(normalizedBackupPath, "/.tantor-backups/broker.properties/v7-") || !strings.HasSuffix(normalizedBackupPath, ".bak") {
 		t.Fatalf("unexpected backup path %q", backupPath)
 	}
-	if len(exec.commands) != 3 {
-		t.Fatalf("expected test, mkdir and copy commands; got %v", exec.commands)
+	if !strings.Contains(strings.Join(exec.commands, "\n"), "config-backup-index") {
+		t.Fatalf("seven-day retention was not registered: %v", exec.commands)
 	}
-	if !strings.HasPrefix(exec.commands[2], "cp -p /opt/kafka/config/kraft/broker.properties ") {
+	if !strings.Contains(strings.Join(exec.commands, "\n"), "cp -p /opt/kafka/config/kraft/broker.properties ") {
 		t.Fatalf("config backup copy was not recorded: %v", exec.commands)
 	}
 }

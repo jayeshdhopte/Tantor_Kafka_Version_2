@@ -690,7 +690,12 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   const schemaHosts = selectedHosts.filter(host => hostHasAddonRole(host.id, 'schema_registry'));
   const connectHosts = selectedHosts.filter(host => hostHasAddonRole(host.id, 'kafka_connect'));
   const schemaConfigFor = (hostId: string) => schemaConfigsByHost[hostId] || defaultSchemaRegistryConfig();
-  const connectConfigFor = (hostId: string) => connectConfigsByHost[hostId] || defaultKafkaConnectConfig();
+  const validateOptionalPath = (value: string, label: string) => value.trim() ? validatePath(value, label) : '';
+  const connectConfigFor = (hostId: string) => {
+    const cfg = connectConfigsByHost[hostId] || defaultKafkaConnectConfig();
+    const unified = connectArtifacts.find(a => a.version === kafkaVersion && (a.fileName || a.filename || '').toLowerCase().startsWith('tantor-unified-kafka-'));
+    return { ...cfg, artifactId: cfg.artifactId || unified?.id || '' };
+  };
 
   const brokerCount = selectedHosts.filter(host => {
     const role = rolesByHost[host.id] || defaultRoleForMode;
@@ -772,7 +777,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     }),
     ...connectHosts.flatMap(host => {
       const cfg = connectConfigFor(host.id);
-      return [validatePath(cfg.installDir, `${host.hostname}: Kafka Connect install directory`), validatePath(cfg.configDir, `${host.hostname}: Kafka Connect config directory`), validatePath(cfg.logDir, `${host.hostname}: Kafka Connect log directory`), validatePath(cfg.workingDir, `${host.hostname}: Kafka Connect working directory`), validatePath(cfg.pluginDir, `${host.hostname}: Kafka Connect plugin directory`)];
+      return [validateOptionalPath(cfg.installDir, `${host.hostname}: Kafka Connect install directory`), validateOptionalPath(cfg.configDir, `${host.hostname}: Kafka Connect config directory`), validateOptionalPath(cfg.logDir, `${host.hostname}: Kafka Connect log directory`), validateOptionalPath(cfg.workingDir, `${host.hostname}: Kafka Connect working directory`), validateOptionalPath(cfg.pluginDir, `${host.hostname}: Kafka Connect plugin directory`)];
     }),
   ].filter(Boolean);
 
@@ -1539,7 +1544,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
           config_dir: cfg.configDir, log_dir: cfg.logDir, working_dir: cfg.workingDir,
           heap_size: cfg.heapSize, group_id: cfg.groupId, plugin_dir: cfg.pluginDir,
           kafka_version: kafkaVersion, min_free_disk_mb: 5120,
-          kafka_install_dir: `${installDir.replace(/\/$/, '')}/kafka_${versions.find(item => item.version === kafkaVersion)?.scala_version || '2.13'}-${kafkaVersion}`,
+          kafka_install_dir: `${installDir.replace(/\/$/, '')}/kafka`,
           bootstrap_servers: plannedBootstrapServers(),
           allow_deferred_kafka: true,
           ...dataServiceSafetyParameters(hostId, 'kafka_connect'),

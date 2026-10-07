@@ -67,6 +67,7 @@ func TestExistingPortUpdateAndRollback(t *testing.T) {
 				defer server.Close()
 				u, _ := url.Parse(server.URL)
 				task := taskFor()
+				task.Parameters["install_dir"] = "/opt/tantor/" + kind
 				task.Parameters["allow_deferred_kafka"] = "false"
 				s, _ := Parse(kind, task)
 				current := ConfigFiles(s, "/usr")[0].Content
@@ -95,6 +96,7 @@ func TestPortUpdatePreservesIdentityAndComments(t *testing.T) {
 	for _, kind := range []string{Schema, Connect} {
 		t.Run(kind, func(t *testing.T) {
 			task := taskFor()
+			task.Parameters["install_dir"] = "/opt/tantor/" + kind
 			s, err := Parse(kind, task)
 			if err != nil {
 				t.Fatal(err)

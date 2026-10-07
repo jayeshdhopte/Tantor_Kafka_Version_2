@@ -16,6 +16,10 @@ func Clean(ctx context.Context, exec executor.Executor, kind string, task *api.T
 	if err != nil {
 		return "", err
 	}
+	if kind == Connect {
+		connectDeploymentLock.Lock()
+		defer connectDeploymentLock.Unlock()
+	}
 	unitPath := "/etc/systemd/system/" + kind + ".service"
 	if _, _, err := exec.RunSudo(ctx, "test", "-f", unitPath); err != nil {
 		return "[SKIP] " + kind + " unit is not installed\n", nil
@@ -37,7 +41,7 @@ func Clean(ctx context.Context, exec executor.Executor, kind string, task *api.T
 	if err := CheckPaths(ctx, exec, s); err != nil {
 		return "", err
 	}
-	for _, dir := range s.Directories() {
+	for _, dir := range cleanupDirectories(s) {
 		resolved, stderr, err := exec.Run(ctx, "readlink", "-m", "--", dir)
 		if err != nil || strings.TrimSpace(resolved) != dir {
 			return "", fmt.Errorf("refusing to remove redirected service path %s (%s): %v", dir, stderr, err)
@@ -49,7 +53,7 @@ func Clean(ctx context.Context, exec executor.Executor, kind string, task *api.T
 			return "", fmt.Errorf("%s %s: %w (%s %s)", action, unitName, err, out, stderr)
 		}
 	}
-	for _, dir := range s.Directories() {
+	for _, dir := range cleanupDirectories(s) {
 		if out, stderr, err := exec.RunSudo(ctx, "rm", "-rf", "--", dir); err != nil {
 			return "", fmt.Errorf("remove %s: %w (%s %s)", dir, err, out, stderr)
 		}
@@ -61,4 +65,13 @@ func Clean(ctx context.Context, exec executor.Executor, kind string, task *api.T
 		return "", fmt.Errorf("reload systemd: %w (%s %s)", err, out, stderr)
 	}
 	return "[PASS] Removed managed " + kind + " service and directories\n", nil
+}
+
+func cleanupDirectories(s Settings) []string {
+	// Shared installations are owned by Kafka, not Connect. Preserve config,
+	// plugins, logs and working data; remove only the managed service unit.
+	if s.SharedConnect {
+		return nil
+	}
+	return s.Directories()
 }

@@ -23,6 +23,14 @@ func precheckShell() string {
 }
 
 func CheckPaths(ctx context.Context, exec executor.Executor, s Settings) error {
+	kafkaRoot := ""
+	if s.SharedConnect {
+		out, _, err := exec.Run(ctx, "readlink", "-m", "--", s.Install)
+		kafkaRoot = strings.TrimSpace(out)
+		if err != nil || SafePath(kafkaRoot) != nil {
+			return fmt.Errorf("cannot resolve existing Kafka installation")
+		}
+	}
 	var protected []string
 	for _, dir := range s.Protected {
 		out, errOut, err := exec.Run(ctx, "readlink", "-m", "--", dir)
@@ -37,8 +45,10 @@ func CheckPaths(ctx context.Context, exec executor.Executor, s Settings) error {
 		if err != nil || SafePath(real) != nil {
 			return fmt.Errorf("cannot resolve service path %s: %s %v", dir, errOut, err)
 		}
-		for _, keep := range protected {
-			if Overlaps(real, keep) {
+		for i, keep := range protected {
+			allowedShared := s.SharedConnect && s.Protected[i] == s.Install && keep == kafkaRoot &&
+				((dir == s.Install && real == kafkaRoot) || (dir == s.Config && real == kafkaRoot+"/config") || (dir == s.Plugin && real == kafkaRoot+"/connect-plugins"))
+			if Overlaps(real, keep) && !allowedShared {
 				return fmt.Errorf("service path %s resolves into protected Kafka/other-service path %s", dir, keep)
 			}
 		}
@@ -68,6 +78,15 @@ func Precheck(ctx context.Context, exec executor.Executor, kind string, task *ap
 		return "[FAIL] Directory safety: " + err.Error(), err
 	}
 	logs.WriteString("[PASS] Configuration and protected Kafka paths\n")
+	if s.SharedConnect {
+		if s.Deferred {
+			logs.WriteString("[DEFERRED] Existing unified Connect runtime and plugins must be verified after Kafka installation\n")
+		} else if err = validateSharedRuntime(ctx, exec, s, task); err != nil {
+			return logs.String() + "[FAIL] " + err.Error(), err
+		} else {
+			logs.WriteString("[PASS] Existing unified Kafka Connect runtime and plugins\n")
+		}
+	}
 	args := []string{"-c", precheckShell(), "--", kind, strconv.Itoa(s.Port), s.Bootstrap, s.KafkaBin, s.Plugin, s.Working, strconv.Itoa(s.MinDisk), strconv.FormatBool(s.Deferred), s.HAPeers}
 	if kind == Schema {
 		args = append(args, s.SchemaTopic)

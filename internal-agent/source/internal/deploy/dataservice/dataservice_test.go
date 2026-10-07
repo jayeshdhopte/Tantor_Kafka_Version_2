@@ -20,7 +20,7 @@ import (
 )
 
 func taskFor() *api.Task {
-	return &api.Task{ArtifactURL: "https://artifacts.invalid/bundle.tgz", Checksum: strings.Repeat("a", 64), Parameters: map[string]string{"bootstrap_servers": "broker:9092", "allow_deferred_kafka": "true"}}
+	return &api.Task{ArtifactURL: "https://artifacts.invalid/bundle.tgz", Checksum: strings.Repeat("a", 64), Parameters: map[string]string{"install_dir": "/opt/tantor/kafka-connect", "bootstrap_servers": "broker:9092", "allow_deferred_kafka": "true"}}
 }
 
 func TestSafePathAcceptsVersionedJavaHome(t *testing.T) {
@@ -51,6 +51,9 @@ func TestRejectsPathsThatCouldChangeKafka(t *testing.T) {
 func TestCustomConfigurationsAreRenderedWithoutKafkaServiceActions(t *testing.T) {
 	for _, kind := range []string{Schema, Connect} {
 		task := taskFor()
+		if kind == Schema {
+			delete(task.Parameters, "install_dir")
+		}
 		task.Parameters["rest_port"] = "18083"
 		task.Parameters["heap_size"] = "2G"
 		task.Parameters["replication_factor"] = "2"
