@@ -8,9 +8,9 @@ export type KafkaConnectConfig = {
   configDir: string; logDir: string; workingDir: string; pluginDir: string;
 };
 
-export const defaultSchemaRegistryConfig = (): SchemaRegistryConfig => ({
-  artifactId: '', port: 8081, heapSize: '1G', installDir: '/opt/tantor/schema-registry',
-  configDir: '/opt/tantor/schema-registry/etc/schema-registry', logDir: '/var/log/tantor/schema-registry',
+export const defaultSchemaRegistryConfig = (unified = true): SchemaRegistryConfig => ({
+  artifactId: '', port: 8081, heapSize: '1G', installDir: unified ? '' : '/opt/tantor/schema-registry',
+  configDir: unified ? '' : '/opt/tantor/schema-registry/etc/schema-registry', logDir: '/var/log/tantor/schema-registry',
   workingDir: '/var/lib/tantor/schema-registry', compatibility: 'BACKWARD',
 });
 

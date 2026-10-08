@@ -52,7 +52,7 @@ func TestCustomConfigurationsAreRenderedWithoutKafkaServiceActions(t *testing.T)
 	for _, kind := range []string{Schema, Connect} {
 		task := taskFor()
 		if kind == Schema {
-			delete(task.Parameters, "install_dir")
+			task.Parameters["install_dir"] = "/opt/tantor/schema-registry"
 		}
 		task.Parameters["rest_port"] = "18083"
 		task.Parameters["heap_size"] = "2G"

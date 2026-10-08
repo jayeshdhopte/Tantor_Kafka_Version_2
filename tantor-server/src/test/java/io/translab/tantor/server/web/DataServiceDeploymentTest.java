@@ -20,6 +20,28 @@ class DataServiceDeploymentTest {
     private final ClusterController controller = mock(ClusterController.class, CALLS_REAL_METHODS);
 
     @Test
+    void sharedSchemaDefaultsRequireNewAgentButStandaloneRemainsSupported() {
+        var hosts = mock(HostRepository.class);
+        var host = new io.translab.tantor.server.domain.Host();
+        host.setAgentVersion("1.0.0-dataservices.4");
+        when(hosts.findById("host-1")).thenReturn(Optional.of(host));
+        ReflectionTestUtils.setField(controller, "hostRepository", hosts);
+        var addon = new ClusterController.SchemaRegistryAddonReq();
+        addon.setHost_id("host-1"); addon.setArtifact_id("unified");
+        addon.setArtifact_url("https://artifacts.example/unified.tar.gz");
+        Map<String, Object> payload = ReflectionTestUtils.invokeMethod(controller, "schemaAddonPayload",
+                addon, UUID.randomUUID(), "broker:9092", "/custom/kafka", 2);
+        assertThat(payload).containsEntry("install_dir", "/custom/kafka")
+                .containsEntry("config_dir", "/custom/kafka/etc/schema-registry");
+        host.setAgentVersion("1.0.0-dataservices.3");
+        assertThatThrownBy(() -> ReflectionTestUtils.invokeMethod(controller, "schemaAddonPayload",
+                addon, UUID.randomUUID(), "broker:9092", "/custom/kafka", 2)).hasMessageContaining("dataservices.4");
+        addon.setInstall_dir("/opt/tantor/schema-registry");
+        assertThatCode(() -> ReflectionTestUtils.invokeMethod(controller, "schemaAddonPayload",
+                addon, UUID.randomUUID(), "broker:9092", "/custom/kafka", 2)).doesNotThrowAnyException();
+    }
+
+    @Test
     void preparesMultipleInstancesWithSharedIdentityAndHostSpecificSteps() throws Exception {
         var first = connect();
         first.setArtifact_url("https://artifacts.example/connect.tar.gz");

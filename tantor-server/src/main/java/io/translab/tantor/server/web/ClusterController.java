@@ -1421,7 +1421,8 @@ public class ClusterController {
                     + " conflicts with another service port on the selected host.");
         }
         for (String path : new String[]{addon.getInstall_dir(), addon.getConfig_dir(), addon.getLog_dir(), addon.getWorking_dir()}) {
-            if (path == null || !path.startsWith("/") || "/".equals(path) || path.contains("..")) {
+            if (path == null || path.isBlank()) continue;
+            if (!path.startsWith("/") || "/".equals(path) || path.contains("..")) {
                 throw new IllegalArgumentException("Schema Registry paths must be absolute, non-root paths without '..'.");
             }
         }
@@ -1504,10 +1505,15 @@ public class ClusterController {
         payload.put("checksum", addon.getChecksum() == null ? "" : addon.getChecksum());
         payload.put("schema_version", addon.getVersion() == null ? "" : addon.getVersion());
         payload.put("rest_port", addon.getPort() == null ? 8081 : addon.getPort());
-        payload.put("install_dir", addon.getInstall_dir());
-        payload.put("config_dir", addon.getConfig_dir());
-        payload.put("log_dir", addon.getLog_dir());
-        payload.put("working_dir", addon.getWorking_dir());
+        String install = addon.getInstall_dir() == null || addon.getInstall_dir().isBlank() ? kafkaInstallDir : addon.getInstall_dir().trim();
+        if (install.equals(kafkaInstallDir)) hostRepository.findById(addon.getHost_id()).ifPresent(host -> {
+            String blocked = io.translab.tantor.server.service.DataServiceAgentSupport.sharedSchemaBlockReason(host.getAgentVersion());
+            if (blocked != null) throw new IllegalArgumentException(blocked);
+        });
+        payload.put("install_dir", install);
+        payload.put("config_dir", addon.getConfig_dir() == null || addon.getConfig_dir().isBlank() ? install + "/etc/schema-registry" : addon.getConfig_dir().trim());
+        payload.put("log_dir", addon.getLog_dir() == null || addon.getLog_dir().isBlank() ? "/var/log/tantor/schema-registry" : addon.getLog_dir().trim());
+        payload.put("working_dir", addon.getWorking_dir() == null || addon.getWorking_dir().isBlank() ? "/var/lib/tantor/schema-registry" : addon.getWorking_dir().trim());
         payload.put("kafka_install_dir", kafkaInstallDir);
         payload.put("heap_size", addon.getHeap_size());
         payload.put("compatibility_level", String.valueOf(addon.getCompatibility_level()).toUpperCase(Locale.ROOT));
@@ -1666,8 +1672,8 @@ public class ClusterController {
         private String checksum;
         private String version;
         private Integer port = 8081;
-        private String install_dir = "/opt/tantor/schema-registry";
-        private String config_dir = "/opt/tantor/schema-registry/etc/schema-registry";
+        private String install_dir = "";
+        private String config_dir = "";
         private String log_dir = "/var/log/tantor/schema-registry";
         private String working_dir = "/var/lib/tantor/schema-registry";
         private String heap_size = "1G";

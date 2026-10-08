@@ -75,7 +75,7 @@ func reconfigurePorts(ctx context.Context, exec executor.Executor, s Settings, t
 	if err != nil {
 		return "", fmt.Errorf("existing runtime has no readable configuration at %s: %w: %s", file.Path, err, detail)
 	}
-	updated, err := portConfiguration(current, file.Content, s.SharedConnect)
+	updated, err := portConfiguration(current, file.Content, s.SharedConnect || s.SharedSchema)
 	if err != nil {
 		return "", err
 	}

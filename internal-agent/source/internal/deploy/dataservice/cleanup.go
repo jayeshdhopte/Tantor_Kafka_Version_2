@@ -19,6 +19,9 @@ func Clean(ctx context.Context, exec executor.Executor, kind string, task *api.T
 	if kind == Connect {
 		connectDeploymentLock.Lock()
 		defer connectDeploymentLock.Unlock()
+	} else {
+		schemaDeploymentLock.Lock()
+		defer schemaDeploymentLock.Unlock()
 	}
 	unitPath := "/etc/systemd/system/" + kind + ".service"
 	if _, _, err := exec.RunSudo(ctx, "test", "-f", unitPath); err != nil {
@@ -68,9 +71,9 @@ func Clean(ctx context.Context, exec executor.Executor, kind string, task *api.T
 }
 
 func cleanupDirectories(s Settings) []string {
-	// Shared installations are owned by Kafka, not Connect. Preserve config,
+	// Shared installations are owned by Kafka. Preserve config,
 	// plugins, logs and working data; remove only the managed service unit.
-	if s.SharedConnect {
+	if s.SharedConnect || s.SharedSchema {
 		return nil
 	}
 	return s.Directories()

@@ -27,6 +27,14 @@ are backed up; unrelated settings and plugin JARs are retained. This release
 requires the matching backend/UI changes. Updating the agent alone does not
 update the management UI. See ../docs/data-service-deployment.md.
 
+Schema Registry unified-installation support (dataservices.4):
+Leave managed Schema Registry install/config fields blank to reuse Kafka's
+bin/schema-registry-start, share/java/schema-registry libraries, and
+etc/schema-registry/schema-registry.properties. Shared configuration is backed
+up and unrelated settings preserved. No separate distribution is extracted.
+Existing standalone services require an explicit migration; they are not moved
+by an installation retry. Requires the matching backend/UI changes.
+
 Kafka configuration backup update (configchange.4):
 Static and dynamic managed Kafka configuration changes require a successful
 node-side backup before mutation. Backups live beside the active properties

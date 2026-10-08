@@ -20,9 +20,9 @@ import (
 )
 
 var (
-	version   = "1.0.0-prod.16-reporting.9-dataservices.3-configchange.4"
-	commit    = "config-backup-retention"
-	buildDate = "2026-10-07"
+	version   = "1.0.0-prod.16-reporting.9-dataservices.4-configchange.4"
+	commit    = "unified-schema-registry"
+	buildDate = "2026-10-08"
 )
 
 func main() {

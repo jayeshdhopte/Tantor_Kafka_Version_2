@@ -28,6 +28,9 @@ func Deploy(ctx context.Context, cfg *config.Config, download Downloader, exec e
 	if kind == Connect {
 		connectDeploymentLock.Lock()
 		defer connectDeploymentLock.Unlock()
+	} else {
+		schemaDeploymentLock.Lock()
+		defer schemaDeploymentLock.Unlock()
 	}
 	if s.Deferred {
 		return "", fmt.Errorf("installation cannot defer Kafka connectivity checks")
@@ -47,8 +50,8 @@ func Deploy(ctx context.Context, cfg *config.Config, download Downloader, exec e
 	if err = CheckPaths(ctx, exec, s); err != nil {
 		return logs.String(), err
 	}
-	if s.SharedConnect {
-		return deploySharedConnect(ctx, exec, s, task)
+	if s.SharedConnect || s.SharedSchema {
+		return deploySharedDataService(ctx, exec, s, task)
 	}
 	for _, tree := range []string{"bin", "libs", "share"} {
 		_, _, e := exec.RunSudo(ctx, "bash", "-c", `test ! -e "$1" && test ! -L "$1"`, "--", s.Install+"/"+tree)
@@ -214,6 +217,8 @@ schema.compatibility.level=%s
 	loggingPath := s.Config + "/log4j2.xml"
 	if s.SharedConnect {
 		loggingPath = s.Config + "/tantor-kafka-connect-log4j2.xml"
+	} else if s.SharedSchema {
+		loggingPath = s.Config + "/tantor-schema-registry-log4j2.xml"
 	}
 	// Journald handles retention; avoid sharing Kafka's log config or JVM options.
 	logging := `<?xml version="1.0" encoding="UTF-8"?>

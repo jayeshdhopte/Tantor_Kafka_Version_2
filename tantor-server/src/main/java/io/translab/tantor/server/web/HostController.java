@@ -183,11 +183,13 @@ public class HostController {
         if ("PRECHECK_SCHEMA".equals(command) || "PRECHECK_CONNECT".equals(command)) {
             String blocked = io.translab.tantor.server.service.DataServiceAgentSupport.precheckBlockReason(host.getAgentVersion());
             if (blocked != null) return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", blocked));
-            if ("PRECHECK_CONNECT".equals(command)) {
+            if ("PRECHECK_CONNECT".equals(command) || "PRECHECK_SCHEMA".equals(command)) {
                 String install = options == null ? "" : java.util.Objects.toString(options.get("install_dir"), "").trim();
                 String kafka = options == null ? "/opt/kafka" : java.util.Objects.toString(options.get("kafka_install_dir"), "/opt/kafka").trim();
                 if (install.isBlank() || install.equals(kafka)) {
-                    String sharedBlocked = io.translab.tantor.server.service.DataServiceAgentSupport.sharedConnectBlockReason(host.getAgentVersion());
+                    String sharedBlocked = "PRECHECK_SCHEMA".equals(command)
+                            ? io.translab.tantor.server.service.DataServiceAgentSupport.sharedSchemaBlockReason(host.getAgentVersion())
+                            : io.translab.tantor.server.service.DataServiceAgentSupport.sharedConnectBlockReason(host.getAgentVersion());
                     if (sharedBlocked != null) return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", sharedBlocked));
                 }
             }

@@ -86,7 +86,10 @@ class AddClusterServicesTest {
         var schemaPayload = new ObjectMapper().readTree(steps.getValue().get(0).getPayload()).path("serviceConfig");
         var connectPayload = new ObjectMapper().readTree(steps.getValue().get(5).getPayload()).path("serviceConfig");
         assertThat(schemaPayload.path("bootstrap_servers").asText()).contains("broker:9092");
-        assertThat(connectPayload.path("other_install_dir").asText()).isEqualTo("/opt/tantor/schema-registry");
+        assertThat(schemaPayload.path("install_dir").asText()).isEqualTo("/opt/kafka");
+        assertThat(schemaPayload.path("config_dir").asText()).isEqualTo("/opt/kafka/etc/schema-registry");
+        assertThat(connectPayload.path("other_install_dir").asText()).isEqualTo("/opt/kafka");
+        assertThat(connectPayload.path("other_config_dir").asText()).isEqualTo("/opt/kafka/etc/schema-registry");
         assertThat(steps.getValue()).hasSize(10).noneSatisfy(step -> assertThat(step.getPayload()).contains("\"operation\":\"deploy\""));
         assertThat(cluster.getServices()).extracting(ClusterServiceAssignment::getRole).containsExactly("broker_controller", "schema_registry", "kafka_connect");
         assertThat(cluster.getStatus()).isEqualTo("SUCCESS");

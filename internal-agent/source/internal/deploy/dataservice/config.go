@@ -22,7 +22,7 @@ type Settings struct {
 	Port, Replication, MinDisk                                           int
 	Bootstrap, KafkaBin, Compatibility, GroupID, SchemaTopic             string
 	OffsetTopic, ConfigTopic, StatusTopic, HAPeers                       string
-	Deferred, SharedConnect                                              bool
+	Deferred, SharedConnect, SharedSchema                                bool
 	Protected                                                            []string
 }
 
@@ -58,12 +58,10 @@ func Parse(kind string, task *api.Task) (Settings, error) {
 	}
 	p := task.Parameters
 	kafkaInstall := Value(p, "kafka_install_dir", "/opt/kafka")
-	defaultInstall := "/opt/tantor/" + kind
-	if kind == Connect {
-		defaultInstall = kafkaInstall
-	}
+	defaultInstall := kafkaInstall
 	s.Install = Value(p, "install_dir", defaultInstall)
 	s.SharedConnect = kind == Connect && s.Install == kafkaInstall
+	s.SharedSchema = kind == Schema && s.Install == kafkaInstall
 	defaultConfig := s.Install + "/config"
 	port := "8083"
 	if kind == Schema {
@@ -180,6 +178,16 @@ func Parse(kind string, task *api.Task) (Settings, error) {
 			}
 		}
 	}
+	if s.SharedSchema {
+		if s.Config != s.Install+"/etc/schema-registry" {
+			return s, fmt.Errorf("shared Schema Registry config must use Kafka's etc/schema-registry directory")
+		}
+		for _, dir := range []string{s.Log, s.Working} {
+			if Overlaps(dir, s.Install) {
+				return s, fmt.Errorf("Schema Registry log/work paths must be outside the shared Kafka installation")
+			}
+		}
+	}
 	for _, dir := range []string{s.Config, s.Log, s.Working, s.Plugin} {
 		for _, tree := range []string{"bin", "libs", "share"} {
 			if Overlaps(dir, s.Install+"/"+tree) {
@@ -218,5 +226,17 @@ func Endpoints(value string) (string, error) {
 // Only these exact shared paths are permitted. Kafka storage and all runtime
 // trees remain protected, including paths redirected through symlinks.
 func (s Settings) allowedSharedPath(dir, protected, kafkaRoot string) bool {
-	return s.SharedConnect && protected == kafkaRoot && (dir == kafkaRoot || dir == kafkaRoot+"/config" || dir == kafkaRoot+"/connect-plugins")
+	if !s.SharedConnect && !s.SharedSchema {
+		return false
+	}
+	// The existing shared root may contain the other service's protected config.
+	// Individual service paths still cannot overlap one another.
+	if dir == kafkaRoot && (protected == kafkaRoot+"/config" || protected == kafkaRoot+"/etc/schema-registry" || protected == kafkaRoot+"/connect-plugins") {
+		return true
+	}
+	if protected != kafkaRoot {
+		return false
+	}
+	return dir == kafkaRoot || (s.SharedConnect && (dir == kafkaRoot+"/config" || dir == kafkaRoot+"/connect-plugins")) ||
+		(s.SharedSchema && dir == kafkaRoot+"/etc/schema-registry")
 }

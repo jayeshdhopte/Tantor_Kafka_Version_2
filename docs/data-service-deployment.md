@@ -60,8 +60,8 @@ fields. For new deployment, place them under `addons` in
 
 Supply the selected artifact SHA-256 through the same artifact metadata/checksum
 mechanism as single-instance deployment. The host agents already implement the
-required per-host tasks. Shared unified Connect continues to require agent
-`dataservices.3` or newer. No new agent binary is required for orchestration.
+required per-host tasks. Shared unified Connect requires agent `dataservices.3`
+or newer; shared unified Schema Registry requires `dataservices.4` or newer.
 
 The managed agent source is `internal-agent/source`. Build its Linux amd64
 binary from that module, then install the new binary on every target host. An
@@ -96,6 +96,39 @@ verification fails. A managed installation retry can change only REST ports.
 Cleanup removes the managed Connect unit but preserves all shared installation
 files and directories. Existing standalone Connect deployments need an explicit
 migration; changing directories in a retry will not silently move a running worker.
+
+## Schema Registry with the existing unified installation
+
+For managed clusters, leave Schema Registry's install/config directory fields
+blank to reuse the host's unified Kafka installation. The UI selects the unified
+artifact matching the cluster's Kafka version. With Kafka 4.3.0 installed at
+`/opt/kafka`, the existing layout is:
+
+- Launcher: `/opt/kafka/bin/schema-registry-start`
+- Libraries: `/opt/kafka/share/java/schema-registry`
+- Properties: `/opt/kafka/etc/schema-registry/schema-registry.properties`
+- Dedicated logging configuration: `/opt/kafka/etc/schema-registry/tantor-schema-registry-log4j2.xml`
+- Logs: `/var/log/tantor/schema-registry`
+- Working directory: `/var/lib/tantor/schema-registry`
+
+This requires agent `dataservices.4` or newer on every selected host. The backend
+rejects shared deployment on older agents. No second distribution is downloaded
+or extracted, and the agent does not recursively change Kafka ownership. Prechecks
+verify existing launchers, server libraries and resolved path safety. Shared
+configuration must use the existing `etc/schema-registry` directory; log/work
+overrides must remain outside the shared Kafka installation and protected storage.
+
+Before updating managed properties, the agent backs up the existing properties
+beside the file and preserves unrelated properties. Writes are atomic. Failed
+installation or REST verification restores the original properties and removes
+the new Schema Registry unit without stopping Kafka or Connect. Successful
+installation prunes these configuration backups older than seven days. Cleanup
+removes only the managed service unit and preserves shared files and directories.
+
+Explicit standalone installation paths remain supported. Existing standalone
+Schema Registry services are not migrated automatically: a retry requesting a
+different runtime path fails rather than silently moving a running service.
+External discovery deployments retain their standalone defaults.
 
 ## External clusters
 

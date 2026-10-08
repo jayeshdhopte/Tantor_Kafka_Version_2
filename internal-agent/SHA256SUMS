@@ -1,3 +1,3 @@
-3556943c63e30403980491887bfce97b7f0ddbb7bf7b55a800beba8eae4b7c0c  bin/tantor-agent-linux-amd64
-790bc8ffffe151e4ba54df9cd331fa70250db9c845203d060efdfac054667712  bin/tantor-agent-linux-arm64
-4bd3552db8a522db90a91266e3fbc9272c2a03a5af0048460a3c44dc5b216e8f  source-reporting.9.tar.gz
+8c721ec1585678bdde7338c1aabacda4db430dbb1de4cf7f12049c7205a4a667  bin/tantor-agent-linux-amd64
+fa626d6df0e3fa11377b78a774540cbe376f8ee4a2ba9abc77d1d24229a36ab4  bin/tantor-agent-linux-arm64
+8ad33dda00186339088d521ba19cd129a8ef1160d590aafeabcf3bd68a0819ea  source-reporting.9.tar.gz

@@ -4,6 +4,12 @@ package io.translab.tantor.server.service;
 public final class DataServiceAgentSupport {
     private DataServiceAgentSupport() { }
 
+    public static String sharedSchemaBlockReason(String version) {
+        var matcher = java.util.regex.Pattern.compile("-dataservices\\.([0-9]+)").matcher(version == null ? "" : version);
+        if (matcher.find() && Integer.parseInt(matcher.group(1)) >= 4) return null;
+        return "Using unified Schema Registry requires internal agent dataservices.4 or newer. Update this host's agent before deploying Schema Registry.";
+    }
+
     public static String sharedConnectBlockReason(String version) {
         var matcher = java.util.regex.Pattern.compile("-dataservices\\.([0-9]+)").matcher(version == null ? "" : version);
         if (matcher.find() && Integer.parseInt(matcher.group(1)) >= 3) return null;

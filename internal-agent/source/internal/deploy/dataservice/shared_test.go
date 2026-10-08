@@ -93,7 +93,7 @@ func (e *sharedExecutor) Run(_ context.Context, cmd string, args ...string) (str
 		if e.rootToData && strings.HasPrefix(p, "/opt/kafka") {
 			return strings.Replace(p, "/opt/kafka", "/data/kafka", 1), "", nil
 		}
-		if e.redirected && p == "/opt/kafka/config" {
+		if e.redirected && (p == "/opt/kafka/config" || p == "/opt/kafka/etc/schema-registry") {
 			return "/data/kafka", "", nil
 		}
 		return strings.Replace(p, "/opt/kafka", "/opt/kafka_2.13-4.3.0", 1), "", nil
@@ -108,7 +108,7 @@ func (e *sharedExecutor) Run(_ context.Context, cmd string, args ...string) (str
 }
 func (e *sharedExecutor) RunSudo(_ context.Context, cmd string, args ...string) (string, string, error) {
 	e.commands = append(e.commands, cmd+" "+strings.Join(args, " "))
-	if e.missingRuntime && cmd == "bash" && strings.Contains(args[1], "connect-distributed.sh") {
+	if e.missingRuntime && cmd == "bash" && (strings.Contains(args[1], "connect-distributed.sh") || strings.Contains(args[1], "schema-registry-start")) {
 		return "", "missing runtime", errors.New("missing runtime")
 	}
 	if cmd == "test" && args[0] == "-e" {

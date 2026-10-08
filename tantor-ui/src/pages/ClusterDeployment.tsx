@@ -689,7 +689,11 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   const hostHasAddonRole = (hostId: string, role: AddonRole) => (addonRolesByHost[hostId] || []).includes(role);
   const schemaHosts = selectedHosts.filter(host => hostHasAddonRole(host.id, 'schema_registry'));
   const connectHosts = selectedHosts.filter(host => hostHasAddonRole(host.id, 'kafka_connect'));
-  const schemaConfigFor = (hostId: string) => schemaConfigsByHost[hostId] || defaultSchemaRegistryConfig();
+  const schemaConfigFor = (hostId: string) => {
+    const cfg = schemaConfigsByHost[hostId] || defaultSchemaRegistryConfig();
+    const unified = schemaArtifacts.find(a => a.version === kafkaVersion && (a.fileName || a.filename || '').toLowerCase().startsWith('tantor-unified-kafka-'));
+    return { ...cfg, artifactId: cfg.artifactId || unified?.id || '' };
+  };
   const validateOptionalPath = (value: string, label: string) => value.trim() ? validatePath(value, label) : '';
   const connectConfigFor = (hostId: string) => {
     const cfg = connectConfigsByHost[hostId] || defaultKafkaConnectConfig();
@@ -773,7 +777,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     validatePath(artifactLoadDir, 'Artifacts/Load Directory'),
     ...schemaHosts.flatMap(host => {
       const cfg = schemaConfigFor(host.id);
-      return [validatePath(cfg.installDir, `${host.hostname}: Schema Registry install directory`), validatePath(cfg.configDir, `${host.hostname}: Schema Registry config directory`), validatePath(cfg.logDir, `${host.hostname}: Schema Registry log directory`), validatePath(cfg.workingDir, `${host.hostname}: Schema Registry working directory`)];
+      return [cfg.installDir.trim() ? validatePath(cfg.installDir, `${host.hostname}: Schema Registry install directory`) : '', cfg.configDir.trim() ? validatePath(cfg.configDir, `${host.hostname}: Schema Registry config directory`) : '', validatePath(cfg.logDir, `${host.hostname}: Schema Registry log directory`), validatePath(cfg.workingDir, `${host.hostname}: Schema Registry working directory`)];
     }),
     ...connectHosts.flatMap(host => {
       const cfg = connectConfigFor(host.id);
