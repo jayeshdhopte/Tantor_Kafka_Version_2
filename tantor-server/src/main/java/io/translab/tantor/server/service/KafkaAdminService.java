@@ -54,7 +54,7 @@ public class KafkaAdminService {
      * a different listener than the rest of the cluster-management API.
      */
     public Properties getKafkaClientProperties(UUID clusterId) {
-        Optional<io.translab.tantor.server.domain.Cluster> clusterOpt = clusterRepository.findById(clusterId);
+        Optional<io.translab.tantor.server.domain.Cluster> clusterOpt = clusterRepository.findWithServicesById(clusterId);
         Optional<ExternalCluster> extOpt = externalClusterRepository.findById(clusterId);
         
         if (clusterOpt.isEmpty() && extOpt.isEmpty()) {
@@ -93,6 +93,14 @@ public class KafkaAdminService {
                             Integer port = null;
                             if (configJson != null && !configJson.isEmpty()) {
                                 Map<String, Object> config = objectMapper.readValue(configJson, Map.class);
+                                if (svc.getConfigJson() != null && !svc.getConfigJson().isBlank()) {
+                                    Map<String, Object> nodeConfig = objectMapper.readValue(svc.getConfigJson(), Map.class);
+                                    // An explicit node port overrides an inherited listener endpoint.
+                                    if (nodeConfig.containsKey("listener_port") && !nodeConfig.containsKey("listeners")) {
+                                        config.remove("listeners");
+                                    }
+                                    config.putAll(nodeConfig);
+                                }
                                 if (config.containsKey("listeners")) {
                                     String listeners = (String) config.get("listeners");
                                     String[] parts = listeners.split(":");
