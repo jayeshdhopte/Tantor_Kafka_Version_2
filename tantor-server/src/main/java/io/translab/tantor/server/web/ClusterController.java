@@ -104,6 +104,7 @@ public class ClusterController {
             m.put("kafkaClusterId", kafkaClusterId(c));
             m.put("config", parseConfigJson(c.getConfigJson()));
             m.put("serviceRoles", c.getServices() == null ? List.of() : c.getServices().stream().map(ClusterServiceAssignment::getRole).distinct().toList());
+            m.put("serviceInstances", dataServiceInstanceSummaries(c));
             m.put("managementLevel", managementLevel(c));
             m.put("sourceLabel", sourceLabel(c));
             m.put("accessLabel", accessLabel(c));
@@ -184,6 +185,7 @@ public class ClusterController {
             m.put("config", parseConfigJson(c.getConfigJson()));
             m.put("serviceRoles", c.getServices() == null ? List.of() : c.getServices().stream().map(ClusterServiceAssignment::getRole).distinct().toList());
             m.put("managementLevel", managementLevel(c));
+            m.put("serviceInstances", dataServiceInstanceSummaries(c));
             m.put("sourceLabel", sourceLabel(c));
             m.put("accessLabel", accessLabel(c));
             List<Map<String, Object>> hosts = clusterHosts(c);
@@ -582,8 +584,6 @@ public class ClusterController {
         Map<String, Object> deploymentConfig = buildDeploymentConfig(request, deploymentMode);
         String quorumVoters = String.valueOf(deploymentConfig.getOrDefault("quorum_voters", ""));
         String bootstrapServers = String.valueOf(deploymentConfig.getOrDefault("bootstrap_servers", ""));
-        SchemaRegistryAddonReq schemaAddon = schemaAddon(request);
-        KafkaConnectAddonReq connectAddon = connectAddon(request);
         
         // 1. Save Cluster to Database
         Cluster cluster = new Cluster();
@@ -632,48 +632,9 @@ public class ClusterController {
         }
         cluster.setServices(assignments);
         clusterRepository.save(cluster);
-        Map<String, Object> schemaRegistryPayload = null;
-        if (schemaAddon != null) {
-            schemaRegistryPayload = schemaAddonPayload(
-                    schemaAddon,
-                    cluster.getId(),
-                    bootstrapServers,
-                    activeKafkaInstallDir(deploymentConfig),
-                    (int) request.getServices().stream().filter(service -> isBrokerRole(service.getRole())).count()
-            );
-            ClusterServiceAssignment schemaAssignment = new ClusterServiceAssignment();
-            addDataServiceProtectedPaths(schemaRegistryPayload, deploymentConfig);
-            if (connectAddon != null && schemaAddon.getHost_id().equals(connectAddon.getHost_id())) {
-                addOtherServicePaths(schemaRegistryPayload, connectAddon.getInstall_dir(), connectAddon.getConfig_dir(),
-                        connectAddon.getLog_dir(), connectAddon.getWorking_dir(), connectAddon.getPlugin_dir());
-            }
-            schemaAssignment.setCluster(cluster);
-            schemaAssignment.setHostId(schemaAddon.getHost_id());
-            schemaAssignment.setRole("schema_registry");
-            schemaAssignment.setStatus("PENDING");
-            schemaAssignment.setConfigJson(writeJson(schemaRegistryPayload));
-            cluster.getServices().add(schemaAssignment);
-            clusterRepository.save(cluster);
-        }
-        Map<String, Object> kafkaConnectPayload = null;
-        if (connectAddon != null) {
-            kafkaConnectPayload = connectAddonPayload(connectAddon, cluster.getId(), bootstrapServers,
-                    activeKafkaInstallDir(deploymentConfig),
-                    (int) request.getServices().stream().filter(service -> isBrokerRole(service.getRole())).count());
-            ClusterServiceAssignment connectAssignment = new ClusterServiceAssignment();
-            addDataServiceProtectedPaths(kafkaConnectPayload, deploymentConfig);
-            if (schemaAddon != null && connectAddon.getHost_id().equals(schemaAddon.getHost_id())) {
-                addOtherServicePaths(kafkaConnectPayload, schemaAddon.getInstall_dir(), schemaAddon.getConfig_dir(),
-                        schemaAddon.getLog_dir(), schemaAddon.getWorking_dir(), null);
-            }
-            connectAssignment.setCluster(cluster);
-            connectAssignment.setHostId(connectAddon.getHost_id());
-            connectAssignment.setRole("kafka_connect");
-            connectAssignment.setStatus("PENDING");
-            connectAssignment.setConfigJson(writeJson(kafkaConnectPayload));
-            cluster.getServices().add(connectAssignment);
-            clusterRepository.save(cluster);
-        }
+        List<Map<String, Object>> dataServices = prepareDataServicePayloads(request.getAddons(), request.getServices(), cluster, deploymentConfig);
+        addDataServiceAssignments(cluster, dataServices);
+        clusterRepository.save(cluster);
 
         // Update host cluster_id references
         for (ServiceAssignmentReq sa : request.getServices()) {
@@ -707,12 +668,6 @@ public class ClusterController {
         jobPayload.put("quorumVoters", quorumVoters);
         jobPayload.put("kafkaVersion", request.getKafka_version());
         jobPayload.put("requestedBy", username);
-        if (schemaRegistryPayload != null) {
-            jobPayload.put("schemaRegistry", schemaRegistryPayload);
-        }
-        if (kafkaConnectPayload != null) {
-            jobPayload.put("kafkaConnect", kafkaConnectPayload);
-        }
 
         Job job = new Job();
         job.setType(JobType.DEPLOYMENT);
@@ -726,12 +681,7 @@ public class ClusterController {
             job.setPayload("{}");
         }
         List<JobStep> deploymentSteps = deploymentJobSteps(deployOrderPayload, deploymentConfig, deploymentMode);
-        if (schemaAddon != null) {
-            appendSchemaRegistrySteps(deploymentSteps, schemaAddon.getHost_id());
-        }
-        if (connectAddon != null) {
-            appendKafkaConnectSteps(deploymentSteps, connectAddon.getHost_id());
-        }
+        for (Map<String, Object> service : dataServices) appendDataServiceSteps(deploymentSteps, service);
         Job savedJob = jobService.createJob(job, deploymentSteps);
         
         activityAlertService.logActivity("INFO", "Created deployment job for cluster: " + request.getName(), cluster.getId());
@@ -755,18 +705,11 @@ public class ClusterController {
         if ("EXTERNAL".equalsIgnoreCase(cluster.getMode()) || !"SUCCESS".equalsIgnoreCase(cluster.getStatus())) {
             return ResponseEntity.badRequest().body(Map.of("error", "Services can only be added to a successfully deployed managed cluster."));
         }
-        SchemaRegistryAddonReq schema = request.getSchema_registry();
-        KafkaConnectAddonReq connect = request.getKafka_connect();
-        if (schema == null && connect == null) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Select at least one service."));
-        }
+        if (request.getSchema_registry() != null) request.getSchema_registry().setEnabled(true);
+        if (request.getKafka_connect() != null) request.getKafka_connect().setEnabled(true);
         Map<String, Object> config = parseConfigJson(cluster.getConfigJson());
         List<ServiceAssignmentReq> nodes = new ArrayList<>();
         for (ClusterServiceAssignment assignment : cluster.getServices()) {
-            if ((schema != null && "schema_registry".equals(assignment.getRole()))
-                    || (connect != null && "kafka_connect".equals(assignment.getRole()))) {
-                return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", "A selected service has already been added. Check its existing deployment job."));
-            }
             if (Set.of("schema_registry", "kafka_connect").contains(assignment.getRole())) continue;
             Map<String, Object> nodeConfig = new HashMap<>(config);
             nodeConfig.putAll(parseConfigJson(assignment.getConfigJson()));
@@ -780,40 +723,17 @@ public class ClusterController {
             node.setZookeeper_election_port(parseIntConfig(nodeConfig.get("zookeeper_election_port"), 3888));
             nodes.add(node);
         }
-        try {
-            validateSchemaAddon(schema, nodes);
-            validateConnectAddon(connect, nodes);
-            if (schema != null && connect != null && schema.getHost_id().equals(connect.getHost_id())
-                    && java.util.Objects.equals(schema.getPort(), connect.getPort())) {
-                throw new IllegalArgumentException("Services on the same host must use different REST ports.");
-            }
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
         if (cluster.getBootstrapServers() == null || cluster.getBootstrapServers().isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "The cluster has no Kafka bootstrap servers."));
         }
-        int brokers = (int) nodes.stream().filter(node -> isBrokerRole(node.getRole())).count();
-        Map<String, Map<String, Object>> payloads = new LinkedHashMap<>();
-        if (schema != null) payloads.put("schema_registry", schemaAddonPayload(schema, id,
-                cluster.getBootstrapServers(), activeKafkaInstallDir(config), brokers));
-        if (connect != null) payloads.put("kafka_connect", connectAddonPayload(connect, id,
-                cluster.getBootstrapServers(), activeKafkaInstallDir(config), brokers));
-        for (Map.Entry<String, Map<String, Object>> entry : payloads.entrySet()) {
-            Map<String, Object> payload = entry.getValue();
-            addDataServiceProtectedPaths(payload, config);
-            List<Map<String, Object>> otherServices = new ArrayList<>();
-            payloads.forEach((role, other) -> { if (!role.equals(entry.getKey())) otherServices.add(other); });
-            cluster.getServices().stream().filter(service -> Set.of("schema_registry", "kafka_connect").contains(service.getRole()))
-                    .map(service -> parseConfigJson(service.getConfigJson())).forEach(otherServices::add);
-            for (Map<String, Object> other : otherServices) {
-                if (!java.util.Objects.equals(payload.get("host_id"), other.get("host_id"))) continue;
-                if (java.util.Objects.equals(payload.get("rest_port"), other.get("rest_port"))) {
-                    return ResponseEntity.badRequest().body(Map.of("error", "The REST port conflicts with an existing service on this host."));
-                }
-                addOtherServicePaths(payload, blankString(other.get("install_dir")), blankString(other.get("config_dir")),
-                        blankString(other.get("log_dir")), blankString(other.get("working_dir")), blankString(other.get("plugin_dir")));
-            }
+        List<Map<String, Object>> dataServices;
+        try {
+            dataServices = prepareDataServicePayloads(request, nodes, cluster, config);
+            if (dataServices.isEmpty()) throw new IllegalArgumentException("Select at least one service.");
+        } catch (DataServiceAlreadyAssignedException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
         List<JobStep> steps = new ArrayList<>();
         Map<String, Object> jobPayload = new HashMap<>();
@@ -821,22 +741,9 @@ public class ClusterController {
         jobPayload.put("servicesOnly", true);
         jobPayload.put("kafkaVersion", cluster.getKafkaVersion());
         String username = roleAuthenticationUtil.extractUsername(authorization);
-        for (Map.Entry<String, Map<String, Object>> entry : payloads.entrySet()) {
-            ClusterServiceAssignment assignment = new ClusterServiceAssignment();
-            assignment.setCluster(cluster);
-            assignment.setRole(entry.getKey());
-            assignment.setHostId(String.valueOf(entry.getValue().get("host_id")));
-            assignment.setStatus("PENDING");
-            assignment.setConfigJson(writeJson(entry.getValue()));
-            cluster.getServices().add(assignment);
-            if ("schema_registry".equals(entry.getKey())) {
-                jobPayload.put("schemaRegistry", entry.getValue());
-                appendSchemaRegistrySteps(steps, assignment.getHostId());
-            } else {
-                jobPayload.put("kafkaConnect", entry.getValue());
-                appendKafkaConnectSteps(steps, assignment.getHostId());
-            }
-        }
+        jobPayload.put("requestedBy", username);
+        for (Map<String, Object> service : dataServices) appendDataServiceSteps(steps, service);
+        addDataServiceAssignments(cluster, dataServices);
         cluster.setUpdatedBy(username);
         clusterRepository.save(cluster);
         Job job = new Job();
@@ -1300,8 +1207,8 @@ public class ClusterController {
     }
 
     private void addDataServiceProtectedPaths(Map<String, Object> payload, Map<String, Object> configuration) {
-        payload.put("kafka_data_dir", configuration.getOrDefault("data_dir", "/data/kafka"));
-        payload.put("kafka_log_dir", configuration.getOrDefault("log_dir", "/var/log/kafka"));
+        payload.put("kafka_data_dir", configuration.getOrDefault("data_dir", configuration.getOrDefault("kafka_data_dir", "/data/kafka")));
+        payload.put("kafka_log_dir", configuration.getOrDefault("log_dir", configuration.getOrDefault("kafka_app_log_dir", "/var/log/kafka")));
     }
 
     private void addOtherServicePaths(Map<String, Object> payload, String install, String config,
@@ -1327,20 +1234,162 @@ public class ClusterController {
         }
     }
 
-    private SchemaRegistryAddonReq schemaAddon(DeployClusterRequest request) {
-        if (request.getAddons() == null || request.getAddons().getSchema_registry() == null
-                || !request.getAddons().getSchema_registry().isEnabled()) {
-            return null;
-        }
-        return request.getAddons().getSchema_registry();
+    private List<SchemaRegistryAddonReq> schemaAddons(AddonsReq addons) {
+        if (addons == null) return List.of();
+        List<SchemaRegistryAddonReq> result = new ArrayList<>();
+        if (addons.getSchema_registry() != null && addons.getSchema_registry().isEnabled()) result.add(addons.getSchema_registry());
+        if (addons.getSchema_registries() != null) result.addAll(addons.getSchema_registries());
+        if (result.stream().anyMatch(java.util.Objects::isNull)) throw new IllegalArgumentException("Schema Registry instances cannot be null.");
+        return result;
     }
 
-    private KafkaConnectAddonReq connectAddon(DeployClusterRequest request) {
-        if (request.getAddons() == null || request.getAddons().getKafka_connect() == null
-                || !request.getAddons().getKafka_connect().isEnabled()) {
-            return null;
+    private List<Map<String, Object>> dataServiceInstanceSummaries(Cluster cluster) {
+        if (cluster.getServices() == null) return List.of();
+        return cluster.getServices().stream().filter(service -> Set.of("schema_registry", "kafka_connect").contains(service.getRole()))
+                .map(service -> {
+                    Map<String, Object> config = parseConfigJson(service.getConfigJson());
+                    Map<String, Object> result = new LinkedHashMap<>();
+                    result.put("hostId", service.getHostId());
+                    result.put("role", service.getRole());
+                    result.put("status", service.getStatus());
+                    result.put("lastError", service.getLastError());
+                    result.put("groupId", config.get("group_id"));
+                    result.put("port", config.get("rest_port"));
+                    return result;
+                }).toList();
+    }
+
+    private Map<String, Object> dataServiceHostConfig(Cluster cluster, String hostId, Map<String, Object> config) {
+        Map<String, Object> result = new LinkedHashMap<>(config);
+        if (cluster.getServices() != null) cluster.getServices().stream()
+                .filter(service -> hostId.equals(service.getHostId()) && !Set.of("schema_registry", "kafka_connect").contains(service.getRole()))
+                .findFirst().ifPresent(service -> result.putAll(parseConfigJson(service.getConfigJson())));
+        return result;
+    }
+
+    private List<KafkaConnectAddonReq> connectAddons(AddonsReq addons) {
+        if (addons == null) return List.of();
+        List<KafkaConnectAddonReq> result = new ArrayList<>();
+        if (addons.getKafka_connect() != null && addons.getKafka_connect().isEnabled()) result.add(addons.getKafka_connect());
+        if (addons.getKafka_connect_workers() != null) result.addAll(addons.getKafka_connect_workers());
+        if (result.stream().anyMatch(java.util.Objects::isNull)) throw new IllegalArgumentException("Connect workers cannot be null.");
+        return result;
+    }
+
+    private void validateDataServiceRequests(AddonsReq addons, List<ServiceAssignmentReq> nodes) {
+        Set<String> hosts = new HashSet<>();
+        Map<String, Integer> schemaPorts = new HashMap<>();
+        SchemaRegistryAddonReq firstSchema = null;
+        for (SchemaRegistryAddonReq schema : schemaAddons(addons)) {
+            validateSchemaAddon(schema, nodes);
+            if (!hosts.add(schema.getHost_id())) throw new IllegalArgumentException("Only one Schema Registry instance is allowed per host.");
+            if (firstSchema != null && (!java.util.Objects.equals(firstSchema.getVersion(), schema.getVersion())
+                    || !firstSchema.getCompatibility_level().equalsIgnoreCase(schema.getCompatibility_level()))) {
+                throw new IllegalArgumentException("Schema Registry instances must use the same version and compatibility level.");
+            }
+            firstSchema = schema;
+            schemaPorts.put(schema.getHost_id(), schema.getPort() == null ? 8081 : schema.getPort());
         }
-        return request.getAddons().getKafka_connect();
+        hosts.clear();
+        String group = null;
+        KafkaConnectAddonReq firstConnect = null;
+        for (KafkaConnectAddonReq connect : connectAddons(addons)) {
+            validateConnectAddon(connect, nodes);
+            if (!hosts.add(connect.getHost_id())) throw new IllegalArgumentException("Only one Connect worker is allowed per host.");
+            if (java.util.Objects.equals(schemaPorts.get(connect.getHost_id()), connect.getPort() == null ? 8083 : connect.getPort())) {
+                throw new IllegalArgumentException("Services on the same host must use different REST ports.");
+            }
+            if (group != null && !group.equals(connect.getGroup_id())) throw new IllegalArgumentException("Connect workers must use the same worker group ID.");
+            if (firstConnect != null && !java.util.Objects.equals(firstConnect.getVersion(), connect.getVersion())) {
+                throw new IllegalArgumentException("Connect workers must use the same runtime version.");
+            }
+            firstConnect = connect;
+            group = connect.getGroup_id();
+        }
+    }
+
+    private List<Map<String, Object>> prepareDataServicePayloads(AddonsReq addons, List<ServiceAssignmentReq> nodes,
+                                                                Cluster cluster, Map<String, Object> config) {
+        validateDataServiceRequests(addons, nodes);
+        int brokers = (int) nodes.stream().filter(node -> isBrokerRole(node.getRole())).count();
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (SchemaRegistryAddonReq schema : schemaAddons(addons)) {
+            Map<String, Object> payload = schemaAddonPayload(schema, cluster.getId(), cluster.getBootstrapServers(), activeKafkaInstallDir(dataServiceHostConfig(cluster, schema.getHost_id(), config)), brokers);
+            payload.put("role", "schema_registry");
+            result.add(payload);
+        }
+        for (KafkaConnectAddonReq connect : connectAddons(addons)) {
+            Map<String, Object> payload = connectAddonPayload(connect, cluster.getId(), cluster.getBootstrapServers(), activeKafkaInstallDir(dataServiceHostConfig(cluster, connect.getHost_id(), config)), brokers);
+            payload.put("role", "kafka_connect");
+            result.add(payload);
+        }
+        List<Map<String, Object>> existing = cluster.getServices() == null ? List.of() : cluster.getServices().stream()
+                .filter(service -> Set.of("schema_registry", "kafka_connect").contains(service.getRole()))
+                .map(service -> {
+                    Map<String, Object> payload = new LinkedHashMap<>(parseConfigJson(service.getConfigJson()));
+                    payload.put("host_id", service.getHostId());
+                    payload.put("role", service.getRole());
+                    return payload;
+                }).toList();
+        List<Map<String, Object>> all = new ArrayList<>(existing);
+        all.addAll(result);
+        for (Map<String, Object> payload : result) {
+            addDataServiceProtectedPaths(payload, dataServiceHostConfig(cluster, String.valueOf(payload.get("host_id")), config));
+            for (Map<String, Object> other : all) {
+                if (other == payload) continue;
+                if (java.util.Objects.equals(payload.get("role"), other.get("role"))) {
+                    if (java.util.Objects.equals(payload.get("host_id"), other.get("host_id"))) {
+                        throw new DataServiceAlreadyAssignedException("This service is already assigned to host " + payload.get("host_id") + ".");
+                    }
+                    for (String key : List.of("group_id", "schema_version", "connect_version", "compatibility_level")) {
+                        if (other.containsKey(key) && !java.util.Objects.equals(payload.get(key), other.get(key))) {
+                            throw new IllegalArgumentException("Instances of " + payload.get("role") + " must share " + key + ".");
+                        }
+                    }
+                    if (existing.contains(other)) {
+                        for (String key : List.of("group_id", "schemas_topic", "kafkastore_topic", "offset_topic", "config_topic", "status_topic", "replication_factor")) {
+                            if (other.containsKey(key)) payload.put(key, other.get(key));
+                        }
+                    }
+                } else if (java.util.Objects.equals(payload.get("host_id"), other.get("host_id"))) {
+                    if (java.util.Objects.equals(payload.get("rest_port"), other.get("rest_port"))) throw new IllegalArgumentException("REST port conflicts with another service on this host.");
+                    addOtherServicePaths(payload, blankString(other.get("install_dir")), blankString(other.get("config_dir")),
+                            blankString(other.get("log_dir")), blankString(other.get("working_dir")), blankString(other.get("plugin_dir")));
+                }
+            }
+            payload.put("instance_connection", true);
+        }
+        return result;
+    }
+
+    private void addDataServiceAssignments(Cluster cluster, List<Map<String, Object>> payloads) {
+        for (Map<String, Object> payload : payloads) {
+            ClusterServiceAssignment assignment = new ClusterServiceAssignment();
+            assignment.setCluster(cluster);
+            assignment.setRole(String.valueOf(payload.get("role")));
+            assignment.setHostId(String.valueOf(payload.get("host_id")));
+            assignment.setStatus("PENDING");
+            assignment.setConfigJson(writeJson(payload));
+            cluster.getServices().add(assignment);
+        }
+    }
+
+    private static class DataServiceAlreadyAssignedException extends IllegalArgumentException {
+        private DataServiceAlreadyAssignedException(String message) { super(message); }
+    }
+
+    private void appendDataServiceSteps(List<JobStep> steps, Map<String, Object> configuration) {
+        int first = steps.size();
+        String hostId = String.valueOf(configuration.get("host_id"));
+        if ("schema_registry".equals(configuration.get("role"))) appendSchemaRegistrySteps(steps, hostId);
+        else appendKafkaConnectSteps(steps, hostId);
+        for (int index = first; index < steps.size(); index++) {
+            JobStep step = steps.get(index);
+            Map<String, Object> payload = parseConfigJson(step.getPayload());
+            payload.put("serviceConfig", new LinkedHashMap<>(configuration));
+            step.setPayload(writeJson(payload));
+            step.setName(step.getName() + " on " + hostId);
+        }
     }
 
     private void validateSchemaAddon(SchemaRegistryAddonReq addon, List<ServiceAssignmentReq> services) {
@@ -1604,6 +1653,8 @@ public class ClusterController {
     static class AddonsReq {
         private SchemaRegistryAddonReq schema_registry;
         private KafkaConnectAddonReq kafka_connect;
+        private List<SchemaRegistryAddonReq> schema_registries = new ArrayList<>();
+        private List<KafkaConnectAddonReq> kafka_connect_workers = new ArrayList<>();
     }
 
     @Data
@@ -1888,15 +1939,7 @@ public class ClusterController {
             }
         }
         try {
-            validateSchemaAddon(schemaAddon(request), request.getServices());
-            validateConnectAddon(connectAddon(request), request.getServices());
-            SchemaRegistryAddonReq schema = schemaAddon(request);
-            KafkaConnectAddonReq connect = connectAddon(request);
-            if (schema != null && connect != null
-                    && schema.getHost_id().equals(connect.getHost_id())
-                    && java.util.Objects.equals(schema.getPort(), connect.getPort())) {
-                throw new IllegalArgumentException("Schema Registry and Kafka Connect cannot use the same port on the same host.");
-            }
+            validateDataServiceRequests(request.getAddons(), request.getServices());
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }

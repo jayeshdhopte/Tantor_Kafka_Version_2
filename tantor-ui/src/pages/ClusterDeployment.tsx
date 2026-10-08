@@ -1147,12 +1147,6 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
 
   const buildDeploymentPayload = (includeGeneratedKraftConfig = true) => {
     const selectedArtifact = versions.find(version => version.version === kafkaVersion);
-    const schemaHost = schemaHosts[0];
-    const connectHost = connectHosts[0];
-    const schemaConfig = schemaHost ? schemaConfigFor(schemaHost.id) : null;
-    const connectConfig = connectHost ? connectConfigFor(connectHost.id) : null;
-    const selectedSchemaArtifact = schemaConfig ? schemaArtifacts.find(artifact => artifact.id === schemaConfig.artifactId) : undefined;
-    const selectedConnectArtifact = connectConfig ? connectArtifacts.find(artifact => artifact.id === connectConfig.artifactId) : undefined;
     const artifactRepoBaseUrl = runtimeConfig.artifactApiBasePath;
     return {
       name: clusterName.trim(),
@@ -1162,21 +1156,31 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       environment: environment.trim(),
       acknowledge_kraft_risk: kraftRiskAcknowledged,
       artifactUrl: selectedArtifact ? `${artifactRepoBaseUrl}/${selectedArtifact.id}/download` : '',
-      addons: !isAddNodeMode && (schemaHost || connectHost) ? {
-        schema_registry: schemaHost && schemaConfig ? {
-          enabled: true,
-          host_id: schemaHost.id, artifact_id: schemaConfig.artifactId,
-          artifact_url: `${artifactRepoBaseUrl}/${schemaConfig.artifactId}/download`,
-          checksum: selectedSchemaArtifact?.sha256 || selectedSchemaArtifact?.checksum || '',
-          version: selectedSchemaArtifact?.version || '',
-          port: schemaConfig.port, install_dir: schemaConfig.installDir.trim(), config_dir: schemaConfig.configDir.trim(),
-          log_dir: schemaConfig.logDir.trim(), working_dir: schemaConfig.workingDir.trim(), heap_size: schemaConfig.heapSize, compatibility_level: schemaConfig.compatibility,
-        } : undefined,
-        kafka_connect: connectHost && connectConfig ? {
-          enabled: true, host_id: connectHost.id, artifact_id: connectConfig.artifactId,
-          artifact_url: `${artifactRepoBaseUrl}/${connectConfig.artifactId}/download`, checksum: selectedConnectArtifact?.sha256 || selectedConnectArtifact?.checksum || '', version: selectedConnectArtifact?.version || '',
-          port: connectConfig.port, install_dir: connectConfig.installDir.trim(), config_dir: connectConfig.configDir.trim(), log_dir: connectConfig.logDir.trim(), working_dir: connectConfig.workingDir.trim(), plugin_dir: connectConfig.pluginDir.trim(), heap_size: connectConfig.heapSize, group_id: connectConfig.groupId,
-        } : undefined,
+      addons: !isAddNodeMode && (schemaHosts.length || connectHosts.length) ? {
+        schema_registries: schemaHosts.map(host => {
+          const config = schemaConfigFor(host.id);
+          const artifact = schemaArtifacts.find(item => item.id === config.artifactId);
+          return {
+            enabled: true, host_id: host.id, artifact_id: config.artifactId,
+            artifact_url: `${artifactRepoBaseUrl}/${config.artifactId}/download`,
+            checksum: artifact?.sha256 || artifact?.checksum || '', version: artifact?.version || '',
+            port: config.port, install_dir: config.installDir.trim(), config_dir: config.configDir.trim(),
+            log_dir: config.logDir.trim(), working_dir: config.workingDir.trim(),
+            heap_size: config.heapSize, compatibility_level: config.compatibility,
+          };
+        }),
+        kafka_connect_workers: connectHosts.map(host => {
+          const config = connectConfigFor(host.id);
+          const artifact = connectArtifacts.find(item => item.id === config.artifactId);
+          return {
+            enabled: true, host_id: host.id, artifact_id: config.artifactId,
+            artifact_url: `${artifactRepoBaseUrl}/${config.artifactId}/download`,
+            checksum: artifact?.sha256 || artifact?.checksum || '', version: artifact?.version || '',
+            port: config.port, install_dir: config.installDir.trim(), config_dir: config.configDir.trim(),
+            log_dir: config.logDir.trim(), working_dir: config.workingDir.trim(), plugin_dir: config.pluginDir.trim(),
+            heap_size: config.heapSize, group_id: config.groupId,
+          };
+        }),
       } : undefined,
       config: {
         configuration_mode: clusterConfigMode,
@@ -1315,11 +1319,6 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   const toggleAddonRole = (hostId: string, role: AddonRole) => {
     setPrereqResults({});
     setPortCheckResults({});
-    const assignedHost = selectedHosts.find(host => host.id !== hostId && hostHasAddonRole(host.id, role));
-    if (assignedHost && !hostHasAddonRole(hostId, role)) {
-      notifyAction(`${role === 'schema_registry' ? 'Schema Registry' : 'Kafka Connect'} is currently deployed once per cluster. Remove the role from ${assignedHost.hostname} before assigning it to another host.`);
-      return;
-    }
     setAddonRolesByHost(prev => {
       const active = (prev[hostId] || []).includes(role);
       const nextRoles = active ? (prev[hostId] || []).filter(item => item !== role) : [...(prev[hostId] || []), role];

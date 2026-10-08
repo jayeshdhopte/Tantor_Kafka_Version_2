@@ -13,6 +13,56 @@ For a cluster that is already deployed, use **Clusters → ⋮ → Add services 
 this cluster**. Select either service or both, configure a host for each, and
 start one job. Existing brokers and controllers are not redeployed.
 
+### Multiple managed service instances
+
+Managed cluster deployment supports Schema Registry and Kafka Connect on
+multiple selected Kafka hosts, with one instance of each service per host.
+Select the service role on every target host in the deployment form. When adding
+services to an existing cluster, select multiple host checkboxes in the Add
+services dialog; its settings apply to all selected hosts. Hosts that already
+have that role cannot receive another instance. External discovery-agent
+deployment continues to use its existing single-host workflow.
+
+Schema Registry instances share the Kafka bootstrap servers, `_schemas` topic,
+Schema Registry group ID, version and compatibility level. Connect workers share
+their worker group ID and config, offset and status topics, while each worker
+advertises its own host and REST port. Existing instances' internal topic names
+and replication factor are retained when scaling out; adding a worker does not
+recreate topics or silently change replication. Workers must have the same
+runtime version and matching connector plugins installed on every host.
+
+Each host has separate persisted deployment steps, status and errors. The job
+checks and installs each instance and verifies its REST API. A failed step stops
+later steps; successful peers retain their own status. Resume the existing job
+to retry a failed deployment. New service connections have host-specific names;
+adding an instance preserves the current default connection. The application
+does not provision a load balancer or automatically fail over that default URL.
+For client endpoint availability, configure a load balancer separately. Kafka
+topic replication still depends on the number and availability of Kafka brokers.
+
+The managed APIs accept plural addon fields in addition to legacy single-instance
+fields. For new deployment, place them under `addons` in
+`POST /api/v1/ui/clusters/deploy`. For scale-out, send them directly to
+`POST /api/v1/ui/clusters/{id}/services`:
+
+```json
+{
+  "schema_registries": [
+    {"host_id": "host-a", "artifact_id": "schema-artifact", "version": "8.1.1", "port": 8081},
+    {"host_id": "host-b", "artifact_id": "schema-artifact", "version": "8.1.1", "port": 8081}
+  ],
+  "kafka_connect_workers": [
+    {"host_id": "host-a", "artifact_id": "unified-artifact", "version": "4.3.0", "group_id": "tantor-connect", "port": 8083},
+    {"host_id": "host-b", "artifact_id": "unified-artifact", "version": "4.3.0", "group_id": "tantor-connect", "port": 8083}
+  ]
+}
+```
+
+Supply the selected artifact SHA-256 through the same artifact metadata/checksum
+mechanism as single-instance deployment. The host agents already implement the
+required per-host tasks. Shared unified Connect continues to require agent
+`dataservices.3` or newer. No new agent binary is required for orchestration.
+
 The managed agent source is `internal-agent/source`. Build its Linux amd64
 binary from that module, then install the new binary on every target host. An
 older installed binary cannot execute the new precheck commands.
