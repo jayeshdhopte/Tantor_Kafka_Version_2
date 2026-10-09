@@ -22,6 +22,11 @@ public class JobController {
         return ResponseEntity.ok(jobService.getAllJobs());
     }
 
+    @GetMapping("/active-clusters")
+    public ResponseEntity<?> activeClusterJobs() {
+        return ResponseEntity.ok(jobService.getActiveClusterJobs());
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<Job> getJob(@PathVariable UUID id) {
         try {
@@ -45,6 +50,8 @@ public class JobController {
     public ResponseEntity<?> retryJob(@PathVariable UUID id) {
         try {
             return ResponseEntity.ok(jobService.retryJob(id));
+        } catch (io.translab.tantor.server.service.ClusterOperationConflictException e) {
+            return ResponseEntity.status(409).body(java.util.Map.of("error", e.getMessage()));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(java.util.Map.of("error", e.getMessage()));
         }
@@ -54,6 +61,8 @@ public class JobController {
     public ResponseEntity<?> rollbackJob(@PathVariable UUID id) {
         try {
             return ResponseEntity.ok(jobService.requestRollback(id));
+        } catch (io.translab.tantor.server.service.ClusterOperationConflictException e) {
+            return ResponseEntity.status(409).body(java.util.Map.of("error", e.getMessage()));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(java.util.Map.of("error", e.getMessage()));
         }

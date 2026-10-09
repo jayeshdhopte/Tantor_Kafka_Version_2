@@ -239,6 +239,7 @@ public class ClusterController {
         }).orElse(ResponseEntity.notFound().build());
     }
 
+    @org.springframework.transaction.annotation.Transactional
     @PutMapping("/{id}")
     public ResponseEntity<?> updateCluster(
             @RequestHeader(value = "Authorization", required = false) String authorization,
@@ -247,6 +248,7 @@ public class ClusterController {
         if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.CONFIGURATION_CHANGE)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Unauthorized"));
         }
+        jobService.assertClusterMutable(id);
         Cluster cluster = clusterRepository.findById(id).orElse(null);
         if (cluster == null) return ResponseEntity.notFound().build();
         String name = request.getName() == null ? "" : request.getName().trim();
@@ -283,6 +285,7 @@ public class ClusterController {
         }).orElse(ResponseEntity.notFound().build());
     }
 
+    @org.springframework.transaction.annotation.Transactional
     @PostMapping("/{id}/bind-agent")
     public ResponseEntity<?> bindAgent(
             @RequestHeader(value = "Authorization", required = false) String authorization,
@@ -291,6 +294,7 @@ public class ClusterController {
         if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.BIND_AGENT)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Unauthorized"));
         }
+        jobService.assertClusterMutable(id);
         String agentIdStr = (String) request.get("agentId");
         if (agentIdStr == null || agentIdStr.isBlank()) return ResponseEntity.badRequest().body(Map.of("error", "Agent ID required"));
         
@@ -735,6 +739,7 @@ public class ClusterController {
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
+        jobService.assertClusterMutable(id);
         List<JobStep> steps = new ArrayList<>();
         Map<String, Object> jobPayload = new HashMap<>();
         jobPayload.put("clusterId", id.toString());
@@ -788,6 +793,7 @@ public class ClusterController {
         if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.ADD_NODE)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Unauthorized"));
         }
+        jobService.assertClusterMutable(id);
         java.util.Optional<Cluster> optionalCluster = clusterRepository.findById(id);
         if (optionalCluster.isEmpty()) {
             return ResponseEntity.notFound().build();
@@ -967,6 +973,7 @@ public class ClusterController {
         if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.DELETE_CLUSTER)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
+        jobService.assertClusterMutable(id);
 
         java.util.Optional<ExternalCluster> external = externalClusterRepository.findById(id);
         if (external.isPresent()) {
@@ -1006,6 +1013,7 @@ public class ClusterController {
         if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.DELETE_CLUSTER)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
+        jobService.assertClusterMutable(id);
 
         java.util.Optional<ExternalCluster> external = externalClusterRepository.findById(id);
         if (external.isPresent()) {
@@ -1039,6 +1047,7 @@ public class ClusterController {
         if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.CONFIGURATION_CHANGE)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Unauthorized"));
         }
+        jobService.assertClusterMutable(id);
         java.util.Optional<Cluster> optionalCluster = clusterRepository.findById(id);
         if (optionalCluster.isEmpty()) {
             return ResponseEntity.notFound().build();

@@ -42,3 +42,12 @@ file under .tantor-backups/<filename>/. Dynamic changes also save live value
 and source metadata as .dynamic.json. A root agent cleans managed checkpoints
 older than seven days at startup and hourly; active config files are preserved.
 Requires the matching updated backend. This package is not deployed automatically.
+
+Standalone rolling restart support (rollingrestart.1):
+The matching backend/UI offers Kafka process scope selection, sequential health
+checks, and Retry / Resume without configuration rollback. VERIFY_KAFKA_SERVICE
+reads systemd state, PID and process start time without starting or stopping a
+service. Completed restart tasks are preserved across retries. Combined Kafka
+processes restart both roles together; Connect and Schema Registry are excluded.
+This agent release requires deployment of the matching backend/UI to expose the
+new cluster menu. Upgrading agents alone does not update the UI.

@@ -20,9 +20,9 @@ import (
 )
 
 var (
-	version   = "1.0.0-prod.16-reporting.9-dataservices.4-configchange.4"
-	commit    = "unified-schema-registry"
-	buildDate = "2026-10-08"
+	version   = "1.0.0-prod.16-reporting.9-dataservices.4-configchange.4-rollingrestart.1"
+	commit    = "rolling-restart"
+	buildDate = "2026-10-09"
 )
 
 func main() {

@@ -160,6 +160,7 @@ public class ConfigVersionService {
 
     @Transactional
     public Job apply(UUID clusterId, UUID versionId, boolean restart) {
+        jobService.assertClusterMutable(clusterId);
         if (!restart) {
             throw new IllegalArgumentException("Versioned file changes require a controlled service restart. Use the dynamic broker change flow for restart-free changes.");
         }

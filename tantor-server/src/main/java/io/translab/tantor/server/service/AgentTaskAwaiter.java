@@ -20,6 +20,10 @@ public class AgentTaskAwaiter {
     @Value("${tantor.jobs.task-timeout-seconds:1800}")
     private long timeoutSeconds;
 
+    public String status(UUID taskId) {
+        return jdbcTemplate.queryForObject("SELECT status FROM kf_tasks WHERE id = ?", String.class, taskId);
+    }
+
     public Task await(UUID taskId) {
         return await(taskId, timeoutSeconds);
     }

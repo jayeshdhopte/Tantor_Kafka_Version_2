@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, RefreshCw, AlertTriangle, Undo2, Check, MoreVertical } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
-import { confirmAction } from '../components/confirmUtils';
+import { confirmAction, notifyAction } from '../components/confirmUtils';
 import './JobStatusPage.css';
 
 type Job = {
@@ -156,6 +156,7 @@ export function JobStatusPage() {
     try {
       const res = await fetch(`/api/v1/ui/jobs/${id}/retry`, { method: 'POST' });
       if (res.ok) fetchJob();
+      else { const result = await res.json().catch(() => ({})); notifyAction(result.message || result.error || 'Job action failed.'); }
     } catch (err) {
       console.error(err);
     }
@@ -166,6 +167,7 @@ export function JobStatusPage() {
     try {
       const res = await fetch(`/api/v1/ui/jobs/${id}/rollback`, { method: 'POST' });
       if (res.ok) fetchJob();
+      else { const result = await res.json().catch(() => ({})); notifyAction(result.message || result.error || 'Job action failed.'); }
     } catch (err) {
       console.error(err);
     }
@@ -331,10 +333,10 @@ export function JobStatusPage() {
         <div className="action-buttons">
           {canManage && (job.status === 'FAILED' || job.status === 'PARTIAL_SUCCESS') && (
             <button className="btn btn-outline-primary" onClick={handleRetry}>
-              <RefreshCw size={14} style={{ marginRight: '6px' }} /> Retry Job
+              <RefreshCw size={14} style={{ marginRight: '6px' }} /> {job.type === 'ROLLING_RESTART' ? 'Retry / Resume' : 'Retry Job'}
             </button>
           )}
-          {canManage && job.rollbackSupported && ['SUCCESS', 'FAILED', 'PARTIAL_SUCCESS'].includes(job.status) && (
+          {canManage && job.type !== 'ROLLING_RESTART' && job.rollbackSupported && ['SUCCESS', 'FAILED', 'PARTIAL_SUCCESS'].includes(job.status) && (
             <button className="btn btn-outline-primary" onClick={handleRollback}>
               <Undo2 size={14} style={{ marginRight: '6px' }} /> Rollback
             </button>

@@ -194,6 +194,7 @@ public class ConfigController {
         }
     }
 
+    @org.springframework.transaction.annotation.Transactional
     @PostMapping("/rolling-apply")
     public ResponseEntity<Map<String, Object>> rollingApply(
             @RequestHeader(value = "Authorization", required = false) String authorization,
@@ -202,6 +203,7 @@ public class ConfigController {
         if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.CONFIGURATION_CHANGE)) {
             return unauthorized();
         }
+        jobService.assertClusterMutable(clusterId);
         var external = externalClusterRepository.findById(clusterId).orElse(null);
         if (external == null) return ResponseEntity.badRequest().body(Map.of("message", "This rolling file-change endpoint requires a managed external cluster."));
         if (!Boolean.TRUE.equals(payload.get("rollingRestart"))) {
@@ -877,6 +879,7 @@ public class ConfigController {
     }
 
     @Deprecated
+    @org.springframework.transaction.annotation.Transactional
     @PutMapping("/unsafe-legacy/services/{serviceId}")
     public ResponseEntity<?> updateServiceConfig(
             @RequestHeader(value = "Authorization", required = false) String authorization,
@@ -887,6 +890,7 @@ public class ConfigController {
         if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.CONFIGURATION_CHANGE)) {
             return unauthorized();
         }
+        jobService.assertClusterMutable(clusterId);
         Cluster cluster = clusterRepository.findById(clusterId).orElse(null);
         if (cluster == null) return ResponseEntity.notFound().build();
         ClusterServiceAssignment service = cluster.getServices() == null ? null : cluster.getServices().stream()
@@ -976,6 +980,7 @@ public class ConfigController {
         return result.toString();
     }
 
+    @org.springframework.transaction.annotation.Transactional
     @PutMapping("/bulk")
     public ResponseEntity<?> updateConfigBulk(
             @RequestHeader(value = "Authorization", required = false) String authorization,
@@ -984,6 +989,7 @@ public class ConfigController {
         if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.CONFIGURATION_CHANGE)) {
             return unauthorized();
         }
+        jobService.assertClusterMutable(clusterId);
         Cluster cluster = clusterRepository.findById(clusterId).orElse(null);
         if (cluster == null) return ResponseEntity.notFound().build();
         if (request.getConfigKey() == null || !request.getConfigKey().matches("[A-Za-z0-9._-]+")) {

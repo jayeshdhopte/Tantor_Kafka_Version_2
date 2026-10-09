@@ -73,6 +73,8 @@ func (e *Engine) Execute(ctx context.Context, t *api.Task) (*api.TaskResult, err
 		return e.startService(ctx, t)
 	case "STOP_SERVICE":
 		return e.stopService(ctx, t)
+	case "VERIFY_KAFKA_SERVICE":
+		return e.verifyKafkaService(ctx, t)
 	case "RESTART_SERVICE":
 		return e.restartService(ctx, t)
 	case "UPDATE_KAFKA_CONFIG":
@@ -348,6 +350,37 @@ func (e *Engine) restartService(ctx context.Context, t *api.Task) (*api.TaskResu
 		Status:    "SUCCESS",
 		LogOutput: fmt.Sprintf("Service %s restarted successfully.", serviceName),
 	}, nil
+}
+
+// verifyKafkaService is read-only and restricted to managed Kafka processes.
+func (e *Engine) verifyKafkaService(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
+	name := strings.TrimSuffix(strings.TrimSpace(t.Parameters["service_name"]), ".service")
+	if name != "broker" && name != "controller" && name != "kafka" {
+		return e.fail(t, "Service check requires broker, controller or kafka"), nil
+	}
+	out, errOut, err := e.exec.RunSudo(ctx, "systemctl", "show", name+".service", "--property=ActiveState", "--property=MainPID", "--property=ExecMainStartTimestampMonotonic")
+	if err != nil {
+		return e.fail(t, fmt.Sprintf("Cannot inspect service %s: %v %s", name, err, errOut)), nil
+	}
+	fields := map[string]string{}
+	for _, line := range strings.Split(out, "\n") {
+		pair := strings.SplitN(line, "=", 2)
+		if len(pair) == 2 {
+			fields[pair[0]] = strings.TrimSpace(pair[1])
+		}
+	}
+	state := fields["ActiveState"]
+	if state != "active" && state != "inactive" && state != "failed" && state != "activating" && state != "deactivating" {
+		return e.fail(t, "Cannot determine Kafka service state"), nil
+	}
+	if state == "active" && (fields["MainPID"] == "" || fields["MainPID"] == "0" || fields["ExecMainStartTimestampMonotonic"] == "") {
+		return e.fail(t, "Active Kafka service has no process identity"), nil
+	}
+	output, err := json.Marshal(map[string]string{"state": state, "pid": fields["MainPID"], "started": fields["ExecMainStartTimestampMonotonic"]})
+	if err != nil {
+		return e.fail(t, "Cannot encode Kafka service state"), nil
+	}
+	return &api.TaskResult{TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS", LogOutput: string(output)}, nil
 }
 
 func validatedServiceName(raw string) (string, error) {

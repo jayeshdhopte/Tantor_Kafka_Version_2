@@ -4,8 +4,12 @@ import { Activity, ArrowUpCircle, RefreshCw, CheckCircle2, XCircle } from 'lucid
 import { usePermissions } from '../hooks/usePermissions';
 import { confirmAction, notifyAction } from '../components/confirmUtils';
 
+import { RollingRestartModal } from '../components/RollingRestartModal';
+import { useActiveClusterJobs } from '../hooks/useActiveClusterJobs';
+
 interface ClusterInfo {
   id: string;
+  name?: string;
   kafkaVersion: string;
   status: string;
   mode: string;
@@ -30,7 +34,9 @@ export function ClusterActions() {
   const restartTaskFromUrl = searchParams.get('restartTask');
   const [taskId] = useState<string | null>(restartTaskFromUrl);
   const [status, setStatus] = useState<string>(restartTaskFromUrl ? 'Loading restart progress...' : '');
-  const [loading, setLoading] = useState(false);
+  const [restartOpen, setRestartOpen] = useState(false);
+  const activeJobs = useActiveClusterJobs();
+  const locked = activeJobs.some(job => job.clusterId === id && job.type === 'ROLLING_RESTART');
   const [cluster, setCluster] = useState<ClusterInfo | null>(null);
   const [parcels, setParcels] = useState<HostParcel[]>([]);
   const [targetVersion, setTargetVersion] = useState('');
@@ -57,34 +63,6 @@ export function ClusterActions() {
       console.error(e);
     }
   }, [id]);
-
-  const triggerRollingRestart = async () => {
-    if (!canManage) return;
-    const nodeCount = cluster?.nodeCount || cluster?.hosts?.length || 0;
-    const warning = nodeCount === 1
-      ? 'WARNING: Only one node is present. Three nodes are recommended for availability, and Kafka will be interrupted during this restart. Do you want to continue?'
-      : 'WARNING: This will begin a rolling restart of the cluster. Continue?';
-    if (!(await confirmAction(warning))) return;
-    
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/v1/clusters/${id}/actions/rolling-restart`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ confirmSingleNode: nodeCount === 1 }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.jobId) navigate(`/jobs/${data.jobId}`);
-      } else {
-        const data = await res.json().catch(() => ({}));
-        notifyAction(data.error || "Failed to trigger rolling restart.");
-      }
-    } catch {
-      notifyAction("Error triggering rolling restart.");
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const activeUpgradeVersions = Array.from(new Set(
     parcels
@@ -186,7 +164,7 @@ export function ClusterActions() {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1.5rem' }}>
-        {canManage && (
+        {canManage && cluster?.mode !== 'EXTERNAL' && (
         <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-lg)', padding: '24px 32px', background: "var(--bg-surface)" }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
             <div style={{
@@ -227,7 +205,7 @@ export function ClusterActions() {
             <select
               value={targetVersion}
               onChange={e => setTargetVersion(e.target.value)}
-              disabled={upgradeLoading}
+              disabled={upgradeLoading || locked}
               style={{
                 width: '100%',
                 padding: '10px 12px',
@@ -247,7 +225,7 @@ export function ClusterActions() {
             </select>
             <button
               onClick={triggerUpgrade}
-              disabled={upgradeLoading}
+              disabled={upgradeLoading || locked}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -364,7 +342,7 @@ export function ClusterActions() {
                 />
                 <button 
                   onClick={enableMonitoring} 
-                  disabled={monitoringLoading}
+                  disabled={monitoringLoading || locked}
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
@@ -391,7 +369,7 @@ export function ClusterActions() {
         )}
 
         {/* Rolling Restart Card */}
-        {canManage && (
+        {canManage && cluster?.mode !== 'EXTERNAL' && (
         <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-lg)', padding: '24px 32px', background: "var(--bg-surface)" }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
             <div style={{
@@ -415,7 +393,7 @@ export function ClusterActions() {
             </div>
           </div>
           <p style={{ fontSize: 'var(--text-sm)', color: '#475569', marginTop: '1.25rem', marginBottom: '1.5rem', lineHeight: 1.6 }}>
-            The orchestrator restarts non-leader controllers or ZooKeeper members first, then the active controller and brokers. It waits for each agent task, all brokers, and all replicas to become healthy before continuing. Zero-downtime restart requires at least two brokers and three metadata quorum nodes.
+            Choose brokers, controllers, all Kafka processes or selected processes. Combined roles restart together. Health gates stop the sequence on failure; Retry / Resume preserves completed nodes.
           </p>
           <div style={{
             background: '#f8fafc',
@@ -426,8 +404,8 @@ export function ClusterActions() {
             justifyContent: 'flex-end'
           }}>
             <button 
-              onClick={triggerRollingRestart}
-              disabled={loading}
+              onClick={() => setRestartOpen(true)}
+              disabled={activeJobs.some(job => job.clusterId === id)}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -480,6 +458,7 @@ export function ClusterActions() {
         )}
 
       </div>
+      {restartOpen && cluster && <RollingRestartModal cluster={cluster} onClose={() => setRestartOpen(false)} onStarted={jobId => { setRestartOpen(false); navigate(`/jobs/${jobId}`); }} />}
     </div>
   );
 }

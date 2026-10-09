@@ -356,6 +356,15 @@ public class DeploymentService {
     }
 
     @Transactional
+    public UUID verifyKafkaService(UUID clusterId, String hostId, String serviceName) {
+        Task task = createTask(clusterId, hostId, "VERIFY_KAFKA_SERVICE");
+        try { task.setParameters(objectMapper.writeValueAsString(Map.of("service_name", serviceName))); }
+        catch (JsonProcessingException e) { throw new IllegalArgumentException("Cannot serialize service check", e); }
+        taskRepository.save(task);
+        return task.getId();
+    }
+
+    @Transactional
     public UUID restartService(UUID clusterId, String hostId, String serviceName) {
         Task task = createTask(clusterId, hostId, "RESTART_SERVICE");
         

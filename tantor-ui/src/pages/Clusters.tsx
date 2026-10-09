@@ -8,6 +8,8 @@ import { ConfigChangeEntryModal } from '../components/ConfigChangeEntryModal';
 import { usePermissions } from '../hooks/usePermissions';
 import { confirmAction, notifyAction } from '../components/confirmUtils';
 import { clusterStatusTone } from '../utils/clusterStatusTone';
+import { RollingRestartModal } from '../components/RollingRestartModal';
+import { useActiveClusterJobs, currentJobNode } from '../hooks/useActiveClusterJobs';
 import './Clusters.css';
 
 interface ClusterHost {
@@ -55,6 +57,9 @@ const CLUSTER_HEALTH_REFRESH_MS = 15000;
 
 export function Clusters() {
   const navigate = useNavigate();
+  const activeJobs = useActiveClusterJobs();
+  const locked = (id: string) => activeJobs.some(job => job.clusterId === id && job.type === 'ROLLING_RESTART');
+  const [restartCluster, setRestartCluster] = useState<ClusterInfo | null>(null);
   const { canManage } = usePermissions();
   const [clusters, setClusters] = useState<ClusterInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -449,7 +454,7 @@ export function Clusters() {
                                 </span>
                                 <span className={`status-badge-v2 ${statusClass(cluster)} ${statusTagTone}`}>
                                   {statusLabel(cluster)}
-                                </span>
+                                </span>{activeJobs.filter(job => job.clusterId === cluster.id && job.type === 'ROLLING_RESTART').map(job => <button key={job.id} title={currentJobNode(job)} className="badge badge-warning" onClick={event => { event.stopPropagation(); navigate(`/jobs/${job.id}`); }}>Rolling restart {job.status === 'PENDING' ? 'queued' : job.status === 'WAITING_AGENT' ? 'waiting for agent' : 'in progress'} · View job</button>)}
                               </div>
                             </td>
                             <td>
@@ -483,16 +488,19 @@ export function Clusters() {
           {(servicesMenu.cluster.mode === 'EXTERNAL'
             ? !['DELETED', 'DELETING'].includes(servicesMenu.cluster.status)
             : servicesMenu.cluster.status === 'SUCCESS') &&
-            <button role="menuitem" autoFocus onClick={() => { setServicesCluster(servicesMenu.cluster); setServicesMenu(null); }}><Plus size={15} /> Add service</button>}
+            <button role="menuitem" disabled={locked(servicesMenu.cluster.id)} autoFocus onClick={() => { setServicesCluster(servicesMenu.cluster); setServicesMenu(null); }}><Plus size={15} /> Add service</button>}
           {!['DELETED', 'DELETING'].includes(servicesMenu.cluster.status) &&
-            <button role="menuitem" onClick={() => { setConfigCluster(servicesMenu.cluster); setServicesMenu(null); }}><Settings size={15} /> Configuration change</button>}
-          <button role="menuitem" className="danger" onClick={event => {
+            <button role="menuitem" disabled={locked(servicesMenu.cluster.id)} onClick={() => { setConfigCluster(servicesMenu.cluster); setServicesMenu(null); }}><Settings size={15} /> Configuration change</button>}
+          {servicesMenu.cluster.mode !== 'EXTERNAL' && servicesMenu.cluster.status === 'SUCCESS' &&
+            <button role="menuitem" disabled={activeJobs.some(job => job.clusterId === servicesMenu.cluster.id)} onClick={() => { setRestartCluster(servicesMenu.cluster); setServicesMenu(null); }}><RefreshCw size={15} /> Rolling restart</button>}
+          <button role="menuitem" disabled={locked(servicesMenu.cluster.id)} className="danger" onClick={event => {
             const { id, name } = servicesMenu.cluster;
             setServicesMenu(null);
             void deleteCluster(event, id, name);
           }}><Trash2 size={15} /> Delete cluster</button>
         </div>
       </AnchoredMenu>}
+      {restartCluster && <RollingRestartModal cluster={restartCluster} onClose={() => setRestartCluster(null)} onStarted={jobId => { setRestartCluster(null); navigate(`/jobs/${jobId}`); }} />}
       {servicesCluster && <AddClusterServicesModal cluster={servicesCluster} onClose={() => setServicesCluster(null)} />}
       {configCluster && <ConfigChangeEntryModal cluster={configCluster} onClose={() => setConfigCluster(null)} onContinue={() => {
         const clusterId = configCluster.id;

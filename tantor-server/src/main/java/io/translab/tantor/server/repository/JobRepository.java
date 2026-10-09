@@ -17,6 +17,19 @@ public interface JobRepository extends JpaRepository<Job, UUID> {
     List<Job> findAllByOrderByCreatedAtDesc();
     List<Job> findByResourceKeyAndStatusIn(String resourceKey, List<JobStatus> statuses);
     @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("select job from Job job where job.id = :id")
+    Optional<Job> findForUpdateById(@org.springframework.data.repository.query.Param("id") UUID id);
+
+    @org.springframework.data.jpa.repository.Query(value = """
+            SELECT j.* FROM kf_jobs j
+            WHERE j.type = 'ROLLING_RESTART' AND EXISTS (
+                SELECT 1 FROM kf_job_steps s JOIN kf_tasks t ON t.id = s.agent_task_id
+                WHERE s.job_id = j.id AND t.status IN ('PENDING', 'IN_PROGRESS', 'RUNNING')
+            )
+            """, nativeQuery = true)
+    List<Job> findWithUnfinishedRestartTasks();
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
     List<Job> findByStatusOrderByCreatedAtAsc(JobStatus status);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
