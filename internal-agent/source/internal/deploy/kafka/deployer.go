@@ -1795,7 +1795,7 @@ func (d *Deployer) backupConfig(ctx context.Context, t *api.Task, configPath str
 		version = "unversioned"
 	}
 	version = regexp.MustCompile(`[^A-Za-z0-9._-]`).ReplaceAllString(version, "_")
-	backupDir := filepath.Join(filepath.Dir(configPath), ".tantor-backups", filepath.Base(configPath))
+	backupDir := filepath.Join(filepath.Dir(configPath), "config-backup", filepath.Base(configPath))
 	backupName := fmt.Sprintf("v%s-%s.bak", version, time.Now().UTC().Format("20060102T150405.000000000Z"))
 	backupPath := filepath.Join(backupDir, backupName)
 	if out, errOut, err := d.exec.RunSudo(ctx, "mkdir", "-p", "-m", "0700", "--", backupDir); err != nil {

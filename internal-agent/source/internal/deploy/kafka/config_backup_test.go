@@ -37,7 +37,7 @@ func TestBackupConfigUsesVersionedImmutablePath(t *testing.T) {
 		t.Fatalf("backupConfig returned error: %v", err)
 	}
 	normalizedBackupPath := filepath.ToSlash(backupPath)
-	if !strings.Contains(normalizedBackupPath, "/.tantor-backups/broker.properties/v7-") || !strings.HasSuffix(normalizedBackupPath, ".bak") {
+	if !strings.Contains(normalizedBackupPath, "/config-backup/broker.properties/v7-") || !strings.HasSuffix(normalizedBackupPath, ".bak") {
 		t.Fatalf("unexpected backup path %q", backupPath)
 	}
 	if !strings.Contains(strings.Join(exec.commands, "\n"), "config-backup-index") {

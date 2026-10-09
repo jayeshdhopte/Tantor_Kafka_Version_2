@@ -57,7 +57,7 @@ func Sweep(registry string, now time.Time) error {
 			continue
 		}
 		dir := strings.TrimSpace(string(data))
-		if !filepath.IsAbs(dir) || filepath.Clean(dir) != dir || filepath.Base(filepath.Dir(dir)) != ".tantor-backups" {
+		if !filepath.IsAbs(dir) || filepath.Clean(dir) != dir || (filepath.Base(filepath.Dir(dir)) != "config-backup" && filepath.Base(filepath.Dir(dir)) != ".tantor-backups") {
 			failures = append(failures, "invalid backup index path")
 			continue
 		}

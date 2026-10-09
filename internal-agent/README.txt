@@ -51,3 +51,5 @@ service. Completed restart tasks are preserved across retries. Combined Kafka
 processes restart both roles together; Connect and Schema Registry are excluded.
 This agent release requires deployment of the matching backend/UI to expose the
 new cluster menu. Upgrading agents alone does not update the UI.
+
+Configuration backups: visible config-backup/<config filename>/ next to the active config file. Seven-day retention remains enabled, including registered legacy .tantor-backups checkpoints.

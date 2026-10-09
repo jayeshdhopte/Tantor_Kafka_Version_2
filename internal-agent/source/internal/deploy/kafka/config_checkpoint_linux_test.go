@@ -77,7 +77,7 @@ func TestDynamicAndStaticCheckpointsContainPreviousStateAndExpire(t *testing.T) 
 	if _, err := d.PatchConfig(context.Background(), task); err != nil {
 		t.Fatal(err)
 	}
-	dir := filepath.Join(filepath.Dir(file), ".tantor-backups", "broker.properties")
+	dir := filepath.Join(filepath.Dir(file), "config-backup", "broker.properties")
 	files, _ := os.ReadDir(dir)
 	if len(files) != 3 {
 		t.Fatalf("expected two disk checkpoints and one live snapshot: %v", files)
@@ -160,7 +160,7 @@ func TestRetentionTracksBothVersionsAfterKafkaSymlinkUpgrade(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, root := range []string{old, newRoot} {
-		files, err := os.ReadDir(filepath.Join(root, "config", ".tantor-backups", "broker.properties"))
+		files, err := os.ReadDir(filepath.Join(root, "config", "config-backup", "broker.properties"))
 		if err != nil || len(files) != 0 {
 			t.Fatalf("old checkpoints remain: %v %v", files, err)
 		}

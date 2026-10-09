@@ -10,7 +10,7 @@ import (
 func TestRetentionUsesCheckpointAgeAndPreservesUnmanagedFiles(t *testing.T) {
 	root := t.TempDir()
 	registry := filepath.Join(root, "index")
-	dir := filepath.Join(root, "config", ".tantor-backups", "broker.properties")
+	dir := filepath.Join(root, "config", "config-backup", "broker.properties")
 	for _, p := range []string{registry, dir} {
 		if err := os.MkdirAll(p, 0700); err != nil {
 			t.Fatal(err)
@@ -50,7 +50,7 @@ func TestRetentionUsesCheckpointAgeAndPreservesUnmanagedFiles(t *testing.T) {
 func TestRetentionRejectsRedirectedDirectoryAndSkipsFileLinks(t *testing.T) {
 	root := t.TempDir()
 	registry := filepath.Join(root, "index")
-	dir := filepath.Join(root, ".tantor-backups", "broker.properties")
+	dir := filepath.Join(root, "config-backup", "broker.properties")
 	target := filepath.Join(root, "preserve")
 	for _, p := range []string{registry, dir, target} {
 		os.MkdirAll(p, 0700)
@@ -69,7 +69,7 @@ func TestRetentionRejectsRedirectedDirectoryAndSkipsFileLinks(t *testing.T) {
 	if _, err := os.Lstat(filepath.Join(dir, name)); err != nil {
 		t.Fatal("checkpoint link removed")
 	}
-	redirected := filepath.Join(root, ".tantor-backups", "controller.properties")
+	redirected := filepath.Join(root, "config-backup", "controller.properties")
 	os.Symlink(target, redirected)
 	os.WriteFile(filepath.Join(registry, "controller.path"), []byte(redirected), 0600)
 	if err := Sweep(registry, now); err == nil {
@@ -77,5 +77,31 @@ func TestRetentionRejectsRedirectedDirectoryAndSkipsFileLinks(t *testing.T) {
 	}
 	if _, err := os.Stat(file); err != nil {
 		t.Fatal("unrelated target removed")
+	}
+}
+
+// Legacy registered checkpoints still expire after upgrading the agent.
+func TestRetentionIncludesLegacyHiddenBackups(t *testing.T) {
+	root := t.TempDir()
+	registry := filepath.Join(root, "index")
+	dir := filepath.Join(root, ".tantor-backups", "controller.properties")
+	for _, path := range []string{registry, dir} {
+		if err := os.MkdirAll(path, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	now := time.Now().UTC()
+	old := filepath.Join(dir, "v1-"+now.Add(-8*24*time.Hour).Format(Timestamp)+".bak")
+	if err := os.WriteFile(old, []byte("preserved"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(registry, "legacy.path"), []byte(dir), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := Sweep(registry, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(old); !os.IsNotExist(err) {
+		t.Fatal("legacy checkpoint did not expire")
 	}
 }

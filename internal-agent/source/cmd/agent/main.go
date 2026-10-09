@@ -20,8 +20,8 @@ import (
 )
 
 var (
-	version   = "1.0.0-prod.16-reporting.9-dataservices.4-configchange.4-rollingrestart.1"
-	commit    = "rolling-restart"
+	version   = "1.0.0-prod.16-reporting.9-dataservices.4-configchange.5-rollingrestart.1"
+	commit    = "visible-config-backup"
 	buildDate = "2026-10-09"
 )
 
