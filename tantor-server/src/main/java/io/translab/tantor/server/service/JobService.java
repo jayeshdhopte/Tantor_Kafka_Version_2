@@ -167,6 +167,22 @@ public class JobService {
     }
 
     @Transactional
+    public void recordRollingRestartBaseline(UUID stepId, UUID taskId, Map<String, Object> baseline) {
+        JobStep step = getStep(stepId);
+        if (step.getJob().getType() != JobType.ROLLING_RESTART)
+            throw new IllegalArgumentException("Service baseline is only valid for rolling restart jobs.");
+        try {
+            Map<String, Object> payload = objectMapper.readValue(step.getPayload(), new com.fasterxml.jackson.core.type.TypeReference<>() {});
+            payload.put("baselineAgentTaskId", taskId.toString());
+            payload.put("baselineServiceState", new java.util.LinkedHashMap<>(baseline));
+            step.setPayload(objectMapper.writeValueAsString(payload));
+            jobStepRepository.save(step);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new IllegalArgumentException("Cannot persist Kafka service baseline", e);
+        }
+    }
+
+    @Transactional
     public void completeStep(UUID stepId, String output) {
         finishStep(stepId, JobStepStatus.SUCCESS, output);
     }
@@ -211,7 +227,7 @@ public class JobService {
                 if (step.getStatus() != JobStepStatus.SUCCESS) {
                     step.setStatus(JobStepStatus.PENDING);
                     if (job.getType() != JobType.ROLLING_RESTART) step.setAgentTaskId(null);
-                    if (job.getType() != JobType.ROLLING_RESTART) step.setExternalServiceTaskId(null);
+                    step.setExternalServiceTaskId(null);
                     step.setStartTime(null);
                     step.setEndTime(null);
                     step.setRetryCount(step.getRetryCount() + 1);

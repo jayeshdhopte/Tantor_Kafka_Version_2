@@ -85,8 +85,7 @@ public class RollingRestartJobHandler implements JobHandler {
                         UUID probe = deploymentService.verifyKafkaService(clusterId, host, unit);
                         var observed = readMap(taskAwaiter.await(probe).getLogOutput());
                         if ("active".equals(observed.get("state"))) {
-                            if (step.getExternalServiceTaskId() != null) {
-                                var before = readMap(taskAwaiter.await(step.getExternalServiceTaskId()).getLogOutput());
+                            if (payload.get("baselineServiceState") instanceof Map<?, ?> before) {
                                 alreadyRestarted = !Objects.equals(before.get("pid"), observed.get("pid"))
                                         || !Objects.equals(before.get("started"), observed.get("started"));
                             }
@@ -103,7 +102,7 @@ public class RollingRestartJobHandler implements JobHandler {
                     if (step.getAgentTaskId() == null && !active) throw new IllegalStateException("Kafka process must be active before starting a new restart.");
                     if (active && !singleOverride && String.valueOf(payload.get("role")).contains("broker"))
                         healthService.assertBrokerCanStop(clusterId, ((Number) payload.get("nodeId")).intValue());
-                    jobService.attachExternalServiceTask(step.getId(), baselineTask);
+                    jobService.recordRollingRestartBaseline(step.getId(), baselineTask, baseline);
                     jobService.appendLog(job.getId(), "Restarting " + unit + " on " + host + "; waiting for service and cluster health before continuing.");
                     UUID task = restartDispatcher.dispatch(clusterId, host, unit, step.getId());
                     taskAwaiter.await(task);

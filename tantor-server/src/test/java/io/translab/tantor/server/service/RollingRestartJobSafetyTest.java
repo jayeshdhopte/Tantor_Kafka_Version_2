@@ -29,6 +29,26 @@ class RollingRestartJobSafetyTest {
         job.setStatus(JobStatus.FAILED);
         assertThatThrownBy(() -> service.requestRollback(job.getId())).hasMessageContaining("not supported");
     }
+    @Test void agentBaselineIsStoredInPayloadWithoutUsingExternalTaskForeignKey() throws Exception {
+        var jobs = mock(JobRepository.class); var steps = mock(JobStepRepository.class);
+        ObjectMapper mapper = new ObjectMapper();
+        var service = new JobService(jobs, steps, mapper, mock(ClusterRepository.class));
+        Job job = new Job(); job.setType(JobType.ROLLING_RESTART);
+        JobStep step = new JobStep(); step.setId(UUID.randomUUID()); step.setJob(job);
+        step.setPayload(mapper.writeValueAsString(Map.of("hostId", "one", "role", "broker", "nodeId", 1)));
+        when(steps.findById(step.getId())).thenReturn(Optional.of(step));
+        UUID baselineTask = UUID.randomUUID();
+        var snapshot = Map.<String, Object>of("state", "active", "pid", "123", "started", "456");
+        service.recordRollingRestartBaseline(step.getId(), baselineTask, snapshot);
+        var stored = mapper.readTree(step.getPayload());
+        assertThat(stored.get("hostId").asText()).isEqualTo("one");
+        assertThat(stored.get("baselineAgentTaskId").asText()).isEqualTo(baselineTask.toString());
+        assertThat(stored.get("baselineServiceState").get("pid").asText()).isEqualTo("123");
+        assertThat(step.getExternalServiceTaskId()).isNull();
+        assertThat(step.getAgentTaskId()).isNull();
+        verify(steps).save(step);
+    }
+
     @Test void queuedRestartLocksSameClusterButNotAnotherCluster() {
         var jobs = mock(JobRepository.class); var clusters = mock(ClusterRepository.class);
         var service = new JobService(jobs, mock(JobStepRepository.class), new ObjectMapper(), clusters);
@@ -61,20 +81,22 @@ class RollingRestartJobSafetyTest {
         verify(deploy, never()).restartService(any(), anyString(), anyString());
         verify(jobs).completeStep(eq(step.getId()), anyString()); verify(clusters, never()).save(any());
         // An ambiguous failure with a different process identity also resumes without another restart.
-        UUID baselineId = UUID.randomUUID(); step.setExternalServiceTaskId(baselineId);
-        Task baseline = new Task(); baseline.setLogOutput("{\"state\":\"active\",\"pid\":\"1\",\"started\":\"100\"}");
-        when(awaiter.await(baselineId)).thenReturn(baseline);
+        Map<String, Object> baseline = new HashMap<>(Map.of("state", "active", "pid", "1", "started", "100"));
+        step.setPayload(mapper.writeValueAsString(Map.of("hostId", "one", "role", "broker", "nodeId", 1, "baselineServiceState", baseline)));
         when(awaiter.status(step.getAgentTaskId())).thenReturn("FAILED");
         handler.execute(job);
         verify(deploy, never()).restartService(any(), anyString(), anyString());
         // A failed restart that left the original process alive must actually retry the restart.
-        baseline.setLogOutput(verified.getLogOutput());
+        baseline.put("pid", "2"); baseline.put("started", "200");
+        step.setPayload(mapper.writeValueAsString(Map.of("hostId", "one", "role", "broker", "nodeId", 1, "baselineServiceState", baseline)));
         UUID retriedTask = UUID.randomUUID();
         when(deploy.restartService(cluster.getId(), "one", "broker")).thenReturn(retriedTask);
         when(awaiter.await(retriedTask)).thenReturn(new Task());
         handler.execute(job);
         verify(deploy).restartService(cluster.getId(), "one", "broker");
         verify(health).assertBrokerCanStop(cluster.getId(), 1);
+        verify(jobs).recordRollingRestartBaseline(eq(step.getId()), eq(probe), anyMap());
+        verify(jobs, never()).attachExternalServiceTask(any(), any());
         verify(clusters, never()).save(any());
     }
 }
