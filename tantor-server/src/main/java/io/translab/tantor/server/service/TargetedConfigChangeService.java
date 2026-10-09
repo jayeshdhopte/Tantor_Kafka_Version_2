@@ -46,6 +46,7 @@ public class TargetedConfigChangeService {
         private List<Integer> targetNodeIds;
         private String key;
         private String value;
+        private Map<String, String> changes;
     }
 
     public Map<Integer, Map<String, String>> readStaticProperties(UUID clusterId, String role,
@@ -85,7 +86,62 @@ public class TargetedConfigChangeService {
     }
 
     public Map<String, Object> preview(UUID clusterId, ChangeRequest request) {
+        if (request == null || request.getChanges() == null) return previewSingle(clusterId, request, false, null);
+        if (request.getKey() != null || request.getValue() != null) throw new IllegalArgumentException("Use either changes or a single key/value.");
+        if (request.getChanges().isEmpty() || request.getChanges().size() > 100) throw new IllegalArgumentException("Select between 1 and 100 properties.");
+        Set<String> normalized = new HashSet<>();
+        for (String key : request.getChanges().keySet()) {
+            if (key == null || !normalized.add(key.trim())) throw new IllegalArgumentException("Duplicate or missing property name.");
+        }
         Cluster internal = clusters.findWithServicesById(clusterId).orElse(null);
+        Map<Integer, Map<String, Object>> live = kafka.getBrokerConfigs(clusterId);
+        PreviewContext context = new PreviewContext(internal, live, new HashMap<>(), health.inspect(clusterId, live.size(), Set.of()));
+        List<Map<String, Object>> properties = new ArrayList<>();
+        Map<Integer, Map<String, Object>> nodes = new LinkedHashMap<>();
+        Map<String, Object> result = null;
+        String classification = null;
+        for (var entry : request.getChanges().entrySet()) {
+            ChangeRequest single = new ChangeRequest();
+            single.setRole(request.getRole()); single.setScope(request.getScope()); single.setTargetNodeIds(request.getTargetNodeIds());
+            single.setKey(entry.getKey()); single.setValue(entry.getValue());
+            Map<String, Object> plan = previewSingle(clusterId, single, true, context);
+            String policy = String.valueOf(plan.get("classification"));
+            if (classification != null && !classification.equals(policy)) throw new IllegalArgumentException("Review dynamic and restart-required properties separately.");
+            classification = policy;
+            if (result == null) result = new LinkedHashMap<>(plan);
+            result.put("healthy", Boolean.TRUE.equals(result.get("healthy")) && Boolean.TRUE.equals(plan.get("healthy")));
+            if (!Boolean.TRUE.equals(plan.get("healthy"))) result.put("healthFailures", plan.get("healthFailures"));
+            result.put("clusterLocked", Boolean.TRUE.equals(result.get("clusterLocked")) || Boolean.TRUE.equals(plan.get("clusterLocked")));
+            properties.add(plan);
+            for (Object raw : (List<?>) plan.get("targets")) {
+                Map<?, ?> target = (Map<?, ?>) raw;
+                int nodeId = ((Number) target.get("nodeId")).intValue();
+                Map<String, Object> node = nodes.computeIfAbsent(nodeId, ignored -> {
+                    Map<String, Object> next = new LinkedHashMap<>(); next.put("nodeId", nodeId);
+                    next.put("changes", new LinkedHashMap<String, Object>()); next.put("expectedValues", new LinkedHashMap<String, Object>()); return next;
+                });
+                @SuppressWarnings("unchecked") Map<String, Object> changes = (Map<String, Object>) node.get("changes");
+                @SuppressWarnings("unchecked") Map<String, Object> expected = (Map<String, Object>) node.get("expectedValues");
+                String key = String.valueOf(plan.get("key"));
+                if (changes.containsKey(key)) throw new IllegalArgumentException("Duplicate normalized property: " + key);
+                changes.put(key, target.get("newValue")); expected.put(key, target.get("oldValue"));
+            }
+        }
+        if (nodes.isEmpty()) throw new IllegalArgumentException("The selected nodes already have the requested values.");
+        List<Map<String, Object>> targets = new ArrayList<>(nodes.values());
+        if ("CONTROLLER".equalsIgnoreCase(request.getRole())) {
+            Integer leader = kafka.getControllerId(clusterId);
+            targets.sort(Comparator.comparingInt(node -> Objects.equals(node.get("nodeId"), leader) ? 1 : 0));
+        }
+        result.put("key", request.getChanges().size() + " properties"); result.put("properties", properties); result.put("targets", targets);
+        return result;
+    }
+
+    private record PreviewContext(Cluster internal, Map<Integer, Map<String, Object>> live,
+                                  Map<Integer, Map<String, String>> files, RollingRestartHealthService.HealthSnapshot health) {}
+
+    private Map<String, Object> previewSingle(UUID clusterId, ChangeRequest request, boolean allowUnchanged, PreviewContext context) {
+        Cluster internal = context == null ? clusters.findWithServicesById(clusterId).orElse(null) : context.internal();
         if (internal == null && !externalClusters.existsById(clusterId)) {
             throw new IllegalArgumentException("Cluster not found.");
         }
@@ -103,7 +159,7 @@ public class TargetedConfigChangeService {
         if (value == null || value.length() > 4096 || value.contains("\n") || value.contains("\r")) {
             throw new IllegalArgumentException("Provide a single-line property value (up to 4096 characters).");
         }
-        Map<Integer, Map<String, Object>> live = kafka.getBrokerConfigs(clusterId);
+        Map<Integer, Map<String, Object>> live = context == null ? kafka.getBrokerConfigs(clusterId) : context.live();
         if (live.isEmpty()) throw new IllegalStateException("No live brokers are available.");
         Set<Integer> available = "BROKER".equals(role) ? live.keySet() : internal == null ? Set.of()
                 : internal.getServices().stream().filter(service -> "controller".equalsIgnoreCase(service.getRole()))
@@ -170,20 +226,29 @@ public class TargetedConfigChangeService {
                 Map<String, Object> config = mergedConfig(internal, service);
                 config.put("mode", internal.getMode());
                 config.put("version", internal.getKafkaVersion());
-                UUID readTask = deployment.readKafkaProperty(clusterId, service.getHostId(), service.getRole(),
-                        String.valueOf(nodeId), json(config), configPath(internal, service, config), key);
-                Task result = taskAwaiter.await(readTask, 60);
-                Map<String, Object> observed = readMap(result.getLogOutput());
-                change.put("oldValue", Boolean.TRUE.equals(observed.get("found")) ? observed.get("value") : null);
+                if (context == null) {
+                    UUID readTask = deployment.readKafkaProperty(clusterId, service.getHostId(), service.getRole(),
+                            String.valueOf(nodeId), json(config), configPath(internal, service, config), key);
+                    Task readResult = taskAwaiter.await(readTask, 60);
+                    Map<String, Object> observed = readMap(readResult.getLogOutput());
+                    change.put("oldValue", Boolean.TRUE.equals(observed.get("found")) ? observed.get("value") : null);
+                } else {
+                    Map<String, String> properties = context.files().get(nodeId);
+                    if (properties == null) {
+                        properties = readStaticProperties(clusterId, role, List.of(nodeId)).get(nodeId);
+                        context.files().put(nodeId, properties);
+                    }
+                    change.put("oldValue", properties.get(key));
+                }
             }
             change.put("newValue", value);
             changes.add(change);
         }
         changes.removeIf(change -> Objects.equals(change.get("oldValue"), value));
-        if (changes.isEmpty()) {
+        if (changes.isEmpty() && !allowUnchanged) {
             throw new IllegalArgumentException("The selected nodes already have the requested value.");
         }
-        var snapshot = health.inspect(clusterId, live.size(), Set.of());
+        var snapshot = context == null ? health.inspect(clusterId, live.size(), Set.of()) : context.health();
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("role", role);
         result.put("scope", request.getScope().toUpperCase(Locale.ROOT));
@@ -258,6 +323,12 @@ public class TargetedConfigChangeService {
                 payload.put("hostId", service.getHostId()); payload.put("role", service.getRole());
                 payload.put("configPath", configPath(internal, service, config)); payload.put("configJson", json(config));
                 step.setPayload(json(payload));
+            }
+            if (target.get("changes") instanceof Map<?, ?>) {
+                Map<String, Object> grouped = readMap(step.getPayload());
+                grouped.remove("key"); grouped.remove("value"); grouped.remove("expectedOldValue");
+                grouped.put("changes", target.get("changes")); grouped.put("expectedValues", target.get("expectedValues"));
+                step.setPayload(json(grouped));
             }
             steps.add(step);
         }

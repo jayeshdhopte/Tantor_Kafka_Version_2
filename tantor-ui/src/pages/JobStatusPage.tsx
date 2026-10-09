@@ -498,6 +498,7 @@ export function JobStatusPage() {
                             paddingRight: '12px'
                           }} title={stepDisplayName}>
                             {stepDisplayName}
+                            {job?.type === 'ROLLING_RESTART' && isRunning && step.logs?.startsWith('Service active;') && <small style={{ display: 'block', marginTop: '6px' }}>{step.logs}</small>}
                           </span>
                           <span style={{
                             fontFamily: 'Satoshi', 
@@ -509,7 +510,7 @@ export function JobStatusPage() {
                             textAlign: 'right',
                             flexShrink: 0
                           }}>
-                            {progress}% Completed
+                            {job?.type === 'ROLLING_RESTART' && isRunning ? (step.logs?.startsWith('Service active;') ? 'Verifying health' : 'In progress') : `${progress}% Completed`}
                           </span>
                         </div>
                         <div className="step-progress-track" style={{ height: '8px', background: 'var(--border-default)', borderRadius: '2px', overflow: 'hidden', width: '100%', display: 'flex' }}>

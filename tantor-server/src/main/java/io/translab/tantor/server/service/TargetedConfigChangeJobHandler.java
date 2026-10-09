@@ -12,7 +12,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
-/** Applies one dynamic broker property at a time; failure stops the remaining targets. */
+/** Applies a property batch per node; failure stops the remaining targets. */
 @Component
 @RequiredArgsConstructor
 public class TargetedConfigChangeJobHandler implements JobHandler {
@@ -40,6 +40,10 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
             Map<String, Object> payload = read(step.getPayload());
             if ("STATIC".equals(payload.get("operation"))) {
                 executeStatic(clusterId, step, payload);
+                continue;
+            }
+            if (payload.get("changes") instanceof Map<?, ?>) {
+                executeDynamicBatch(clusterId, step, payload);
                 continue;
             }
             int brokerId = ((Number) payload.get("brokerId")).intValue();
@@ -86,6 +90,56 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
         }
     }
 
+    @SuppressWarnings("unchecked")
+    private void executeDynamicBatch(UUID clusterId, JobStep step, Map<String, Object> payload) {
+        int brokerId = ((Number) payload.get("brokerId")).intValue();
+        Map<String, String> changes = (Map<String, String>) payload.get("changes");
+        Map<String, Object> expected = (Map<String, Object>) payload.get("expectedValues");
+        String checkpoint = "";
+        try {
+            jobs.startStep(step.getId());
+            checkHealth(clusterId, ((Number) payload.get("expectedBrokerCount")).intValue(), String.valueOf(payload.get("hostId")));
+            Map<String, Object> observed = batchEntries(clusterId, brokerId, changes.keySet());
+            Map<String, String> pending = new java.util.LinkedHashMap<>();
+            for (var entry : changes.entrySet()) {
+                Object actual = ((Map<?, ?>) observed.get(entry.getKey())).get("value");
+                if (java.util.Objects.equals(actual, entry.getValue())) continue;
+                if (!java.util.Objects.equals(actual, expected.get(entry.getKey()))) throw new IllegalStateException("Broker " + brokerId + " property " + entry.getKey() + " changed since preview; refresh the plan.");
+                pending.put(entry.getKey(), entry.getValue());
+            }
+            if (!pending.isEmpty()) {
+                String hostId = String.valueOf(payload.getOrDefault("hostId", ""));
+                String path = String.valueOf(payload.getOrDefault("configPath", ""));
+                if (hostId.isBlank() || path.isBlank()) throw new IllegalStateException("Managed host and configuration path are required for backup.");
+                Map<String, Object> snapshot = new java.util.LinkedHashMap<>();
+                snapshot.put("mode", "DYNAMIC"); snapshot.put("previous", observed); snapshot.put("changes", changes);
+                snapshot.put("brokerId", brokerId); snapshot.put("clusterId", clusterId.toString()); snapshot.put("capturedAt", java.time.Instant.now().toString());
+                UUID task = deployment.backupKafkaConfig(clusterId, hostId, String.valueOf(payload.get("role")), String.valueOf(brokerId),
+                        String.valueOf(payload.get("configJson")), path, "batch", snapshot, "dynamic-" + step.getId());
+                jobs.attachAgentTask(step.getId(), task);
+                checkpoint = java.util.Objects.toString(taskAwaiter.await(task).getLogOutput(), "");
+                if (Thread.currentThread().isInterrupted()) throw new IllegalStateException("Interrupted before configuration change");
+                if (!observed.equals(batchEntries(clusterId, brokerId, changes.keySet()))) throw new IllegalStateException("Broker values changed while backing up; refresh the plan.");
+                kafka.alterBrokerConfigs(clusterId, brokerId, pending);
+            }
+            for (var entry : changes.entrySet()) verifyDynamic(clusterId, brokerId, entry.getKey(), entry.getValue());
+            jobs.completeStep(step.getId(), "Verified " + changes.size() + " properties on broker " + brokerId + ".\n" + checkpoint);
+        } catch (RuntimeException e) {
+            jobs.failStep(step.getId(), e.getMessage() + (checkpoint.isBlank() ? "" : "\n" + checkpoint));
+            throw e;
+        }
+    }
+
+    private Map<String, Object> batchEntries(UUID clusterId, int brokerId, Set<String> keys) {
+        Map<String, Object> live = kafka.getBrokerConfigs(clusterId).get(brokerId);
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        for (String key : keys) {
+            if (live == null || !(live.get(key) instanceof Map<?, ?>)) throw new IllegalStateException("Broker " + brokerId + " or property " + key + " is unavailable.");
+            result.put(key, live.get(key));
+        }
+        return result;
+    }
+
     private void verifyDynamic(UUID clusterId, int brokerId, String key, String desired) {
         // Kafka may acknowledge the write before the broker exposes it through DescribeConfigs.
         long timeoutMs = Math.max(0, dynamicVerificationTimeoutMs);
@@ -121,29 +175,33 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
         int nodeId = ((Number) payload.get("nodeId")).intValue();
         String hostId = String.valueOf(payload.get("hostId"));
         String role = String.valueOf(payload.get("role"));
-        String key = String.valueOf(payload.get("key"));
-        String desired = String.valueOf(payload.get("value"));
+        Map<String, Object> change = new java.util.LinkedHashMap<>();
+        Map<String, Object> expected = new java.util.LinkedHashMap<>();
+        if (payload.get("changes") instanceof Map<?, ?> batch) {
+            batch.forEach((key, value) -> change.put(String.valueOf(key), value));
+            ((Map<?, ?>) payload.get("expectedValues")).forEach((key, value) -> expected.put(String.valueOf(key), value));
+        } else {
+            change.put(String.valueOf(payload.get("key")), payload.get("value"));
+            expected.put(String.valueOf(payload.get("key")), payload.get("expectedOldValue"));
+        }
         int expectedBrokers = ((Number) payload.get("expectedBrokerCount")).intValue();
         try {
             if (step.getStatus() == JobStepStatus.IN_PROGRESS && step.getAgentTaskId() != null) {
                 Task completed = taskAwaiter.await(step.getAgentTaskId());
-                verifyStatic(clusterId, hostId, role, nodeId, key, desired, expectedBrokers);
+                verifyStatic(clusterId, hostId, role, nodeId, change, expectedBrokers);
                 jobs.completeStep(step.getId(), completed.getLogOutput());
                 return;
             }
             jobs.startStep(step.getId());
             checkHealth(clusterId, expectedBrokers, hostId);
             if ("controller".equalsIgnoreCase(role)) checkQuorum(clusterId, nodeId);
-            Map<String, Object> change = new java.util.LinkedHashMap<>();
-            change.put(key, desired);
-            Map<String, Object> expected = new java.util.LinkedHashMap<>();
-            expected.put(key, payload.get("expectedOldValue"));
+            else health.assertBrokerCanStop(clusterId, nodeId);
             UUID taskId = deployment.patchKafkaConfig(clusterId, hostId, role, String.valueOf(nodeId),
                     String.valueOf(payload.get("configJson")), String.valueOf(payload.get("configPath")),
                     change, expected, true, "targeted-" + step.getId());
             jobs.attachAgentTask(step.getId(), taskId);
             Task completed = taskAwaiter.await(taskId);
-            verifyStatic(clusterId, hostId, role, nodeId, key, desired, expectedBrokers);
+            verifyStatic(clusterId, hostId, role, nodeId, change, expectedBrokers);
             jobs.completeStep(step.getId(), completed.getLogOutput());
         } catch (Exception e) {
             jobs.failStep(step.getId(), e.getMessage());
@@ -151,8 +209,7 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
         }
     }
 
-    private void verifyStatic(UUID clusterId, String hostId, String role, int nodeId, String key,
-                              String desired, int expectedBrokers) {
+    private void verifyStatic(UUID clusterId, String hostId, String role, int nodeId, Map<String, Object> changes, int expectedBrokers) {
         String lastFailure = "Kafka did not recover after restart";
         for (int attempt = 0; attempt < 45; attempt++) {
             try {
@@ -160,8 +217,11 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
                 if ("controller".equalsIgnoreCase(role)) {
                     checkQuorum(clusterId, nodeId);
                 } else {
-                    String actual = currentValue(clusterId, nodeId, key);
-                    if (!desired.equals(actual)) throw new IllegalStateException("Kafka reports " + actual + " after restart");
+                    Map<String, Object> live = batchEntries(clusterId, nodeId, changes.keySet());
+                    for (var entry : changes.entrySet()) {
+                        Object actual = ((Map<?, ?>) live.get(entry.getKey())).get("value");
+                        if (!java.util.Objects.equals(entry.getValue(), actual)) throw new IllegalStateException("Kafka reports " + entry.getKey() + "=" + actual + " after restart");
+                    }
                 }
                 return;
             } catch (Exception e) {

@@ -142,6 +142,15 @@ public class JobService {
     }
 
     @Transactional
+    public void reportRollingRestartPhase(UUID stepId, String message) {
+        JobStep step = getStep(stepId);
+        if (step.getJob().getType() != JobType.ROLLING_RESTART || step.getStatus() != JobStepStatus.IN_PROGRESS)
+            throw new IllegalStateException("Restart phase requires an active rolling restart step.");
+        step.setLogs(message);
+        jobStepRepository.save(step);
+    }
+
+    @Transactional
     public JobStep startStep(UUID stepId) {
         JobStep step = getStep(stepId);
         step.setStatus(JobStepStatus.IN_PROGRESS);

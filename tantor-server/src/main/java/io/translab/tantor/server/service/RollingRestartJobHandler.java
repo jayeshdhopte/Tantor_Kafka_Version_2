@@ -109,7 +109,9 @@ public class RollingRestartJobHandler implements JobHandler {
                 } else jobService.appendLog(job.getId(), "Resuming health verification on " + host + "; no repeated restart.");
                 Task verified = taskAwaiter.await(deploymentService.verifyKafkaService(clusterId, host, unit));
                 if (!"active".equals(readMap(verified.getLogOutput()).get("state"))) throw new IllegalStateException("Kafka service is not active: " + verified.getLogOutput());
-                waitForHealth(clusterId, brokers, hosts, controllers, singleOverride);
+                jobService.reportRollingRestartPhase(step.getId(), "Service active; verifying cluster health.");
+                jobService.appendLog(job.getId(), "Service active on " + host + "; verifying quorum, replicas, ISR and host health.");
+                waitForHealth(clusterId, brokers, hosts, controllers, singleOverride, job.getId(), step.getId());
                 jobService.completeStep(step.getId(), "Service active; brokers, controller, replicas, ISR, lag and host health verified.");
             } catch (RuntimeException e) {
                 jobService.failStep(step.getId(), e.getMessage());
@@ -120,6 +122,11 @@ public class RollingRestartJobHandler implements JobHandler {
     }
 
     private void waitForHealth(UUID clusterId, int brokers, Set<String> hosts, boolean controllers, boolean singleOverride) {
+        waitForHealth(clusterId, brokers, hosts, controllers, singleOverride, null, null);
+    }
+
+    private void waitForHealth(UUID clusterId, int brokers, Set<String> hosts, boolean controllers, boolean singleOverride, UUID jobId, UUID stepId) {
+        String reported = null;
         Instant deadline = Instant.now().plusSeconds(Math.max(1, healthTimeoutSeconds));
         int stable = 0;
         String reason = "Cluster health is not stable.";
@@ -130,10 +137,7 @@ public class RollingRestartJobHandler implements JobHandler {
             if (healthy && controllers) {
                 try {
                     var quorum = kafkaAdminService.getAdminClient(clusterId).describeMetadataQuorum().quorumInfo().get(15, TimeUnit.SECONDS);
-                    long fresh = quorum.voters().stream().filter(v -> v.replicaId() == quorum.leaderId()
-                            || v.lastCaughtUpTimestamp().orElse(0L) >= System.currentTimeMillis() - 30000).count();
-                    healthy = quorum.leaderId() >= 0 && (singleOverride || quorum.voters().size() >= 3)
-                            && fresh == quorum.voters().size();
+                    healthy = RollingRestartQuorumHealth.healthy(quorum, singleOverride);
                     if (!healthy) reason = "Metadata quorum voters have not all caught up.";
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt(); throw new IllegalStateException("Quorum inspection interrupted", e);
@@ -141,6 +145,12 @@ public class RollingRestartJobHandler implements JobHandler {
             }
             stable = healthy ? stable + 1 : 0;
             if (stable >= Math.max(1, stableSamples)) return;
+            String phase = healthy ? "Waiting for the next stable cluster health sample." : "Waiting for cluster health: " + reason;
+            if (jobId != null && !phase.equals(reported)) {
+                jobService.appendLog(jobId, phase);
+                jobService.reportRollingRestartPhase(stepId, "Service active; " + phase);
+                reported = phase;
+            }
             try { Thread.sleep(Math.max(1, healthPollSeconds) * 1000); }
             catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new IllegalStateException("Health verification interrupted", e); }
         }

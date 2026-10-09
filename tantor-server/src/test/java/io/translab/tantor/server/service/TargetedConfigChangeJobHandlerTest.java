@@ -151,6 +151,51 @@ class TargetedConfigChangeJobHandlerTest {
         verify(jobs).completeStep(eq(step.getId()), contains(".bak"));
     }
 
+    private void batchSetup(String operation) throws Exception {
+        var payload = new java.util.LinkedHashMap<String, Object>();
+        payload.put("operation", operation); payload.put("brokerId", 1); payload.put("nodeId", 1);
+        payload.put("changes", Map.of("log.segment.bytes", "200", "log.retention.hours", "72"));
+        payload.put("expectedValues", Map.of("log.segment.bytes", "100", "log.retention.hours", "168"));
+        payload.put("expectedBrokerCount", 1); payload.put("hostId", "host-1"); payload.put("role", "broker");
+        payload.put("configPath", "/opt/kafka/config/broker.properties"); payload.put("configJson", "{}");
+        step.setPayload(mapper.writeValueAsString(payload));
+        when(health.inspect(clusterId, 1, Set.of("host-1"))).thenReturn(new RollingRestartHealthService.HealthSnapshot(true, 1, 101, 0, 0, 0, 0, Map.of()));
+        when(deployment.backupKafkaConfig(eq(clusterId), eq("host-1"), eq("broker"), eq("1"), eq("{}"), anyString(), eq("batch"), anyMap(), anyString())).thenReturn(backupId);
+    }
+    private Map<Integer, Map<String, Object>> batchConfig(String segment, String retention) {
+        return Map.of(1, Map.of("log.segment.bytes", Map.of("value", segment), "log.retention.hours", Map.of("value", retention)));
+    }
+    @Test void batchIsBackedUpBeforeOneKafkaWriteAndVerifiesAllProperties() throws Exception {
+        batchSetup("DYNAMIC");
+        when(kafka.getBrokerConfigs(clusterId)).thenReturn(batchConfig("100", "168"), batchConfig("100", "168"), batchConfig("200", "72"));
+        handler.execute(job);
+        var order = inOrder(awaiter, kafka);
+        order.verify(awaiter).await(backupId);
+        order.verify(kafka).alterBrokerConfigs(clusterId, 1, Map.of("log.segment.bytes", "200", "log.retention.hours", "72"));
+        verify(jobs).completeStep(eq(step.getId()), contains("2 properties"));
+    }
+    @Test void batchBackupFailureAndConcurrentEditPreventAllWrites() throws Exception {
+        batchSetup("DYNAMIC"); when(kafka.getBrokerConfigs(clusterId)).thenReturn(batchConfig("100", "168"));
+        when(awaiter.await(backupId)).thenThrow(new IllegalStateException("Backup disk full"));
+        assertThatThrownBy(() -> handler.execute(job)).hasMessageContaining("Backup disk full");
+        verify(kafka, never()).alterBrokerConfigs(any(), anyInt(), anyMap());
+        Task backup = new Task(); backup.setLogOutput("saved"); doReturn(backup).when(awaiter).await(backupId);
+        when(kafka.getBrokerConfigs(clusterId)).thenReturn(batchConfig("100", "168"), batchConfig("100", "96"));
+        assertThatThrownBy(() -> handler.execute(job)).hasMessageContaining("changed while backing up");
+        verify(kafka, never()).alterBrokerConfigs(any(), anyInt(), anyMap());
+    }
+    @Test void staticBatchPatchesAndRestartsOnceWithBothProperties() throws Exception {
+        batchSetup("STATIC");
+        when(kafka.getBrokerConfigs(clusterId)).thenReturn(batchConfig("200", "72"));
+        UUID patch = UUID.randomUUID(); Task complete = new Task(); complete.setLogOutput("patched and restarted");
+        when(deployment.patchKafkaConfig(any(), anyString(), anyString(), anyString(), anyString(), anyString(), anyMap(), anyMap(), eq(true), anyString())).thenReturn(patch);
+        when(awaiter.await(patch)).thenReturn(complete);
+        handler.execute(job);
+        verify(deployment, times(1)).patchKafkaConfig(eq(clusterId), eq("host-1"), eq("broker"), eq("1"), eq("{}"), anyString(),
+                eq(Map.of("log.segment.bytes", "200", "log.retention.hours", "72")), eq(Map.of("log.segment.bytes", "100", "log.retention.hours", "168")), eq(true), anyString());
+        verify(jobs).completeStep(eq(step.getId()), anyString());
+    }
+
     private Map<Integer, Map<String, Object>> config(String value) {
         return Map.of(1, Map.of("log.segment.bytes", Map.of("value", value)));
     }

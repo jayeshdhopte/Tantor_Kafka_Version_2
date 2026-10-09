@@ -758,16 +758,19 @@ public class KafkaAdminService {
     }
 
     public void alterBrokerConfig(UUID clusterId, int brokerId, String key, String value) {
+        alterBrokerConfigs(clusterId, brokerId, Map.of(key, value));
+    }
+
+    public void alterBrokerConfigs(UUID clusterId, int brokerId, Map<String, String> changes) {
         AdminClient client = getAdminClient(clusterId);
         try {
             org.apache.kafka.common.config.ConfigResource resource = new org.apache.kafka.common.config.ConfigResource(
                     org.apache.kafka.common.config.ConfigResource.Type.BROKER, String.valueOf(brokerId));
 
-            org.apache.kafka.clients.admin.AlterConfigOp op = new org.apache.kafka.clients.admin.AlterConfigOp(
-                    new org.apache.kafka.clients.admin.ConfigEntry(key, value), 
-                    org.apache.kafka.clients.admin.AlterConfigOp.OpType.SET);
-
-            client.incrementalAlterConfigs(Map.of(resource, Collections.singletonList(op))).all().get();
+            var operations = changes.entrySet().stream().map(entry -> new org.apache.kafka.clients.admin.AlterConfigOp(
+                    new org.apache.kafka.clients.admin.ConfigEntry(entry.getKey(), entry.getValue()),
+                    org.apache.kafka.clients.admin.AlterConfigOp.OpType.SET)).toList();
+            client.incrementalAlterConfigs(Map.of(resource, operations)).all().get();
         } catch (InterruptedException | ExecutionException e) {
             log.error("Failed to alter broker config", e);
             refreshAdminClient(clusterId);
