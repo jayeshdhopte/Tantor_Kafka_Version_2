@@ -111,13 +111,13 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
                 String hostId = String.valueOf(payload.getOrDefault("hostId", ""));
                 String path = String.valueOf(payload.getOrDefault("configPath", ""));
                 if (hostId.isBlank() || path.isBlank()) throw new IllegalStateException("Managed host and configuration path are required for backup.");
-                Map<String, Object> snapshot = new java.util.LinkedHashMap<>();
-                snapshot.put("mode", "DYNAMIC"); snapshot.put("previous", observed); snapshot.put("changes", changes);
-                snapshot.put("brokerId", brokerId); snapshot.put("clusterId", clusterId.toString()); snapshot.put("capturedAt", java.time.Instant.now().toString());
-                UUID task = deployment.backupKafkaConfig(clusterId, hostId, String.valueOf(payload.get("role")), String.valueOf(brokerId),
-                        String.valueOf(payload.get("configJson")), path, "batch", snapshot, "dynamic-" + step.getId());
-                jobs.attachAgentTask(step.getId(), task);
-                checkpoint = java.util.Objects.toString(taskAwaiter.await(task).getLogOutput(), "");
+                for (Map<String, Object> snapshot : dynamicSnapshots(clusterId, brokerId, observed, changes)) {
+                    UUID task = deployment.backupKafkaConfig(clusterId, hostId, String.valueOf(payload.get("role")), String.valueOf(brokerId),
+                            String.valueOf(payload.get("configJson")), path, "batch", snapshot, "dynamic-" + step.getId());
+                    jobs.attachAgentTask(step.getId(), task);
+                    String detail = java.util.Objects.toString(taskAwaiter.await(task).getLogOutput(), "");
+                    checkpoint += (checkpoint.isBlank() ? "" : "\n") + detail;
+                }
                 if (Thread.currentThread().isInterrupted()) throw new IllegalStateException("Interrupted before configuration change");
                 if (!observed.equals(batchEntries(clusterId, brokerId, changes.keySet()))) throw new IllegalStateException("Broker values changed while backing up; refresh the plan.");
                 kafka.alterBrokerConfigs(clusterId, brokerId, pending);
@@ -128,6 +128,41 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
             jobs.failStep(step.getId(), e.getMessage() + (checkpoint.isBlank() ? "" : "\n" + checkpoint));
             throw e;
         }
+    }
+
+    // Existing agents validate key/mode and a 16 KiB snapshot limit. Keep every chunk compatible.
+    java.util.List<Map<String, Object>> dynamicSnapshots(UUID clusterId, int brokerId,
+                                                        Map<String, Object> observed, Map<String, String> changes) {
+        var snapshots = new java.util.ArrayList<Map<String, Object>>();
+        Map<String, Object> previous = new java.util.LinkedHashMap<>();
+        Map<String, String> requested = new java.util.LinkedHashMap<>();
+        for (var entry : changes.entrySet()) {
+            previous.put(entry.getKey(), observed.get(entry.getKey())); requested.put(entry.getKey(), entry.getValue());
+            if (snapshotSize(dynamicSnapshot(clusterId, brokerId, previous, requested)) > 16384) {
+                previous.remove(entry.getKey()); requested.remove(entry.getKey());
+                if (!requested.isEmpty()) snapshots.add(dynamicSnapshot(clusterId, brokerId, previous, requested));
+                previous = new java.util.LinkedHashMap<>(); requested = new java.util.LinkedHashMap<>();
+                previous.put(entry.getKey(), observed.get(entry.getKey())); requested.put(entry.getKey(), entry.getValue());
+                if (snapshotSize(dynamicSnapshot(clusterId, brokerId, previous, requested)) > 16384)
+                    throw new IllegalStateException("Dynamic checkpoint for " + entry.getKey() + " exceeds the agent's 16 KiB limit; no configuration was written.");
+            }
+        }
+        if (!requested.isEmpty()) snapshots.add(dynamicSnapshot(clusterId, brokerId, previous, requested));
+        return snapshots;
+    }
+
+    private Map<String, Object> dynamicSnapshot(UUID clusterId, int brokerId, Map<String, Object> previous,
+                                               Map<String, String> requested) {
+        Map<String, Object> snapshot = new java.util.LinkedHashMap<>();
+        snapshot.put("mode", "DYNAMIC"); snapshot.put("key", "batch");
+        snapshot.put("previous", new java.util.LinkedHashMap<>(previous)); snapshot.put("changes", new java.util.LinkedHashMap<>(requested));
+        snapshot.put("brokerId", brokerId); snapshot.put("clusterId", clusterId.toString()); snapshot.put("capturedAt", java.time.Instant.now().toString());
+        return snapshot;
+    }
+
+    private int snapshotSize(Map<String, Object> snapshot) {
+        try { return mapper.writeValueAsBytes(snapshot).length; }
+        catch (Exception e) { throw new IllegalStateException("Cannot serialize dynamic checkpoint", e); }
     }
 
     private Map<String, Object> batchEntries(UUID clusterId, int brokerId, Set<String> keys) {

@@ -172,8 +172,31 @@ class TargetedConfigChangeJobHandlerTest {
         var order = inOrder(awaiter, kafka);
         order.verify(awaiter).await(backupId);
         order.verify(kafka).alterBrokerConfigs(clusterId, 1, Map.of("log.segment.bytes", "200", "log.retention.hours", "72"));
+        verify(deployment).backupKafkaConfig(any(), anyString(), anyString(), anyString(), anyString(), anyString(), eq("batch"),
+                argThat(snapshot -> "batch".equals(snapshot.get("key")) && "DYNAMIC".equals(snapshot.get("mode"))), anyString());
         verify(jobs).completeStep(eq(step.getId()), contains("2 properties"));
     }
+    @Test void batchSnapshotsSatisfyExistingAgentContractAndChunkUtf8ValuesWithoutLoss() throws Exception {
+        var requested = new java.util.LinkedHashMap<String, String>();
+        var previous = new java.util.LinkedHashMap<String, Object>();
+        for (int i = 0; i < 10; i++) {
+            String key = "test.property." + i;
+            requested.put(key, "\u0915".repeat(2000)); previous.put(key, Map.of("value", "a".repeat(4096)));
+        }
+        var snapshots = handler.dynamicSnapshots(clusterId, 1, previous, requested);
+        org.assertj.core.api.Assertions.assertThat(snapshots.size()).isGreaterThan(1);
+        var restored = new java.util.LinkedHashMap<String, Object>();
+        for (var snapshot : snapshots) {
+            org.assertj.core.api.Assertions.assertThat(snapshot.get("key")).isEqualTo("batch");
+            org.assertj.core.api.Assertions.assertThat(snapshot.get("mode")).isEqualTo("DYNAMIC");
+            org.assertj.core.api.Assertions.assertThat(mapper.writeValueAsBytes(snapshot).length).isLessThanOrEqualTo(16384);
+            ((Map<?, ?>) snapshot.get("changes")).forEach((key, value) -> restored.put(String.valueOf(key), value));
+        }
+        org.assertj.core.api.Assertions.assertThat(restored).isEqualTo(requested);
+        previous.put("test.property.0", Map.of("value", "x".repeat(17000)));
+        assertThatThrownBy(() -> handler.dynamicSnapshots(clusterId, 1, previous, requested)).hasMessageContaining("16 KiB");
+    }
+
     @Test void batchBackupFailureAndConcurrentEditPreventAllWrites() throws Exception {
         batchSetup("DYNAMIC"); when(kafka.getBrokerConfigs(clusterId)).thenReturn(batchConfig("100", "168"));
         when(awaiter.await(backupId)).thenThrow(new IllegalStateException("Backup disk full"));
