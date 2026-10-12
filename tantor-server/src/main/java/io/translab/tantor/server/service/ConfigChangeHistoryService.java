@@ -18,8 +18,9 @@ public class ConfigChangeHistoryService {
     private final JobRepository jobs;
     private final JobStepRepository steps;
     private final ObjectMapper mapper;
+    private final HostRepository hosts;
     public record Change(String key, String oldValue, String newValue, String previousSource) {}
-    public record Node(String nodeId, String hostId, String role, String mode, String configPath,
+    public record Node(String nodeId, String hostId, String role, String mode, String configPath, String hostname, String ipAddress,
                        String status, Instant startedAt, Instant completedAt, List<Change> changes) {}
     public record Version(long version, UUID jobId, String status, String requestedBy, Instant createdAt,
                           Instant completedAt, int retryCount, List<Node> nodes) {}
@@ -43,7 +44,7 @@ public class ConfigChangeHistoryService {
     Node node(JobStep step) {
         Map<String, Object> payload;
         try { payload = mapper.readValue(step.getPayload(), new com.fasterxml.jackson.core.type.TypeReference<>() {}); }
-        catch (Exception e) { return new Node(step.getTargetId(), null, null, "UNKNOWN", null, step.getStatus().name(), step.getStartTime(), step.getEndTime(), List.of()); }
+        catch (Exception e) { return new Node(step.getTargetId(), null, null, "UNKNOWN", null, null, null, step.getStatus().name(), step.getStartTime(), step.getEndTime(), List.of()); }
         Map<?, ?> changes = payload.get("changes") instanceof Map<?, ?> batch ? batch : Collections.singletonMap(payload.get("key"), payload.get("value"));
         Map<?, ?> old = payload.get("expectedValues") instanceof Map<?, ?> batch ? batch : Collections.singletonMap(payload.get("key"), payload.get("expectedOldValue"));
         Map<?, ?> dynamic = payload.get("dynamicRemovalExpected") instanceof Map<?, ?> batch ? batch : Map.of();
@@ -58,9 +59,15 @@ public class ConfigChangeHistoryService {
             values.add(new Change(key, string(previous), string(entry.getValue()), source));
         }
         String mode = Boolean.TRUE.equals(payload.get("removal")) ? "DELETE" : Objects.toString(payload.get("operation"), "UNKNOWN");
+        String hostId = string(payload.get("hostId"));
+        var host = hostId == null ? Optional.<Host>empty() : hosts.findById(hostId);
+        String hostname = string(payload.get("hostname"));
+        if (hostname == null) hostname = host.map(Host::getHostname).orElse(hostId);
+        String ipAddress = string(payload.get("ipAddress"));
+        if (ipAddress == null) ipAddress = host.map(Host::getHostIp).orElse(null);
         return new Node(Objects.toString(payload.getOrDefault("nodeId", payload.getOrDefault("brokerId", step.getTargetId()))),
                 string(payload.get("hostId")), string(payload.get("role")), mode, string(payload.get("configPath")),
-                step.getStatus().name(), step.getStartTime(), step.getEndTime(), values);
+                hostname, ipAddress, step.getStatus().name(), step.getStartTime(), step.getEndTime(), values);
     }
     private static String string(Object value) { return value == null ? null : String.valueOf(value); }
 }

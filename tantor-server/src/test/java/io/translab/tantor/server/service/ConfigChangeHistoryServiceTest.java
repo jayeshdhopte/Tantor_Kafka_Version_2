@@ -11,7 +11,7 @@ import static org.mockito.ArgumentMatchers.*;
 class ConfigChangeHistoryServiceTest {
  @Test void historyPreservesValuesFailureStatusAndVersionOrderWithoutSensitiveFields() {
   JobRepository jobs=mock(JobRepository.class); JobStepRepository steps=mock(JobStepRepository.class);
-  var service=new ConfigChangeHistoryService(jobs,steps,new ObjectMapper()); UUID cluster=UUID.randomUUID();
+  var service=new ConfigChangeHistoryService(jobs,steps,new ObjectMapper(),mock(HostRepository.class)); UUID cluster=UUID.randomUUID();
   Job job=new Job();job.setId(UUID.randomUUID());job.setStatus(JobStatus.FAILED);job.setRequestedBy("operator");
   JobStep step=new JobStep();step.setStatus(JobStepStatus.FAILED);
   step.setPayload("{\"operation\":\"STATIC\",\"nodeId\":1,\"hostId\":\"node174\",\"role\":\"broker\",\"changes\":{\"broker.session.timeout.ms\":\"\",\"ssl.keystore.password\":\"SECRET\"},\"expectedValues\":{\"broker.session.timeout.ms\":\"2000\"},\"configJson\":\"PRIVATE\"}");
@@ -24,9 +24,16 @@ class ConfigChangeHistoryServiceTest {
   assertThatThrownBy(()->service.history(cluster,-1)).isInstanceOf(IllegalArgumentException.class);
  }
  @Test void deletionHistoryUsesBackedUpOverrideAndNullMeansRemoved() {
-  var service=new ConfigChangeHistoryService(mock(JobRepository.class),mock(JobStepRepository.class),new ObjectMapper());
+  var service=new ConfigChangeHistoryService(mock(JobRepository.class),mock(JobStepRepository.class),new ObjectMapper(),mock(HostRepository.class));
   JobStep step=new JobStep();step.setStatus(JobStepStatus.SUCCESS);
   step.setPayload("{\"removal\":true,\"nodeId\":1,\"changes\":{\"log.local.retention.ms\":null},\"expectedValues\":{\"log.local.retention.ms\":null},\"dynamicRemovalExpected\":{\"log.local.retention.ms\":{\"value\":\"0\",\"source\":\"DYNAMIC_BROKER_CONFIG\"}}}");
   var node=service.node(step);assertThat(node.mode()).isEqualTo("DELETE");assertThat(node.changes().getFirst().oldValue()).isEqualTo("0");assertThat(node.changes().getFirst().newValue()).isNull();
+ }
+ @Test void savedIdentityIsPreservedAndOlderJobsUseRegisteredHostIdentity() {
+  var hosts=mock(HostRepository.class);var service=new ConfigChangeHistoryService(mock(JobRepository.class),mock(JobStepRepository.class),new ObjectMapper(),hosts);
+  Host host=new Host();host.setHostname("current-host");host.setHostIp("192.168.3.229");when(hosts.findById("host-1")).thenReturn(Optional.of(host));
+  JobStep step=new JobStep();step.setStatus(JobStepStatus.SUCCESS);step.setPayload("{\"nodeId\":1,\"hostId\":\"host-1\",\"hostname\":\"saved-host\",\"ipAddress\":\"192.168.3.174\"}");
+  assertThat(service.node(step).hostname()).isEqualTo("saved-host");assertThat(service.node(step).ipAddress()).isEqualTo("192.168.3.174");
+  step.setPayload("{\"nodeId\":1,\"hostId\":\"host-1\"}");assertThat(service.node(step).hostname()).isEqualTo("current-host");assertThat(service.node(step).ipAddress()).isEqualTo("192.168.3.229");
  }
 }

@@ -38,6 +38,7 @@ public class TargetedConfigChangeService {
     private final DeploymentService deployment;
     private final AgentTaskAwaiter taskAwaiter;
     private final PlatformTransactionManager transactions;
+    private final io.translab.tantor.server.repository.HostRepository hosts;
 
     @Data
     public static class ChangeRequest {
@@ -420,6 +421,17 @@ public class TargetedConfigChangeService {
                 }
                 step.setPayload(json(grouped));
             }
+            Map<String, Object> identity = readMap(step.getPayload());
+            String hostId = String.valueOf(identity.get("hostId"));
+            hosts.findById(hostId).ifPresent(host -> {
+                identity.put("hostname", host.getHostname()); identity.put("ipAddress", host.getHostIp());
+            });
+            step.setPayload(json(identity));
+            String hostname = Objects.toString(identity.get("hostname"), hostId);
+            String ipAddress = Objects.toString(identity.get("ipAddress"), "IP not reported");
+            step.setName(step.getName().replace(" on " + String.valueOf(plan.get("role")).toLowerCase(Locale.ROOT) + " " + target.get("nodeId"),
+                    " on " + String.valueOf(plan.get("role")).toLowerCase(Locale.ROOT) + " node " + target.get("nodeId"))
+                    + " on " + hostname + " (" + ipAddress + ")");
             steps.add(step);
         }
         Job job = new Job();

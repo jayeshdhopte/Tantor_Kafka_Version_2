@@ -40,9 +40,10 @@ class TargetedConfigChangeServiceTest {
     private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
     private final DeploymentService deployment = mock(DeploymentService.class);
     private final AgentTaskAwaiter awaiter = mock(AgentTaskAwaiter.class);
+    private final io.translab.tantor.server.repository.HostRepository hosts = mock(io.translab.tantor.server.repository.HostRepository.class);
     private final PlatformTransactionManager transactions = mock(PlatformTransactionManager.class);
     private final TargetedConfigChangeService service = new TargetedConfigChangeService(
-            clusters, external, jobs, jobService, kafka, health, jdbc, new ObjectMapper(), deployment, awaiter, transactions);
+            clusters, external, jobs, jobService, kafka, health, jdbc, new ObjectMapper(), deployment, awaiter, transactions, hosts);
     private final UUID clusterId = UUID.randomUUID();
     private final Cluster cluster = new Cluster();
 
@@ -103,6 +104,8 @@ class TargetedConfigChangeServiceTest {
     void dynamicJobPersistsTheAgentAndConfigFileNeededForBackup() {
         var broker = controller(202); broker.setRole("broker");
         cluster.setServices(List.of(broker));
+        var host = new io.translab.tantor.server.domain.Host(); host.setHostname("broker202.example"); host.setHostIp("192.168.3.213");
+        when(hosts.findById("host-202")).thenReturn(Optional.of(host));
         when(jobService.createJob(any(), anyList())).thenAnswer(invocation -> {
             Job job = invocation.getArgument(0); job.setId(UUID.randomUUID()); return job;
         });
@@ -112,7 +115,9 @@ class TargetedConfigChangeServiceTest {
                 request("BROKER","SPECIFIC",List.of(202),"log.retention.hours","72"),plan, (String) null);
         verify(jobService).createJob(any(), argThat(steps -> steps.size()==1
                 && steps.get(0).getPayload().contains("host-202")
-                && steps.get(0).getPayload().contains("/opt/kafka/config/broker.properties")));
+                && steps.get(0).getPayload().contains("/opt/kafka/config/broker.properties")
+                && steps.get(0).getPayload().contains("broker202.example")
+                && steps.get(0).getName().contains("node 202 on broker202.example (192.168.3.213)")));
     }
 
     @Test

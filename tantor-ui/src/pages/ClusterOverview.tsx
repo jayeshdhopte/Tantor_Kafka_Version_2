@@ -58,6 +58,11 @@ interface NodePathRow {
   hasTelemetry: boolean;
 }
 
+interface DataServicePathRow {
+  serviceType: string; hostId: string; hostname: string | null; ipAddress: string | null;
+  installDir: string | null; configFile: string | null; pluginDir: string | null; workingDir: string | null; logDir: string | null;
+}
+
 interface ClusterOverviewResponse {
   name: string;
   kafkaClusterId: string;
@@ -73,6 +78,7 @@ interface ClusterOverviewResponse {
   brokers: BrokerRow[];
   controllers: ControllerRow[];
   nodePaths: NodePathRow[];
+  dataServicePaths?: DataServicePathRow[];
 }
 
 export function ClusterOverview() {
@@ -201,6 +207,16 @@ export function ClusterOverview() {
           </div>
         </div>
       </section>
+
+      {!!overview.dataServicePaths?.length && <section className="overview-section">
+        <div className="overview-card"><div className="section-header-row"><h2>Schema Registry & Kafka Connect directories</h2></div>
+          <div className="overview-service-paths">{overview.dataServicePaths.map(service => <article className="overview-service-path-card" key={`${service.serviceType}-${service.hostId}`}>
+            <h3>{service.serviceType === 'SCHEMA_REGISTRY' ? 'Schema Registry' : 'Kafka Connect'}</h3>
+            <p>{service.hostname || service.hostId} · {service.ipAddress || 'IP not reported'}</p>
+            <dl>{[['Install directory', service.installDir], ['Configuration file', service.configFile], ...(service.serviceType === 'KAFKA_CONNECT' ? [['Plugin directory', service.pluginDir]] : []), ['Working directory', service.workingDir], ['Log directory', service.logDir]].map(([label, path]) => <div key={label}><dt>{label}</dt><dd><code>{path || 'Not reported'}</code></dd></div>)}</dl>
+          </article>)}</div>
+        </div>
+      </section>}
 
       <section className="overview-section">
         <div className="overview-card">

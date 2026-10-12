@@ -224,4 +224,15 @@ class ClusterOverviewServiceTest {
         host.setHostIp(hostIp);
         return host;
     }
+    @Test void deployedDataServicePathsRespectCustomLocationsAndHidePendingServices() {
+        Cluster cluster=new Cluster(); Host host=new Host();host.setHostname("broker6");host.setHostIp("192.168.3.213");
+        when(hostRepository.findById("host-1")).thenReturn(Optional.of(host));
+        ClusterServiceAssignment schema=new ClusterServiceAssignment();schema.setHostId("host-1");schema.setRole("schema_registry");schema.setStatus("ONLINE");schema.setConfigJson("{\"install_dir\":\"/custom/unified\",\"config_dir\":\"/custom/schema-config\",\"working_dir\":\"/data/schema-work\",\"log_dir\":\"/logs/schema\"}");
+        ClusterServiceAssignment connect=new ClusterServiceAssignment();connect.setHostId("host-1");connect.setRole("kafka_connect");connect.setStatus("ONLINE");connect.setConfigJson("{\"install_dir\":\"/opt/kafka\",\"config_dir\":\"/opt/kafka/config\",\"plugin_dir\":\"/opt/kafka/connect-plugins\"}");
+        ClusterServiceAssignment pending=new ClusterServiceAssignment();pending.setHostId("host-2");pending.setRole("kafka_connect");pending.setStatus("PENDING");
+        cluster.setServices(List.of(schema,connect,pending));var rows=service.dataServicePaths(cluster);assertThat(rows).hasSize(2);
+        assertThat(rows.stream().filter(row->"SCHEMA_REGISTRY".equals(row.getServiceType())).findFirst().orElseThrow().getConfigFile()).isEqualTo("/custom/schema-config/schema-registry.properties");
+        var worker=rows.stream().filter(row->"KAFKA_CONNECT".equals(row.getServiceType())).findFirst().orElseThrow();assertThat(worker.getPluginDir()).isEqualTo("/opt/kafka/connect-plugins");assertThat(worker.getIpAddress()).isEqualTo("192.168.3.213");assertThat(worker.getWorkingDir()).isNull();
+        assertThat(service.dataServicePaths(null)).isEmpty();
+    }
 }

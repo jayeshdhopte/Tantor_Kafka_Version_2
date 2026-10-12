@@ -25,6 +25,7 @@ type JobStep = {
   targetId: string;
   status: string;
   agentTaskId?: string;
+  payload?: string | Record<string, unknown>;
   logs?: string;
   retryCount: number;
   startTime?: string;
@@ -308,6 +309,18 @@ export function JobStatusPage() {
 
   const getStepDisplayName = (step: JobStep): string => {
     const businessName = getBusinessStepName(step.name);
+    if (job?.type === 'TARGETED_CONFIG_CHANGE') {
+      try {
+        const payload = typeof step.payload === 'string' ? JSON.parse(step.payload) as Record<string, unknown> : step.payload || {};
+        const hostId = typeof payload.hostId === 'string' ? payload.hostId : '';
+        const host = hostsById[hostId];
+        const hostname = typeof payload.hostname === 'string' && payload.hostname ? payload.hostname : host?.name || hostId || 'Hostname not reported';
+        const ip = typeof payload.ipAddress === 'string' && payload.ipAddress ? payload.ipAddress : host?.ip || 'IP not reported';
+        const nodeId = payload.nodeId ?? payload.brokerId ?? step.targetId;
+        const action = businessName.replace(/ on (broker|controller)(?: node)? \d+.*$/i, '');
+        return `${action} on ${String(payload.role || 'Kafka')} node ${String(nodeId)} - ${hostname} (${ip})`;
+      } catch { return businessName; }
+    }
     const targetId = step.targetId || step.name.match(new RegExp(UUID_PATTERN, 'i'))?.[0];
     if (!targetId) return businessName;
 
