@@ -133,6 +133,11 @@ public class TargetedConfigChangeService {
             Integer leader = kafka.getControllerId(clusterId);
             targets.sort(Comparator.comparingInt(node -> Objects.equals(node.get("nodeId"), leader) ? 1 : 0));
         }
+        if ("DYNAMIC_ALLOWED".equals(classification)) {
+            Map<String, String> normalizedChanges = new LinkedHashMap<>();
+            request.getChanges().forEach((key, value) -> normalizedChanges.put(key.trim(), value));
+            for (Map<String, Object> target : targets) kafka.validateBrokerConfigs(clusterId, ((Number) target.get("nodeId")).intValue(), normalizedChanges);
+        }
         result.put("key", request.getChanges().size() + " properties"); result.put("properties", properties); result.put("targets", targets);
         return result;
     }
@@ -184,6 +189,7 @@ public class TargetedConfigChangeService {
                 if (!(raw instanceof Map<?, ?> details)) {
                     throw new IllegalArgumentException("Kafka does not report property " + key + " on broker " + brokerId + ".");
                 }
+                if (Boolean.TRUE.equals(details.get("isSensitive"))) throw new IllegalArgumentException("Sensitive properties are excluded from configuration changes.");
                 boolean readOnly = Boolean.TRUE.equals(details.get("isReadOnly"));
                 if (firstReadOnly != null && firstReadOnly != readOnly) {
                     throw new IllegalArgumentException("The property has different update policies on selected brokers.");
@@ -192,6 +198,7 @@ public class TargetedConfigChangeService {
             }
             dynamic = !Boolean.TRUE.equals(firstReadOnly);
         }
+        if ("CONTROLLER".equals(role)) KafkaPropertyCatalog.requireRecognizedControllerSetting(key, live);
         if (!dynamic) {
             if (internal == null) {
                 throw new IllegalArgumentException("External static changes use the agent-backed versioned file editor.");
@@ -248,6 +255,7 @@ public class TargetedConfigChangeService {
         if (changes.isEmpty() && !allowUnchanged) {
             throw new IllegalArgumentException("The selected nodes already have the requested value.");
         }
+        if (dynamic && context == null) for (Integer nodeId : targets) kafka.validateBrokerConfigs(clusterId, nodeId, Map.of(key, value));
         var snapshot = context == null ? health.inspect(clusterId, live.size(), Set.of()) : context.health();
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("role", role);

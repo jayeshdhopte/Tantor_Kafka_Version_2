@@ -70,6 +70,7 @@ public class ConfigController {
             
             Map<String, Object> response = new java.util.HashMap<>();
             response.put("dynamicConfigs", dynamicConfigs);
+            response.put("propertyCatalog", io.translab.tantor.server.service.KafkaPropertyCatalog.catalog(dynamicConfigs));
             
             Map<String, Object> staticConfigs = new HashMap<>();
             Map<String, Object> deploymentConfig = new HashMap<>();
@@ -101,7 +102,9 @@ public class ConfigController {
 
         Map<String, Object> response = new HashMap<>();
         try {
-            response.put("dynamicConfigs", kafkaAdminService.getBrokerConfigs(clusterId));
+            var liveConfigs = kafkaAdminService.getBrokerConfigs(clusterId);
+            response.put("dynamicConfigs", liveConfigs);
+            response.put("propertyCatalog", io.translab.tantor.server.service.KafkaPropertyCatalog.catalog(liveConfigs));
         } catch (Exception e) {
             log.warn("Live broker configuration is unavailable for external cluster {}", clusterId, e);
             response.put("dynamicConfigs", new HashMap<>());

@@ -744,6 +744,7 @@ public class KafkaAdminService {
                     Map<String, Object> details = new HashMap<>();
                     details.put("value", entry.value());
                     details.put("isReadOnly", entry.isReadOnly());
+                    details.put("isSensitive", entry.isSensitive());
                     details.put("source", entry.source().name());
                     brokerConf.put(entry.name(), details);
                 });
@@ -759,6 +760,20 @@ public class KafkaAdminService {
 
     public void alterBrokerConfig(UUID clusterId, int brokerId, String key, String value) {
         alterBrokerConfigs(clusterId, brokerId, Map.of(key, value));
+    }
+
+    public void validateBrokerConfigs(UUID clusterId, int brokerId, Map<String, String> changes) {
+        try {
+            var resource = new org.apache.kafka.common.config.ConfigResource(org.apache.kafka.common.config.ConfigResource.Type.BROKER, String.valueOf(brokerId));
+            var operations = changes.entrySet().stream().map(entry -> new org.apache.kafka.clients.admin.AlterConfigOp(
+                    new org.apache.kafka.clients.admin.ConfigEntry(entry.getKey(), entry.getValue()), org.apache.kafka.clients.admin.AlterConfigOp.OpType.SET)).toList();
+            getAdminClient(clusterId).incrementalAlterConfigs(Map.of(resource, operations),
+                    new org.apache.kafka.clients.admin.AlterConfigsOptions().validateOnly(true).timeoutMs(15000)).all().get(20, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt(); throw new IllegalStateException("Configuration validation interrupted", e);
+        } catch (ExecutionException | java.util.concurrent.TimeoutException e) {
+            throw new IllegalArgumentException("Kafka configuration validation failed on broker " + brokerId + ": " + (e.getCause() == null ? e.getMessage() : e.getCause().getMessage()), e);
+        }
     }
 
     public void alterBrokerConfigs(UUID clusterId, int brokerId, Map<String, String> changes) {

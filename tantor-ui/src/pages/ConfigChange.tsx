@@ -2,10 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Check, Loader2, Plus, RefreshCw, Settings, ShieldCheck, Trash2 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
+import { ConfigPropertySelect } from '../components/ConfigPropertySelect';
 import './ConfigChange.css';
 
 interface Service { hostId: string; hostAddress: string; role: string; nodeId: number; serviceName?: string }
-interface ConfigPayload { serviceTopology?: Service[]; dynamicConfigs?: Record<string, Record<string, { value: string | null; isReadOnly: boolean; source?: string }>>; staticConfigs?: { configFiles?: Array<{ nodeId?: number; properties?: Record<string, unknown> }> } }
+interface ConfigPayload { propertyCatalog?: { controller: string[] }; serviceTopology?: Service[]; dynamicConfigs?: Record<string, Record<string, { value: string | null; isReadOnly: boolean; isSensitive?: boolean; source?: string }>>; staticConfigs?: { configFiles?: Array<{ nodeId?: number; properties?: Record<string, unknown> }> } }
 interface PreviewTarget { nodeId: number; oldValue: string | null; newValue: string }
 interface Preview { classification: string; key: string; targets: PreviewTarget[]; healthy: boolean; healthFailures: Record<string, string>; clusterLocked: boolean; properties?: Preview[] }
 const protectedKeys = new Set(['node.id', 'broker.id', 'process.roles', 'log.dirs', 'metadata.log.dir', 'listeners', 'advertised.listeners', 'controller.quorum.voters', 'controller.quorum.bootstrap.servers', 'inter.broker.listener.name', 'cluster.id', 'zookeeper.connect']);
@@ -66,10 +67,6 @@ export function ConfigChange() {
     && !service.role.toLowerCase().includes('broker_controller')), [services, targetIds]);
   const openStaticTargets = () => navigate(`/clusters/${id}/config?targets=${eligibleStaticTargets.map(service => service.nodeId).join(',')}`);
   const staticTargetIds = useMemo(() => eligibleStaticTargets.map(service => service.nodeId), [eligibleStaticTargets]);
-  const suggestedStaticKeys = Array.from(new Set((payload?.staticConfigs?.configFiles || [])
-    .filter(file => file.nodeId !== undefined && staticTargetIds.includes(file.nodeId))
-    .flatMap(file => Object.keys(file.properties || {}))
-    .filter(name => !protectedKeys.has(name) && !/(password|secret|token|jaas|credential|keystore|truststore)/i.test(name)))).sort();
   const allKeys = useMemo(() => {
     const brokerIds = scope === 'ALL' ? ids : selected;
     const configs = payload?.dynamicConfigs || {};
@@ -77,7 +74,7 @@ export function ConfigChange() {
     const first = configs[String(brokerIds[0])] || {};
     return Object.keys(first).filter(name => brokerIds.every(brokerId => {
       const entry = configs[String(brokerId)]?.[name];
-      return entry && !entry.isReadOnly && !protectedKeys.has(name) && !/(password|secret|token|jaas|credential|keystore|truststore)/i.test(name);
+      return entry && !entry.isReadOnly && !entry.isSensitive && !protectedKeys.has(name) && !/(password|secret|token|jaas|credential|keystore|truststore)/i.test(name);
     })).sort();
   }, [payload, role, scope, ids, selected]);
   const visibleKeys = allKeys.filter(name => !removedKeys.includes(name) && (addedKeys.includes(name)
@@ -109,12 +106,25 @@ export function ConfigChange() {
     })();
     return () => controller.abort();
   }, [id, payload, clusterMode, role, staticTargetIds]);
+  const supportedStaticKeys = useMemo(() => {
+    if (role === 'CONTROLLER') return payload?.propertyCatalog?.controller || [];
+    if (!staticTargetIds.length) return [];
+    const configs = payload?.dynamicConfigs || {};
+    return Object.keys(configs[String(staticTargetIds[0])] || {}).filter(name => !protectedKeys.has(name)
+      && !/(password|secret|token|jaas|credential|keystore|truststore)/i.test(name)
+      && staticTargetIds.every(nodeId => {
+        const entry = configs[String(nodeId)]?.[name];
+        return entry?.isReadOnly === true && !entry.isSensitive;
+      })).sort();
+  }, [role, payload, staticTargetIds]);
   const fileKeys = Array.from(new Set(Object.values(fileValues || {}).flatMap(properties => Object.keys(properties))))
     .filter(name => !protectedKeys.has(name) && !/(password|secret|token|jaas|credential|keystore|truststore)/i.test(name))
+    .filter(name => !Object.values(payload?.dynamicConfigs || {}).some(config => config[name]?.isSensitive))
     .filter(name => role !== 'BROKER' || staticTargetIds.every(nodeId =>
       payload?.dynamicConfigs?.[String(nodeId)]?.[name]?.isReadOnly === true)).sort();
-  const staticVisibleKeys = Array.from(new Set([...fileKeys, ...staticAddedKeys]))
+  const staticVisibleKeys = Array.from(new Set([...fileKeys, ...staticAddedKeys.filter(name => supportedStaticKeys.includes(name))]))
     .filter(name => !staticRemovedKeys.includes(name)).sort();
+  const staticAddableKeys = supportedStaticKeys.filter(name => !staticVisibleKeys.includes(name));
 
   const changeRequest = { role, scope, targetNodeIds: scope === 'ALL' ? ids : selected, changes: reviewedChanges };
   const requestPreview = async (keys = chosenKeys.filter(name => visibleKeys.includes(name))) => {
@@ -177,7 +187,7 @@ export function ConfigChange() {
     finally { setBusy(''); }
   };
   const toggle = (nodeId: number) => { setSelected(current => current.includes(nodeId) ? current.filter(id => id !== nodeId) : [...current, nodeId]); setPreview(null); setStaticPreview(null); };
-  const updateRole = (next: 'BROKER' | 'CONTROLLER') => { setRole(next); setSelected([]); setChosenKeys([]); setChosenStaticKeys([]); setPreview(null); setStaticPreview(null); setError(''); };
+  const updateRole = (next: 'BROKER' | 'CONTROLLER') => { setRole(next); setSelected([]); setChosenKeys([]); setChosenStaticKeys([]); setAddedKeys([]); setRemovedKeys([]); setDraftValues({}); setPropertyToAdd(''); setStaticAddedKeys([]); setStaticRemovedKeys([]); setStaticDraftValues({}); setStaticAddKey(''); setPreview(null); setStaticPreview(null); setError(''); };
   const staticControls = () => clusterMode === 'EXTERNAL'
     ? <button className="cc-primary" disabled={eligibleStaticTargets.length === 0} onClick={openStaticTargets}>Configure selected {role.toLowerCase()}s</button>
     : <>
@@ -201,7 +211,11 @@ export function ConfigChange() {
         </table></div>
         {staticSearch && !staticVisibleKeys.some(name => name.toLowerCase().includes(staticSearch.toLowerCase().trim())) && <p>No properties match your search.</p>}
         {staticVisibleKeys.length === 0 && <p className="cc-empty-properties">No restart-required properties were found in the selected active files. Add a property below.</p>}
-        {canManage && <div className="cc-add-property"><input list="cc-static-keys" aria-label="Property to add" value={staticAddKey} disabled={!!busy} onChange={event => setStaticAddKey(event.target.value)} placeholder="Kafka property name" /><datalist id="cc-static-keys">{suggestedStaticKeys.filter(name => !staticVisibleKeys.includes(name)).map(name => <option key={name} value={name} />)}</datalist><button type="button" disabled={!/^[A-Za-z][A-Za-z0-9._-]{0,127}$/.test(staticAddKey.trim()) || staticVisibleKeys.includes(staticAddKey.trim()) || protectedKeys.has(staticAddKey.trim()) || /(password|secret|token|jaas|credential|keystore|truststore)/i.test(staticAddKey) || !!busy} onClick={() => { const name = staticAddKey.trim(); setStaticAddedKeys(current => [...current, name]); setStaticRemovedKeys(current => current.filter(key => key !== name)); setStaticAddKey(''); }}><Plus size={16} /> Add property</button></div>}
+        {canManage && <div className="cc-add-property"><ConfigPropertySelect label="Static property to add" value={staticAddKey}
+          disabled={!!busy || !staticTargetIds.length} options={supportedStaticKeys.map(name => ({ value: name, disabled: staticVisibleKeys.includes(name) }))}
+          onChange={setStaticAddKey} /><button type="button" disabled={!staticAddableKeys.includes(staticAddKey) || !!busy}
+          onClick={() => { const name = staticAddKey; setStaticAddedKeys(current => [...current, name]); setStaticRemovedKeys(current => current.filter(key => key !== name)); setStaticAddKey(''); setStaticPreview(null); }}><Plus size={16} /> Add property</button></div>}
+        <p className="cc-empty-properties">Choose from supported {role.toLowerCase()} settings. Sensitive and protected properties are excluded.</p>
       </>}
       {staticPreview && <div className="cc-preview"><h4><ShieldCheck size={17} /> Change preview · {staticPreview.key} · {staticPreview.classification}</h4><p>Current values were read from each node's active file. Agents verify them again before writing.</p>{(staticPreview.properties || [staticPreview]).map(property => <div key={property.key}><strong>{property.key}</strong><div className="cc-preview-table"><div><strong>Node</strong><strong>Current value</strong><strong>New value</strong></div>{property.targets.map(target => <div key={target.nodeId}><span>{target.nodeId}</span><code>{target.oldValue ?? 'Unset'}</code><code>{target.newValue === '' ? '(Empty)' : target.newValue}</code></div>)}</div>{property.targets.length === 0 && <p>Already matches the requested value.</p>}</div>)}<p>Cluster health: <strong>{staticPreview.healthy ? 'Passed' : 'Failed'}</strong>{staticPreview.clusterLocked ? ' · Another cluster job is active' : ''}</p>{!staticPreview.healthy && <p className="cc-error">{Object.values(staticPreview.healthFailures).join('; ')}</p>}<button className="cc-primary" disabled={!canManage || !staticPreview.healthy || staticPreview.clusterLocked || !!busy} onClick={() => void applyStatic()}>{busy === 'static-apply' ? 'Queueing…' : `Start rolling change on ${staticPreview.targets.length} node${staticPreview.targets.length === 1 ? '' : 's'}`}</button></div>}
     </>;
@@ -228,7 +242,9 @@ export function ConfigChange() {
         </table></div>
         {search && !visibleKeys.some(name => name.toLowerCase().includes(search.toLowerCase().trim())) && <p>No properties match your search.</p>}
         {visibleKeys.length === 0 && <p className="cc-empty-properties">No configured properties to show. Use Add property to choose an editable Kafka property.</p>}
-        {canManage && <div className="cc-add-property"><select aria-label="Property to add" disabled={!!busy} value={propertyToAdd} onChange={event => setPropertyToAdd(event.target.value)}><option value="">Select a property to add</option>{addableKeys.map(name => <option key={name} value={name}>{name}</option>)}</select><button type="button" disabled={!addableKeys.includes(propertyToAdd) || !!busy} onClick={() => { setAddedKeys(current => [...current, propertyToAdd]); setRemovedKeys(current => current.filter(name => name !== propertyToAdd)); setPropertyToAdd(''); }}><Plus size={16} /> Add property</button></div>}
+        {canManage && <div className="cc-add-property"><ConfigPropertySelect label="Dynamic property to add" disabled={!!busy || !targetIds.length}
+          value={propertyToAdd} options={allKeys.map(name => ({ value: name, disabled: visibleKeys.includes(name) }))} onChange={setPropertyToAdd} />
+          <button type="button" disabled={!addableKeys.includes(propertyToAdd) || !!busy} onClick={() => { setAddedKeys(current => [...current, propertyToAdd]); setRemovedKeys(current => current.filter(name => name !== propertyToAdd)); setPropertyToAdd(''); setPreview(null); }}><Plus size={16} /> Add property</button></div>}
         {preview && <div className="cc-preview"><h4><ShieldCheck size={17} /> Change preview · {preview.key} · {preview.classification}</h4>{(preview.properties || [preview]).map(property => <div key={property.key}><strong>{property.key}</strong><div className="cc-preview-table"><div><strong>Broker</strong><strong>Current value</strong><strong>New value</strong></div>{property.targets.map(target => <div key={target.nodeId}><span>{target.nodeId}</span><code>{target.oldValue ?? 'Unset'}</code><code>{target.newValue === '' ? '(Empty)' : target.newValue}</code></div>)}</div>{property.targets.length === 0 && <p>Already matches the requested value.</p>}</div>)}<p>Cluster health: <strong>{preview.healthy ? 'Passed' : 'Failed'}</strong>{preview.clusterLocked ? ' · Another cluster job is active' : ''}</p>{!preview.healthy && <p className="cc-error">{Object.values(preview.healthFailures).join('; ')}</p>}<button className="cc-primary" disabled={!canManage || !preview.healthy || preview.clusterLocked || !!busy} onClick={() => void apply()}>{busy === 'apply' ? 'Queueing…' : 'Apply to selected brokers'}</button></div>}
       </section> : <section className="cc-card"><div className="cc-section-heading"><span>3</span><div><h3>Controller configuration</h3><p>Choose a property, review every selected node and start a controlled rolling change.</p></div></div>{staticControls()}</section>}
       {role === 'BROKER' && <section className="cc-card"><div className="cc-section-heading"><span>4</span><div><h3>Broker properties requiring restart</h3><p>File changes are backed up and applied one node at a time, with Kafka health verification after each restart.</p></div></div>{staticControls()}</section>}

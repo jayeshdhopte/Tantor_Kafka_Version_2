@@ -64,3 +64,20 @@
 .cc-config-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
 .cc-config-toolbar input { flex: 1; min-width: 220px; padding: 10px 12px; border: 1px solid var(--border-default); border-radius: 6px; }
 .cc-property-table input[type="checkbox"] { width: 18px; height: 18px; padding: 0; accent-color: var(--button-primary); }
+
+.cc-picker { width: min(100%, 440px); }
+.cc-add-property .cc-picker-trigger { width: 100%; justify-content: space-between; text-align: left; background: white; padding: 10px 12px; }
+.cc-picker-trigger span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc-picker-menu { background: white; border: 1px solid #dcd9e2; border-radius: 8px; box-shadow: 0 6px 20px #282f4926; padding: 8px; }
+.cc-picker-menu input { box-sizing: border-box; width: 100%; border: 1px solid #dcd9e2; border-radius: 6px; padding: 9px 10px; }
+.cc-picker-options { max-height: 240px; overflow-y: auto; margin-top: 6px; }
+.cc-picker-option { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; padding: 9px; border: 0; border-radius: 5px; background: white; color: #282f49; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+.cc-picker-option:hover:not(:disabled), .cc-picker-option:focus-visible { background: #f5ebfb; }
+.cc-picker-option:disabled { color: #85858d; cursor: not-allowed; }
+.cc-picker-option small { white-space: nowrap; font-size: 11px; }
+.cc-picker-empty { font-size: 13px; color: #747786; padding: 8px; }
+.cc-property-table th:nth-child(1) { width: 5%; }
+.cc-property-table th:nth-child(2) { width: 28%; }
+.cc-property-table th:nth-child(3) { width: 29%; }
+.cc-property-table th:nth-child(4) { width: 28%; }
+.cc-property-table th:nth-child(5) { width: 10%; }

@@ -55,9 +55,11 @@ class TargetedConfigChangeServiceTest {
         when(clusters.findWithServicesById(clusterId)).thenReturn(Optional.of(cluster));
         when(kafka.getBrokerConfigs(clusterId)).thenReturn(Map.of(
                 201, Map.of("num.network.threads", Map.of("value", "3", "isReadOnly", true),
-                        "log.retention.hours", Map.of("value", "168", "isReadOnly", false)),
+                        "log.retention.hours", Map.of("value", "168", "isReadOnly", false),
+                        "controller.quorum.fetch.timeout.ms", Map.of("value", "2000", "isReadOnly", true)),
                 202, Map.of("num.network.threads", Map.of("value", "3", "isReadOnly", true),
-                        "log.retention.hours", Map.of("value", "168", "isReadOnly", false))));
+                        "log.retention.hours", Map.of("value", "168", "isReadOnly", false),
+                        "controller.quorum.fetch.timeout.ms", Map.of("value", "2000", "isReadOnly", true))));
         when(health.inspect(eq(clusterId), eq(2), eq(Set.of()))).thenReturn(
                 new RollingRestartHealthService.HealthSnapshot(true, 2, 101, 0, 0, 0, 0, Map.of()));
         when(jobs.findByResourceKeyAndStatusIn(eq("cluster:" + clusterId), any())).thenReturn(List.of());
@@ -73,6 +75,7 @@ class TargetedConfigChangeServiceTest {
         var request = request("BROKER", "SPECIFIC", List.of(202), "log.retention.hours", "72");
         Map<String, Object> plan = service.preview(clusterId, request);
         assertThat(plan.get("classification")).isEqualTo("DYNAMIC_ALLOWED");
+        verify(kafka).validateBrokerConfigs(clusterId, 202, Map.of("log.retention.hours", "72"));
         assertThat((List<?>) plan.get("targets")).hasSize(1);
         assertThat(((Map<?, ?>) ((List<?>) plan.get("targets")).get(0)).get("nodeId")).isEqualTo(202);
     }
@@ -163,6 +166,18 @@ class TargetedConfigChangeServiceTest {
         var stored = new ObjectMapper().readTree(((io.translab.tantor.server.domain.JobStep) captor.getValue().get(0)).getPayload());
         assertThat(stored.get("changes").size()).isEqualTo(2); assertThat(stored.get("expectedValues").size()).isEqualTo(2);
         assertThat(stored.has("key")).isFalse();
+    }
+
+    @Test
+    void rejectedValuesNeverCreateAJobAndNoopBatchesDoNotValidateWrites() {
+        org.mockito.Mockito.doThrow(new IllegalArgumentException("Kafka rejected the value")).when(kafka)
+                .validateBrokerConfigs(clusterId, 202, Map.of("log.retention.hours", "abc"));
+        assertThatThrownBy(() -> service.apply(clusterId, request("BROKER", "SPECIFIC", List.of(202), "log.retention.hours", "abc")))
+                .hasMessageContaining("Kafka rejected");
+        org.mockito.Mockito.verifyNoInteractions(jobService);
+        var unchanged = request("BROKER", "SPECIFIC", List.of(202), null, null);
+        unchanged.setChanges(Map.of("log.retention.hours", "168"));
+        assertThatThrownBy(() -> service.preview(clusterId, unchanged)).hasMessageContaining("already");
     }
 
     private ClusterServiceAssignment controller(int nodeId) {
