@@ -337,7 +337,7 @@ func (d *Deployer) BackupDynamicConfig(ctx context.Context, task *api.Task) (str
 	if closeErr != nil {
 		return "", closeErr
 	}
-	dynamicPath := strings.TrimSuffix(backup, ".bak") + ".dynamic.json"
+	dynamicPath := backup + ".dynamic.json"
 	if _, detail, err := d.exec.RunSudo(ctx, "install", "-m", "0600", "--", tmp.Name(), dynamicPath); err != nil {
 		return "", fmt.Errorf("save dynamic checkpoint: %w (%s)", err, detail)
 	}

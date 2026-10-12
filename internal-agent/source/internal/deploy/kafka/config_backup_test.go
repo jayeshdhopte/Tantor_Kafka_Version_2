@@ -2,10 +2,12 @@ package kafka
 
 import (
 	"context"
+	"io.translab/tantor-agent/internal/configbackup"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"io.translab/tantor-agent/pkg/api"
 )
@@ -24,7 +26,7 @@ func (e *recordingExecutor) Run(_ context.Context, command string, args ...strin
 	return "", "", nil
 }
 
-func TestBackupConfigUsesVersionedImmutablePath(t *testing.T) {
+func TestBackupConfigUsesConfigFilenameAndTimestamp(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("production backup requires a root agent")
 	}
@@ -37,8 +39,15 @@ func TestBackupConfigUsesVersionedImmutablePath(t *testing.T) {
 		t.Fatalf("backupConfig returned error: %v", err)
 	}
 	normalizedBackupPath := filepath.ToSlash(backupPath)
-	if !strings.Contains(normalizedBackupPath, "/config-backup/broker.properties/v7-") || !strings.HasSuffix(normalizedBackupPath, ".bak") {
+	if !strings.Contains(normalizedBackupPath, "/config-backup/broker.properties/broker.properties.bak.") {
 		t.Fatalf("unexpected backup path %q", backupPath)
+	}
+	stamp := strings.TrimPrefix(filepath.Base(backupPath), "broker.properties.bak.")
+	if _, err := time.Parse(configbackup.Timestamp, stamp); err != nil {
+		t.Fatalf("invalid backup timestamp: %v", err)
+	}
+	if strings.Contains(filepath.Base(backupPath), "v7-") {
+		t.Fatal("job version leaked into backup filename")
 	}
 	if !strings.Contains(strings.Join(exec.commands, "\n"), "config-backup-index") {
 		t.Fatalf("seven-day retention was not registered: %v", exec.commands)

@@ -105,3 +105,52 @@ func TestRetentionIncludesLegacyHiddenBackups(t *testing.T) {
 		t.Fatal("legacy checkpoint did not expire")
 	}
 }
+
+func TestTimestampNamedBackupsAndSnapshotsExpireAlongsideLegacyFiles(t *testing.T) {
+	root := t.TempDir()
+	registry := filepath.Join(root, "index")
+	dir := filepath.Join(root, "config-backup", "broker.properties")
+	for _, path := range []string{registry, dir} {
+		if err := os.MkdirAll(path, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(registry, "broker.path"), []byte(dir), 0600); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	oldStamp := now.Add(-Retention - time.Second).Format(Timestamp)
+	expired := []string{"broker.properties.bak." + oldStamp, "broker.properties.bak." + oldStamp + ".dynamic.json", "vjob-uuid-" + oldStamp + ".bak"}
+	preserved := []string{"broker.properties.bak." + now.Add(-Retention).Format(Timestamp), "broker.properties.bak." + now.Format(Timestamp), "controller.properties.bak." + oldStamp, "operator-backup.bak"}
+	for _, name := range append(expired, preserved...) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("config"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := Sweep(registry, now); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range expired {
+		if _, err := os.Stat(filepath.Join(dir, name)); !os.IsNotExist(err) {
+			t.Fatalf("expired file remains: %s", name)
+		}
+	}
+	for _, name := range preserved {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			t.Fatalf("unmanaged/recent file removed: %s", name)
+		}
+	}
+}
+
+func TestFilenameUsesOriginalConfigNameAndUTCNanosecondTimestamp(t *testing.T) {
+	created := time.Date(2026, 10, 12, 18, 0, 45, 123456789, time.FixedZone("IST", 19800))
+	for _, name := range []string{"broker.properties", "controller.properties", "server.properties"} {
+		want := name + ".bak.20261012T123045.123456789Z"
+		if actual := Filename(filepath.Join("config", name), created); actual != want {
+			t.Fatalf("got %s want %s", actual, want)
+		}
+		if Filename(name, created) == Filename(name, created.Add(time.Nanosecond)) {
+			t.Fatal("successive timestamps collided")
+		}
+	}
+}

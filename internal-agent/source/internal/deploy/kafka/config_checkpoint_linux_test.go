@@ -84,7 +84,7 @@ func TestDynamicAndStaticCheckpointsContainPreviousStateAndExpire(t *testing.T) 
 	}
 	for _, f := range files {
 		data, _ := os.ReadFile(filepath.Join(dir, f.Name()))
-		if strings.HasSuffix(f.Name(), ".bak") && !strings.Contains(string(data), "=168") {
+		if !strings.HasSuffix(f.Name(), ".dynamic.json") && !strings.Contains(string(data), "=168") {
 			t.Fatal("previous file was not preserved")
 		}
 		if strings.HasSuffix(f.Name(), ".dynamic.json") && !strings.Contains(string(data), "DYNAMIC_BROKER_CONFIG") {

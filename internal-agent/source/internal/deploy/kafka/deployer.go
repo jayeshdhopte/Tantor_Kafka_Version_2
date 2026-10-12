@@ -11,7 +11,6 @@ import (
 	"os"
 	stdpath "path"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"text/template"
@@ -1790,13 +1789,8 @@ func (d *Deployer) backupConfig(ctx context.Context, t *api.Task, configPath str
 	if _, _, err := d.exec.RunSudo(ctx, "test", "-f", configPath); err != nil {
 		return "", fmt.Errorf("active configuration file does not exist at %s; no changes were applied", configPath)
 	}
-	version := strings.TrimSpace(t.Parameters["config_version"])
-	if version == "" {
-		version = "unversioned"
-	}
-	version = regexp.MustCompile(`[^A-Za-z0-9._-]`).ReplaceAllString(version, "_")
 	backupDir := filepath.Join(filepath.Dir(configPath), "config-backup", filepath.Base(configPath))
-	backupName := fmt.Sprintf("v%s-%s.bak", version, time.Now().UTC().Format("20060102T150405.000000000Z"))
+	backupName := configbackup.Filename(configPath, time.Now())
 	backupPath := filepath.Join(backupDir, backupName)
 	if out, errOut, err := d.exec.RunSudo(ctx, "mkdir", "-p", "-m", "0700", "--", backupDir); err != nil {
 		return "", fmt.Errorf("failed to create config backup directory: %w (%s %s)", err, out, errOut)

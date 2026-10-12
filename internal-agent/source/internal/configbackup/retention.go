@@ -18,7 +18,12 @@ const Registry = "/var/lib/tantor-agent/config-backup-index"
 const Retention = 7 * 24 * time.Hour
 const Timestamp = "20060102T150405.000000000Z"
 
-var backupName = regexp.MustCompile(`^v[A-Za-z0-9._-]+-([0-9]{8}T[0-9]{6}\.[0-9]{9}Z)\.(bak|dynamic\.json)$`)
+// Filename keeps the original config name and a UTC creation timestamp.
+func Filename(configPath string, created time.Time) string {
+	return filepath.Base(configPath) + ".bak." + created.UTC().Format(Timestamp)
+}
+
+var legacyBackupName = regexp.MustCompile(`^v[A-Za-z0-9._-]+-([0-9]{8}T[0-9]{6}\.[0-9]{9}Z)\.(bak|dynamic\.json)$`)
 
 // Registration persists across agent restarts. Only root can modify the index.
 func Register(ctx context.Context, exec executor.Executor, directory string) error {
@@ -74,11 +79,15 @@ func Sweep(registry string, now time.Time) error {
 			failures = append(failures, err.Error())
 			continue
 		}
+		backupName := regexp.MustCompile(`^` + regexp.QuoteMeta(filepath.Base(dir)) + `\.bak\.([0-9]{8}T[0-9]{6}\.[0-9]{9}Z)(?:\.dynamic\.json)?$`)
 		for _, file := range files {
 			if !file.Type().IsRegular() {
 				continue
 			}
 			match := backupName.FindStringSubmatch(file.Name())
+			if match == nil {
+				match = legacyBackupName.FindStringSubmatch(file.Name())
+			}
 			if match == nil {
 				continue
 			}

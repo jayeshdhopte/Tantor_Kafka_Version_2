@@ -53,3 +53,5 @@ This agent release requires deployment of the matching backend/UI to expose the
 new cluster menu. Upgrading agents alone does not update the UI.
 
 Configuration backups: visible config-backup/<config filename>/ next to the active config file. Seven-day retention remains enabled, including registered legacy .tantor-backups checkpoints.
+
+Backup filenames: broker.properties.bak.<UTC timestamp> (likewise controller.properties/server.properties). Dynamic snapshots add .dynamic.json to that same filename. Existing version/job-prefixed filenames remain eligible for seven-day cleanup.
