@@ -247,4 +247,11 @@ class TargetedConfigChangeJobHandlerTest {
     private Map<Integer, Map<String, Object>> config(String value) {
         return Map.of(1, Map.of("log.segment.bytes", Map.of("value", value)));
     }
+    @Test void legacyBlankStaticJobCannotWriteOnRetry() throws Exception {
+        step.setPayload(mapper.writeValueAsString(Map.of("operation", "STATIC", "nodeId", 1, "hostId", "host-1", "role", "broker",
+                "key", "broker.session.timeout.ms", "value", "", "expectedOldValue", "2000", "expectedBrokerCount", 1)));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> handler.execute(job)).hasMessageContaining("Blank configuration values");
+        verify(deployment, never()).patchKafkaConfig(any(), anyString(), anyString(), anyString(), anyString(), anyString(), any(), any(), anyBoolean(), anyString());
+        verify(jobs).failStep(eq(step.getId()), contains("Blank configuration values"));
+    }
 }

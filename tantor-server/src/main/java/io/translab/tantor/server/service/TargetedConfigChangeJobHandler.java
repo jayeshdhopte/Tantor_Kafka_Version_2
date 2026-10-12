@@ -221,6 +221,12 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
         }
         int expectedBrokers = ((Number) payload.get("expectedBrokerCount")).intValue();
         try {
+            for (var entry : change.entrySet()) {
+                if (entry.getValue() instanceof String value && value.isBlank())
+                    throw new IllegalArgumentException("Blank configuration values cannot be applied or retried. Create a property deletion request for " + entry.getKey() + ".");
+                if (entry.getValue() == null && !Boolean.TRUE.equals(payload.get("removal")))
+                    throw new IllegalArgumentException("Missing configuration value; use an explicit property deletion request.");
+            }
             if (step.getStatus() == JobStepStatus.IN_PROGRESS && step.getAgentTaskId() != null) {
                 Task completed = taskAwaiter.await(step.getAgentTaskId());
                 verifyStatic(clusterId, hostId, role, nodeId, change, expectedBrokers);
