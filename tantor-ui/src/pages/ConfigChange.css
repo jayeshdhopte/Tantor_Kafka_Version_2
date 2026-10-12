@@ -86,3 +86,45 @@
 .cc-delete-button:disabled { opacity: .5; cursor: not-allowed; }
 .cc-deletion-preview p { font-size: 13px; color: #747786; }
 .cc-deletion-preview > button { margin-right: 10px; }
+
+/* Shared visual treatment with the internal cluster Configuration view. */
+.cc-page.versioned-config-page { max-width: none; margin: 0; padding: 16px 0 24px; gap: 16px; color: #332849; }
+.cc-page .cc-page-header h2 { font-size: 16px; font-weight: 500; }
+.cc-page .cc-page-header p, .cc-page .cc-section-heading p { font-size: 13px; color: #818181; }
+.cc-page .cc-card { border-color: #D2D2D7; border-radius: 8px; padding: 16px; box-shadow: none; }
+.cc-page .cc-section-heading h3 { font-size: 16px; font-weight: 500; }
+.cc-page .cc-section-heading > span { width: 30px; height: 30px; border: 1px solid #5B126D; border-radius: 50%; background: white; color: #5B126D; }
+.cc-page .cc-role-grid button, .cc-page .cc-target-list label { border-color: #D2D2D7; font-weight: 500; }
+.cc-page .cc-role-grid button.active { border-color: #D8C8E8; background: #F1E9FC; color: #332849; }
+.cc-page .cc-table-wrap { border-color: #D2D2D7; border-radius: 0; }
+.cc-page .cc-property-table th { height: 44px; padding: 0 14px; background: #FAFAFA; color: #332849; font-size: 13px; font-weight: 500; text-transform: none; }
+.cc-page .cc-property-table td { height: 50px; padding: 5px 14px; border-color: #E4E4E7; }
+.cc-page .cc-property-table input:not([type="checkbox"]) { min-height: 35px; border-radius: 5px; }
+.cc-page .cc-property-table code { font-size: 13px; color: #332849; }
+.cc-page .cc-primary { background: #5B126D; border-color: #5B126D; font-weight: 500; border-radius: 5px; }
+.cc-history-heading, .cc-history-node-heading, .cc-history-meta, .cc-history-pagination { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.cc-history-heading { justify-content: space-between; }
+.cc-history-heading .cc-section-heading { margin-bottom: 0; }
+.cc-history-list { display: grid; gap: 12px; }
+.cc-history-version { border: 1px solid #D2D2D7; border-radius: 8px; overflow: hidden; }
+.cc-history-version summary { cursor: pointer; padding: 14px; background: #FAFAFA; font-size: 13px; }
+.cc-history-version summary > * { margin-right: 14px; }
+.cc-history-version summary strong { color: #5B126D; font-size: 16px; }
+.cc-history-status { display: inline-block; font-size: 11px; padding: 4px 8px; border-radius: 20px; background: #eee; color: #555; }
+.cc-history-status.success { background: #dff3e6; color: #276c42; }
+.cc-history-status.failed, .cc-history-status.cancelled { background: #fde2e2; color: #8f1d1d; }
+.cc-history-status.in_progress, .cc-history-status.pending { background: #fff0c7; color: #765b0b; }
+.cc-history-meta { padding: 12px 14px; font-size: 12px; color: #5F5670; }
+.cc-history-meta a { margin-left: auto; color: #5B126D; }
+.cc-history-node { padding: 14px; border-top: 1px solid #E4E4E7; }
+.cc-history-node-heading { font-size: 13px; margin-bottom: 10px; }
+.cc-history-node-heading > span:last-child, .cc-history-path { color: #818181; font-size: 12px; }
+.cc-history-path { overflow-wrap: anywhere; margin-bottom: 10px !important; }
+.cc-history-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.cc-history-table th { text-align: left; background: #FAFAFA; padding: 12px; font-weight: 500; }
+.cc-history-table td { padding: 12px; border-top: 1px solid #E4E4E7; vertical-align: top; }
+.cc-history-table code { overflow-wrap: anywhere; white-space: pre-wrap; }
+.cc-history-table small { display: block; color: #818181; margin-top: 5px; }
+.cc-history-table td:first-child { width: 35%; }
+.cc-history-pagination { justify-content: space-between; font-size: 13px; }
+@media (max-width: 720px) { .cc-page.versioned-config-page { padding: 12px 0; } .cc-history-table { min-width: 600px; } .cc-history-meta a { margin-left: 0; } }

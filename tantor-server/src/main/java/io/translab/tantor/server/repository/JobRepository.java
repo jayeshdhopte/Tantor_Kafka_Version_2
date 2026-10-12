@@ -13,6 +13,7 @@ import java.util.UUID;
 
 @Repository
 public interface JobRepository extends JpaRepository<Job, UUID> {
+    org.springframework.data.domain.Page<Job> findByResourceKeyAndType(String resourceKey, io.translab.tantor.server.domain.JobType type, org.springframework.data.domain.Pageable pageable);
     List<Job> findByStatus(JobStatus status);
     List<Job> findAllByOrderByCreatedAtDesc();
     List<Job> findByResourceKeyAndStatusIn(String resourceKey, List<JobStatus> statuses);

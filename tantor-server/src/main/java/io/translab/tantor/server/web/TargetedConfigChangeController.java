@@ -17,6 +17,16 @@ import java.util.UUID;
 public class TargetedConfigChangeController {
     private final TargetedConfigChangeService service;
     private final RoleAuthenticationUtil roles;
+    private final io.translab.tantor.server.service.ConfigChangeHistoryService history;
+
+    @GetMapping("/history")
+    public ResponseEntity<?> history(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                      @PathVariable UUID clusterId, @RequestParam(defaultValue = "0") int page) {
+        if (!roles.canAccess(authorization, RoleAuthenticationUtil.CONFIGURATION_READ))
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        try { return ResponseEntity.ok(history.history(clusterId, page)); }
+        catch (IllegalArgumentException e) { return ResponseEntity.badRequest().body(Map.of("message", e.getMessage())); }
+    }
 
     public record FileValuesRequest(String role, List<Integer> targetNodeIds) {}
 
@@ -58,7 +68,7 @@ public class TargetedConfigChangeController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
         try {
-            return ResponseEntity.ok(service.apply(clusterId, request));
+            return ResponseEntity.ok(service.apply(clusterId, request, roles.extractUsername(authorization)));
         } catch (IllegalArgumentException | IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of("message", e.getMessage()));
         }

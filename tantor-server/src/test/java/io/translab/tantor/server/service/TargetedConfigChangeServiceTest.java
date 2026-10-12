@@ -109,7 +109,7 @@ class TargetedConfigChangeServiceTest {
         var target = Map.<String,Object>of("nodeId",202,"oldValue","168");
         var plan = Map.<String,Object>of("classification","DYNAMIC_ALLOWED","targets",List.of(target),"key","log.retention.hours","role","BROKER","scope","SPECIFIC");
         org.springframework.test.util.ReflectionTestUtils.invokeMethod(service,"persistPlan",clusterId,
-                request("BROKER","SPECIFIC",List.of(202),"log.retention.hours","72"),plan);
+                request("BROKER","SPECIFIC",List.of(202),"log.retention.hours","72"),plan, (String) null);
         verify(jobService).createJob(any(), argThat(steps -> steps.size()==1
                 && steps.get(0).getPayload().contains("host-202")
                 && steps.get(0).getPayload().contains("/opt/kafka/config/broker.properties")));
@@ -159,7 +159,7 @@ class TargetedConfigChangeServiceTest {
         var target = Map.<String,Object>of("nodeId", 202, "changes", changes, "expectedValues", Map.of("log.retention.hours", "168", "log.segment.bytes", "100"));
         var plan = Map.<String,Object>of("classification", "ROLLING_RESTART_REQUIRED", "targets", List.of(target), "key", "2 properties", "role", "BROKER", "scope", "ALL");
         var request = request("BROKER", "ALL", List.of(), null, null); request.setChanges(changes);
-        org.springframework.test.util.ReflectionTestUtils.invokeMethod(service, "persistPlan", clusterId, request, plan);
+        org.springframework.test.util.ReflectionTestUtils.invokeMethod(service, "persistPlan", clusterId, request, plan, "tester");
         var captor = org.mockito.ArgumentCaptor.forClass(List.class);
         verify(jobService).createJob(any(), captor.capture());
         assertThat(captor.getValue()).hasSize(1);
@@ -221,5 +221,11 @@ class TargetedConfigChangeServiceTest {
         request.setKey(key);
         request.setValue(value);
         return request;
+    }
+    @Test void blankValueCannotBeUsedAsPropertyDeletion() {
+        var request = new TargetedConfigChangeService.ChangeRequest();
+        request.setRole("BROKER"); request.setScope("ALL"); request.setKey("broker.session.timeout.ms"); request.setValue("");
+        assertThatThrownBy(() -> service.preview(clusterId, request)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("Use property deletion");
+        verify(deployment, org.mockito.Mockito.never()).patchKafkaConfig(any(), anyString(), anyString(), anyString(), anyString(), anyString(), any(), any(), org.mockito.ArgumentMatchers.anyBoolean(), anyString());
     }
 }

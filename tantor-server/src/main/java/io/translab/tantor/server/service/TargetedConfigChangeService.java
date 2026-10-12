@@ -236,8 +236,8 @@ public class TargetedConfigChangeService {
             throw new IllegalArgumentException("This property cannot be changed from the cluster configuration flow.");
         }
         String value = request.getValue();
-        if (value == null || value.length() > 4096 || value.contains("\n") || value.contains("\r")) {
-            throw new IllegalArgumentException("Provide a single-line property value (up to 4096 characters).");
+        if (value == null || value.isBlank() || value.length() > 4096 || value.contains("\n") || value.contains("\r")) {
+            throw new IllegalArgumentException("Provide a non-empty single-line property value (up to 4096 characters). Use property deletion to remove a setting.");
         }
         Map<Integer, Map<String, Object>> live = context == null ? kafka.getBrokerConfigs(clusterId) : context.live();
         if (live.isEmpty()) throw new IllegalStateException("No live brokers are available.");
@@ -346,17 +346,21 @@ public class TargetedConfigChangeService {
     }
 
     public Map<String, Object> apply(UUID clusterId, ChangeRequest request) {
+        return apply(clusterId, request, null);
+    }
+
+    public Map<String, Object> apply(UUID clusterId, ChangeRequest request, String requestedBy) {
         Map<String, Object> plan = preview(clusterId, request);
         if (!Boolean.TRUE.equals(plan.get("healthy"))) {
             throw new IllegalStateException("Cluster health precheck failed: " + plan.get("healthFailures"));
         }
         Map<String, Object> result = new TransactionTemplate(transactions)
-                .execute(ignored -> persistPlan(clusterId, request, plan));
+                .execute(ignored -> persistPlan(clusterId, request, plan, requestedBy));
         if (result == null) throw new IllegalStateException("Configuration job was not created.");
         return result;
     }
 
-    private Map<String, Object> persistPlan(UUID clusterId, ChangeRequest request, Map<String, Object> plan) {
+    private Map<String, Object> persistPlan(UUID clusterId, ChangeRequest request, Map<String, Object> plan, String requestedBy) {
         // Serialize plan creation across management server instances.
         jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtext(?))", Object.class, "config-change:" + clusterId);
         if (!jobs.findByResourceKeyAndStatusIn("cluster:" + clusterId, ACTIVE_STATUSES).isEmpty()) {
@@ -420,6 +424,7 @@ public class TargetedConfigChangeService {
         }
         Job job = new Job();
         job.setType(JobType.TARGETED_CONFIG_CHANGE);
+        job.setRequestedBy(requestedBy);
         job.setStatus(JobStatus.PENDING);
         job.setResourceKey("cluster:" + clusterId);
         job.setRollbackSupported(false); // Explicit recovery after partial application.
