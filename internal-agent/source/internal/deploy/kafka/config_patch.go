@@ -242,6 +242,7 @@ func patchProperties(content string, changes, expected map[string]*string) (stri
 		current[key] = &value
 	}
 	changed := false
+	removed := make(map[int]bool)
 	for key, next := range changes {
 		prior := current[key]
 		want := expected[key]
@@ -254,7 +255,7 @@ func patchProperties(content string, changes, expected map[string]*string) (stri
 		changed = true
 		if index, exists := positions[key]; exists {
 			if next == nil {
-				lines[index] = "# removed by Tantor: " + lines[index]
+				removed[index] = true
 			} else {
 				lines[index] = key + "=" + *next
 			}
@@ -262,7 +263,17 @@ func patchProperties(content string, changes, expected map[string]*string) (stri
 			lines = append(lines, key+"="+*next)
 		}
 	}
-	return strings.Join(lines, "\n"), changed, nil
+	kept := make([]string, 0, len(lines))
+	for index, line := range lines {
+		if !removed[index] {
+			kept = append(kept, line)
+		}
+	}
+	output := strings.Join(kept, "\n")
+	if changed && !strings.HasSuffix(output, "\n") {
+		output += "\n"
+	}
+	return output, changed, nil
 }
 
 func samePatchValue(a, b *string) bool {

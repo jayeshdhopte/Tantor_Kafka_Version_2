@@ -169,3 +169,28 @@ func TestRetentionTracksBothVersionsAfterKafkaSymlinkUpgrade(t *testing.T) {
 		}
 	}
 }
+
+func TestPropertyRemovalCreatesBackupBeforeDeletingFromFile(t *testing.T) {
+	d, task, file, _ := checkpointFixture(t)
+	task.Parameters["config_changes_json"] = `{"log.retention.hours":null}`
+	task.Parameters["restart"] = "false"
+	logs, err := d.PatchConfig(context.Background(), task)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(file)
+	if strings.Contains(string(after), "log.retention.hours") {
+		t.Fatal("deleted property still exists in file")
+	}
+	if !strings.Contains(string(after), "# retain") {
+		t.Fatal("unrelated comment removed")
+	}
+	checkpoints, _ := filepath.Glob(filepath.Join(filepath.Dir(file), "config-backup", "broker.properties", "broker.properties.bak.*"))
+	if len(checkpoints) != 1 {
+		t.Fatal(checkpoints)
+	}
+	before, _ := os.ReadFile(checkpoints[0])
+	if !strings.Contains(string(before), "log.retention.hours=168") || !strings.Contains(logs, "7-day retention") {
+		t.Fatal("original property not backed up")
+	}
+}

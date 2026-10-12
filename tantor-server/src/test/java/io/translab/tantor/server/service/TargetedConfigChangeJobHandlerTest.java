@@ -219,6 +219,31 @@ class TargetedConfigChangeJobHandlerTest {
         verify(jobs).completeStep(eq(step.getId()), anyString());
     }
 
+    @Test void deletionBacksUpDynamicStateBeforeDeleteAndPatchesFileWithNull() throws Exception {
+        batchSetup("STATIC"); step.setJob(job);
+        var changes=new java.util.LinkedHashMap<String,Object>(); changes.put("log.retention.hours",null);
+        var prior=Map.<String,Object>of("value","72","source","DYNAMIC_BROKER_CONFIG");
+        var payload=mapper.readValue(step.getPayload(),new com.fasterxml.jackson.core.type.TypeReference<Map<String,Object>>(){});
+        payload.put("removal",true); payload.put("changes",changes); payload.put("expectedValues",Map.of("log.retention.hours","72"));
+        payload.put("dynamicRemovalExpected",Map.of("log.retention.hours",prior)); step.setPayload(mapper.writeValueAsString(payload));
+        UUID readId=UUID.randomUUID(),patchId=UUID.randomUUID(); Task file=new Task(); file.setLogOutput("{\"properties\":{\"log.retention.hours\":\"72\"}}");
+        when(deployment.readKafkaProperties(any(),anyString(),anyString(),anyString(),anyString(),anyString())).thenReturn(readId); Task emptyFile=new Task(); emptyFile.setLogOutput("{\"properties\":{}}"); when(awaiter.await(readId,90)).thenReturn(file,emptyFile,file);
+        var removed=new java.util.concurrent.atomic.AtomicBoolean();
+        when(kafka.getBrokerConfigs(clusterId)).thenAnswer(ignored->Map.of(1,Map.of("log.retention.hours",removed.get()?Map.of("value","168","source","DEFAULT_CONFIG"):prior)));
+        doAnswer(ignored->{removed.set(true);return null;}).when(kafka).removeBrokerConfigs(clusterId,1,Set.of("log.retention.hours"),false);
+        when(deployment.patchKafkaConfig(any(),anyString(),anyString(),anyString(),anyString(),anyString(),anyMap(),anyMap(),eq(true),anyString())).thenReturn(patchId);
+        Task patched=new Task();patched.setLogOutput("file entry removed and default loaded");when(awaiter.await(patchId)).thenReturn(patched);
+        handler.execute(job);
+        var order=inOrder(deployment,awaiter,kafka);
+        order.verify(deployment).backupKafkaConfig(any(),anyString(),anyString(),anyString(),anyString(),anyString(),eq("batch"),anyMap(),anyString());
+        order.verify(awaiter).await(backupId); order.verify(kafka).removeBrokerConfigs(clusterId,1,Set.of("log.retention.hours"),false);
+        order.verify(deployment).patchKafkaConfig(any(),anyString(),anyString(),anyString(),anyString(),anyString(),eq(changes),eq(Map.of("log.retention.hours","72")),eq(true),anyString());
+        verify(jobs).completeStep(eq(step.getId()),anyString());
+        removed.set(false); doThrow(new IllegalStateException("Backup failed")).when(awaiter).await(backupId);
+        assertThatThrownBy(()->handler.execute(job)).hasMessageContaining("Backup failed");
+        verify(kafka,times(1)).removeBrokerConfigs(clusterId,1,Set.of("log.retention.hours"),false);
+    }
+
     private Map<Integer, Map<String, Object>> config(String value) {
         return Map.of(1, Map.of("log.segment.bytes", Map.of("value", value)));
     }

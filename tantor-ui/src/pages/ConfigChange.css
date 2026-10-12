@@ -81,3 +81,8 @@
 .cc-property-table th:nth-child(3) { width: 29%; }
 .cc-property-table th:nth-child(4) { width: 28%; }
 .cc-property-table th:nth-child(5) { width: 10%; }
+
+.cc-delete-button { padding: 10px 14px; border: 1px solid #b83b4d; border-radius: 8px; color: #a52c48; background: #fff5f6; cursor: pointer; }
+.cc-delete-button:disabled { opacity: .5; cursor: not-allowed; }
+.cc-deletion-preview p { font-size: 13px; color: #747786; }
+.cc-deletion-preview > button { margin-right: 10px; }

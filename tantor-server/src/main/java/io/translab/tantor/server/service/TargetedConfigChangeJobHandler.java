@@ -224,6 +224,7 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
             if (step.getStatus() == JobStepStatus.IN_PROGRESS && step.getAgentTaskId() != null) {
                 Task completed = taskAwaiter.await(step.getAgentTaskId());
                 verifyStatic(clusterId, hostId, role, nodeId, change, expectedBrokers);
+                if (Boolean.TRUE.equals(payload.get("removal"))) verifyRemovedFile(clusterId, payload, change);
                 jobs.completeStep(step.getId(), completed.getLogOutput());
                 return;
             }
@@ -231,17 +232,61 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
             checkHealth(clusterId, expectedBrokers, hostId);
             if ("controller".equalsIgnoreCase(role)) checkQuorum(clusterId, nodeId);
             else health.assertBrokerCanStop(clusterId, nodeId);
+            if (Boolean.TRUE.equals(payload.get("removal"))) prepareRemoval(clusterId, step, payload, change, expected);
             UUID taskId = deployment.patchKafkaConfig(clusterId, hostId, role, String.valueOf(nodeId),
                     String.valueOf(payload.get("configJson")), String.valueOf(payload.get("configPath")),
                     change, expected, true, "targeted-" + step.getId());
             jobs.attachAgentTask(step.getId(), taskId);
             Task completed = taskAwaiter.await(taskId);
             verifyStatic(clusterId, hostId, role, nodeId, change, expectedBrokers);
+                if (Boolean.TRUE.equals(payload.get("removal"))) verifyRemovedFile(clusterId, payload, change);
             jobs.completeStep(step.getId(), completed.getLogOutput());
         } catch (Exception e) {
             jobs.failStep(step.getId(), e.getMessage());
             throw e;
         }
+    }
+
+    private void prepareRemoval(UUID clusterId, JobStep step, Map<String, Object> payload,
+                                Map<String, Object> changes, Map<String, Object> expected) {
+        String host = String.valueOf(payload.get("hostId")), role = String.valueOf(payload.get("role"));
+        int id = ((Number) payload.get("nodeId")).intValue();
+        Task fileTask = taskAwaiter.await(deployment.readKafkaProperties(clusterId, host, role, String.valueOf(id),
+                String.valueOf(payload.get("configJson")), String.valueOf(payload.get("configPath"))), 90);
+        Object rawFile = read(fileTask.getLogOutput()).get("properties");
+        if (!(rawFile instanceof Map<?, ?> file)) throw new IllegalStateException("Agent did not return active configuration values.");
+        for (String key : changes.keySet()) {
+            Object actual = file.get(key);
+            if (actual != null && !java.util.Objects.equals(actual, expected.get(key))) throw new IllegalStateException("Property " + key + " changed since deletion preview; refresh the plan.");
+        }
+        if (!(payload.get("dynamicRemovalExpected") instanceof Map<?, ?> prior) || prior.isEmpty()) return;
+        Map<String, Object> observed = batchEntries(clusterId, id, prior.keySet().stream().map(String::valueOf).collect(java.util.stream.Collectors.toSet()));
+        Map<String, String> pending = new java.util.LinkedHashMap<>();
+        for (String key : observed.keySet()) {
+            Map<?, ?> entry = (Map<?, ?>) observed.get(key);
+            if (!"DYNAMIC_BROKER_CONFIG".equals(entry.get("source"))) continue;
+            if (!java.util.Objects.equals(prior.get(key), entry)) throw new IllegalStateException("Dynamic override " + key + " changed since deletion preview.");
+            pending.put(key, null);
+        }
+        if (pending.isEmpty()) return;
+        for (var snapshot : dynamicSnapshots(clusterId, id, observed, pending)) {
+            UUID backup = deployment.backupKafkaConfig(clusterId, host, role, String.valueOf(id), String.valueOf(payload.get("configJson")),
+                    String.valueOf(payload.get("configPath")), "batch", snapshot, "delete-" + step.getId());
+            Task saved = taskAwaiter.await(backup);
+            jobs.appendLog(step.getJob().getId(), "Deletion checkpoint on " + host + ": " + saved.getLogOutput());
+        }
+        if (Thread.currentThread().isInterrupted()) throw new IllegalStateException("Interrupted before configuration deletion");
+        if (!observed.equals(batchEntries(clusterId, id, observed.keySet()))) throw new IllegalStateException("Dynamic override changed while backing up; refresh the plan.");
+        kafka.removeBrokerConfigs(clusterId, id, pending.keySet(), false);
+    }
+
+    private void verifyRemovedFile(UUID clusterId, Map<String, Object> payload, Map<String, Object> changes) {
+        UUID readTask = deployment.readKafkaProperties(clusterId, String.valueOf(payload.get("hostId")), String.valueOf(payload.get("role")),
+                String.valueOf(payload.get("nodeId")), String.valueOf(payload.get("configJson")), String.valueOf(payload.get("configPath")));
+        Object raw = read(taskAwaiter.await(readTask, 90).getLogOutput()).get("properties");
+        if (!(raw instanceof Map<?, ?> file)) throw new IllegalStateException("Unable to verify deleted file properties.");
+        for (var entry : changes.entrySet()) if (entry.getValue() == null && file.containsKey(entry.getKey()))
+            throw new IllegalStateException("Deleted property still exists in the active file: " + entry.getKey());
     }
 
     private void verifyStatic(UUID clusterId, String hostId, String role, int nodeId, Map<String, Object> changes, int expectedBrokers) {
@@ -255,7 +300,10 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
                     Map<String, Object> live = batchEntries(clusterId, nodeId, changes.keySet());
                     for (var entry : changes.entrySet()) {
                         Object actual = ((Map<?, ?>) live.get(entry.getKey())).get("value");
-                        if (!java.util.Objects.equals(entry.getValue(), actual)) throw new IllegalStateException("Kafka reports " + entry.getKey() + "=" + actual + " after restart");
+                        Map<?, ?> details = (Map<?, ?>) live.get(entry.getKey());
+                        if (entry.getValue() == null) {
+                            if ("DYNAMIC_BROKER_CONFIG".equals(details.get("source"))) throw new IllegalStateException("Broker override still exists for " + entry.getKey());
+                        } else if (!java.util.Objects.equals(entry.getValue(), actual)) throw new IllegalStateException("Kafka reports " + entry.getKey() + "=" + actual + " after restart");
                     }
                 }
                 return;

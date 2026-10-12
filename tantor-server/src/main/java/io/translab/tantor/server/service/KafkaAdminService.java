@@ -762,6 +762,20 @@ public class KafkaAdminService {
         alterBrokerConfigs(clusterId, brokerId, Map.of(key, value));
     }
 
+    public void removeBrokerConfigs(UUID clusterId, int brokerId, Set<String> keys, boolean validateOnly) {
+        try {
+            var resource = new org.apache.kafka.common.config.ConfigResource(org.apache.kafka.common.config.ConfigResource.Type.BROKER, String.valueOf(brokerId));
+            var operations = keys.stream().map(key -> new org.apache.kafka.clients.admin.AlterConfigOp(
+                    new org.apache.kafka.clients.admin.ConfigEntry(key, null), org.apache.kafka.clients.admin.AlterConfigOp.OpType.DELETE)).toList();
+            getAdminClient(clusterId).incrementalAlterConfigs(Map.of(resource, operations),
+                    new org.apache.kafka.clients.admin.AlterConfigsOptions().validateOnly(validateOnly).timeoutMs(15000)).all().get(20, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt(); throw new IllegalStateException("Configuration removal interrupted", e);
+        } catch (ExecutionException | java.util.concurrent.TimeoutException e) {
+            throw new IllegalStateException("Kafka configuration removal failed on broker " + brokerId + ": " + (e.getCause() == null ? e.getMessage() : e.getCause().getMessage()), e);
+        }
+    }
+
     public void validateBrokerConfigs(UUID clusterId, int brokerId, Map<String, String> changes) {
         try {
             var resource = new org.apache.kafka.common.config.ConfigResource(org.apache.kafka.common.config.ConfigResource.Type.BROKER, String.valueOf(brokerId));

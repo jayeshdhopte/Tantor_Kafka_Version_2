@@ -47,6 +47,8 @@ public class TargetedConfigChangeService {
         private String key;
         private String value;
         private Map<String, String> changes;
+        private String operation;
+        private List<String> keys;
     }
 
     public Map<Integer, Map<String, String>> readStaticProperties(UUID clusterId, String role,
@@ -86,6 +88,8 @@ public class TargetedConfigChangeService {
     }
 
     public Map<String, Object> preview(UUID clusterId, ChangeRequest request) {
+        if (request != null && "REMOVE".equals(request.getOperation())) return previewRemoval(clusterId, request);
+        if (request != null && request.getOperation() != null) throw new IllegalArgumentException("Unknown configuration operation.");
         if (request == null || request.getChanges() == null) return previewSingle(clusterId, request, false, null);
         if (request.getKey() != null || request.getValue() != null) throw new IllegalArgumentException("Use either changes or a single key/value.");
         if (request.getChanges().isEmpty() || request.getChanges().size() > 100) throw new IllegalArgumentException("Select between 1 and 100 properties.");
@@ -140,6 +144,77 @@ public class TargetedConfigChangeService {
         }
         result.put("key", request.getChanges().size() + " properties"); result.put("properties", properties); result.put("targets", targets);
         return result;
+    }
+
+    private Map<String, Object> previewRemoval(UUID clusterId, ChangeRequest request) {
+        if (request.getChanges() != null || request.getKey() != null || request.getValue() != null)
+            throw new IllegalArgumentException("Review removals separately from value updates.");
+        String role = Objects.toString(request.getRole(), "").toUpperCase(Locale.ROOT);
+        if (!Set.of("BROKER", "CONTROLLER").contains(role)) throw new IllegalArgumentException("Select brokers or controllers.");
+        if (request.getKeys() == null || request.getKeys().isEmpty() || request.getKeys().size() > 100)
+            throw new IllegalArgumentException("Select between 1 and 100 properties to remove.");
+        Set<String> keys = new LinkedHashSet<>();
+        for (String raw : request.getKeys()) {
+            String key = raw == null ? "" : raw.trim();
+            if (!KafkaPropertyCatalog.editableName(key) || !keys.add(key)) throw new IllegalArgumentException("Protected, sensitive, invalid or duplicate property cannot be removed: " + key);
+        }
+        Cluster cluster = clusters.findWithServicesById(clusterId).orElseThrow(() -> new IllegalArgumentException("Property removal requires managed node agents."));
+        Map<Integer, Map<String, Object>> live = kafka.getBrokerConfigs(clusterId);
+        if (live.isEmpty()) throw new IllegalStateException("No live brokers are available.");
+        List<Integer> eligible = cluster.getServices().stream().filter(service -> role.equalsIgnoreCase(service.getRole()))
+                .map(ClusterServiceAssignment::getNodeId).filter(Objects::nonNull).distinct().sorted().toList();
+        if (eligible.size() < ("BROKER".equals(role) ? 2 : 3)) throw new IllegalStateException("Removal with rolling restart requires dedicated brokers or a three-controller quorum.");
+        List<Integer> ids;
+        if ("ALL".equalsIgnoreCase(request.getScope())) ids = new ArrayList<>(eligible);
+        else if ("SPECIFIC".equalsIgnoreCase(request.getScope()) && request.getTargetNodeIds() != null)
+            ids = new ArrayList<>(new LinkedHashSet<>(request.getTargetNodeIds()));
+        else throw new IllegalArgumentException("Select all nodes or specific nodes.");
+        if (ids.isEmpty() || !eligible.containsAll(ids)) throw new IllegalArgumentException("Select known dedicated nodes in this cluster.");
+        if ("CONTROLLER".equals(role)) {
+            for (String key : keys) KafkaPropertyCatalog.requireRecognizedControllerSetting(key, live);
+            Integer leader = kafka.getControllerId(clusterId);
+            if (leader == null || !eligible.contains(leader)) throw new IllegalStateException("Active controller could not be determined.");
+            ids.sort(Comparator.comparingInt(id -> id.equals(leader) ? 1 : 0));
+        } else for (Integer id : ids) for (String key : keys) {
+            if (!(live.getOrDefault(id, Map.of()).get(key) instanceof Map<?, ?> details)
+                    || Boolean.TRUE.equals(details.get("isSensitive"))) throw new IllegalArgumentException("Kafka does not report a removable non-sensitive property " + key + " on broker " + id);
+        }
+        for (Integer id : ids) deployment.requireConfigDeletionAgent(findService(cluster, role, id).getHostId());
+        Map<Integer, Map<String, String>> files = readStaticProperties(clusterId, role, ids);
+        Map<String, List<Map<String, Object>>> propertyTargets = new LinkedHashMap<>();
+        keys.forEach(key -> propertyTargets.put(key, new ArrayList<>()));
+        List<Map<String, Object>> targets = new ArrayList<>();
+        var snapshot = health.inspect(clusterId, live.size(), Set.of());
+        Map<String, String> failures = new LinkedHashMap<>(snapshot.failures());
+        for (Integer id : ids) {
+            Map<String, Object> changes = new LinkedHashMap<>(), expected = new LinkedHashMap<>(), dynamic = new LinkedHashMap<>();
+            for (String key : keys) {
+                String old = files.get(id).get(key);
+                Object raw = "BROKER".equals(role) ? live.get(id).get(key) : null;
+                boolean override = raw instanceof Map<?, ?> entry && "DYNAMIC_BROKER_CONFIG".equals(entry.get("source"));
+                if (old == null && !override) continue;
+                changes.put(key, null); expected.put(key, old);
+                if (override) dynamic.put(key, raw);
+                Map<String, Object> row = new LinkedHashMap<>(); row.put("nodeId", id); row.put("oldValue", old); row.put("newValue", null);
+                row.put("removesDynamicOverride", override); row.put("effectiveValue", raw instanceof Map<?, ?> entry ? entry.get("value") : null);
+                propertyTargets.get(key).add(row);
+            }
+            if (changes.isEmpty()) continue;
+            if (!dynamic.isEmpty()) kafka.removeBrokerConfigs(clusterId, id, dynamic.keySet(), true);
+            if ("BROKER".equals(role)) {
+                try { health.assertBrokerCanStop(clusterId, id); }
+                catch (IllegalStateException e) { failures.put("restart-" + id, e.getMessage()); }
+            }
+            Map<String, Object> node = new LinkedHashMap<>(); node.put("nodeId", id); node.put("changes", changes);
+            node.put("expectedValues", expected); node.put("dynamicRemovalExpected", dynamic); targets.add(node);
+        }
+        if (targets.isEmpty()) throw new IllegalArgumentException("The selected properties already have no file entry or broker-level override to remove.");
+        var properties = propertyTargets.entrySet().stream().map(entry -> Map.<String, Object>of("key", entry.getKey(), "targets", entry.getValue())).toList();
+        Map<String, Object> plan = new LinkedHashMap<>(); plan.put("operation", "REMOVE"); plan.put("role", role); plan.put("scope", request.getScope().toUpperCase(Locale.ROOT));
+        plan.put("classification", "ROLLING_RESTART_REQUIRED"); plan.put("key", keys.size() + " properties"); plan.put("properties", properties); plan.put("targets", targets);
+        plan.put("healthy", failures.isEmpty()); plan.put("healthFailures", failures);
+        plan.put("clusterLocked", !jobs.findByResourceKeyAndStatusIn("cluster:" + clusterId, ACTIVE_STATUSES).isEmpty());
+        return plan;
     }
 
     private record PreviewContext(Cluster internal, Map<Integer, Map<String, Object>> live,
@@ -298,7 +373,7 @@ public class TargetedConfigChangeService {
             JobStep step = new JobStep();
             step.setStepOrder(order++);
             step.setTargetId(String.valueOf(target.get("nodeId")));
-            step.setName((staticChange ? "Back up, patch and restart " : "Apply ") + plan.get("key")
+            step.setName(("REMOVE".equals(plan.get("operation")) ? "Back up, remove and restart " : staticChange ? "Back up, patch and restart " : "Apply ") + plan.get("key")
                     + " on " + String.valueOf(plan.get("role")).toLowerCase(Locale.ROOT) + " " + target.get("nodeId"));
             if (staticChange) {
                 int nodeId = ((Number) target.get("nodeId")).intValue();
@@ -336,6 +411,9 @@ public class TargetedConfigChangeService {
                 Map<String, Object> grouped = readMap(step.getPayload());
                 grouped.remove("key"); grouped.remove("value"); grouped.remove("expectedOldValue");
                 grouped.put("changes", target.get("changes")); grouped.put("expectedValues", target.get("expectedValues"));
+                if ("REMOVE".equals(plan.get("operation"))) {
+                    grouped.put("removal", true); grouped.put("dynamicRemovalExpected", target.get("dynamicRemovalExpected"));
+                }
                 step.setPayload(json(grouped));
             }
             steps.add(step);

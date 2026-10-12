@@ -472,6 +472,12 @@ public class DeploymentService {
         return task.getId();
     }
 
+    public void requireConfigDeletionAgent(String hostId) {
+        var host = hostRepository.findById(hostId).orElseThrow(() -> new IllegalArgumentException("Managed host is required for configuration removal."));
+        var version = java.util.regex.Pattern.compile("-configchange\\.([0-9]{1,6})(?:$|[.-])").matcher(java.util.Objects.toString(host.getAgentVersion(), ""));
+        if (!version.find() || Integer.parseInt(version.group(1)) < 7) throw new IllegalStateException("Update host " + hostId + " to internal agent configchange.7 or newer before deleting configuration properties.");
+    }
+
     private void requireConfigBackupAgent(String hostId) {
         var host = hostRepository.findById(hostId).orElseThrow(() -> new IllegalArgumentException("Managed host is required for configuration backups."));
         var version = java.util.regex.Pattern.compile("-configchange\\.([0-9]{1,6})(?:$|[.-])").matcher(java.util.Objects.toString(host.getAgentVersion(), ""));

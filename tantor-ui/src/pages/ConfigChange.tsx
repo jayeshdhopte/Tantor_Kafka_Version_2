@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Check, Loader2, Plus, RefreshCw, Settings, ShieldCheck, Trash2 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
@@ -7,7 +7,7 @@ import './ConfigChange.css';
 
 interface Service { hostId: string; hostAddress: string; role: string; nodeId: number; serviceName?: string }
 interface ConfigPayload { propertyCatalog?: { controller: string[] }; serviceTopology?: Service[]; dynamicConfigs?: Record<string, Record<string, { value: string | null; isReadOnly: boolean; isSensitive?: boolean; source?: string }>>; staticConfigs?: { configFiles?: Array<{ nodeId?: number; properties?: Record<string, unknown> }> } }
-interface PreviewTarget { nodeId: number; oldValue: string | null; newValue: string }
+interface PreviewTarget { nodeId: number; oldValue: string | null; newValue: string | null; removesDynamicOverride?: boolean; effectiveValue?: string | null }
 interface Preview { classification: string; key: string; targets: PreviewTarget[]; healthy: boolean; healthFailures: Record<string, string>; clusterLocked: boolean; properties?: Preview[] }
 const protectedKeys = new Set(['node.id', 'broker.id', 'process.roles', 'log.dirs', 'metadata.log.dir', 'listeners', 'advertised.listeners', 'controller.quorum.voters', 'controller.quorum.bootstrap.servers', 'inter.broker.listener.name', 'cluster.id', 'zookeeper.connect']);
 
@@ -42,10 +42,14 @@ export function ConfigChange() {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  const [deletionPreview, setDeletionPreview] = useState<Preview | null>(null);
+  const [deletionRequest, setDeletionRequest] = useState<object | null>(null);
+  const deletionPanel = useRef<HTMLElement | null>(null);
+  useEffect(() => { if (deletionPreview) deletionPanel.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, [deletionPreview]);
 
   const refresh = useCallback(async () => {
     if (!id) return;
-    setBusy('load'); setError(''); setPreview(null);
+    setBusy('load'); setError(''); setDeletionPreview(null); setPreview(null);
     try {
       const [configResponse, clusterResponse] = await Promise.all([
         fetch(`/api/v1/clusters/${id}/config`), fetch(`/api/v1/ui/clusters/${id}`),
@@ -186,8 +190,35 @@ export function ConfigChange() {
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unable to queue rolling configuration change.'); }
     finally { setBusy(''); }
   };
-  const toggle = (nodeId: number) => { setSelected(current => current.includes(nodeId) ? current.filter(id => id !== nodeId) : [...current, nodeId]); setPreview(null); setStaticPreview(null); };
-  const updateRole = (next: 'BROKER' | 'CONTROLLER') => { setRole(next); setSelected([]); setChosenKeys([]); setChosenStaticKeys([]); setAddedKeys([]); setRemovedKeys([]); setDraftValues({}); setPropertyToAdd(''); setStaticAddedKeys([]); setStaticRemovedKeys([]); setStaticDraftValues({}); setStaticAddKey(''); setPreview(null); setStaticPreview(null); setError(''); };
+  const reviewDeletion = async (keys: string[], isStatic: boolean) => {
+    if (!id || !canManage) return;
+    setBusy('delete-preview'); setError(''); setDeletionPreview(null); setPreview(null); setStaticPreview(null);
+    const request = { operation: 'REMOVE', role, scope: 'SPECIFIC', targetNodeIds: isStatic ? staticTargetIds : targetIds, keys };
+    try {
+      const response = await fetch(`/api/v1/clusters/${id}/config/change/preview`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || 'Unable to review property deletion.');
+      setDeletionRequest(request); setDeletionPreview(result as Preview);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unable to review property deletion.'); }
+    finally { setBusy(''); }
+  };
+  const applyDeletion = async () => {
+    if (!id || !canManage || !deletionPreview || !deletionRequest) return;
+    setBusy('delete-apply'); setError('');
+    try {
+      const response = await fetch(`/api/v1/clusters/${id}/config/change/apply`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(deletionRequest),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || 'Unable to queue property deletion.');
+      navigate(`/jobs/${result.jobId}`);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unable to queue property deletion.'); }
+    finally { setBusy(''); }
+  };
+  const toggle = (nodeId: number) => { setSelected(current => current.includes(nodeId) ? current.filter(id => id !== nodeId) : [...current, nodeId]); setPreview(null); setStaticPreview(null); setDeletionPreview(null); };
+  const updateRole = (next: 'BROKER' | 'CONTROLLER') => { setRole(next); setSelected([]); setChosenKeys([]); setChosenStaticKeys([]); setAddedKeys([]); setRemovedKeys([]); setDraftValues({}); setPropertyToAdd(''); setStaticAddedKeys([]); setStaticRemovedKeys([]); setStaticDraftValues({}); setStaticAddKey(''); setPreview(null); setStaticPreview(null); setDeletionPreview(null); setError(''); };
   const staticControls = () => clusterMode === 'EXTERNAL'
     ? <button className="cc-primary" disabled={eligibleStaticTargets.length === 0} onClick={openStaticTargets}>Configure selected {role.toLowerCase()}s</button>
     : <>
@@ -195,7 +226,7 @@ export function ConfigChange() {
       {staticLoading && <p className="cc-loading"><Loader2 className="spin" size={16} /> Reading active {role.toLowerCase()} properties from selected nodes…</p>}
       {staticReadError && <p className="cc-error">{staticReadError} <button type="button" onClick={() => void refresh()}>Retry</button></p>}
       {fileValues && <>
-        <div className="cc-config-toolbar"><input type="search" aria-label="Search restart-required properties" placeholder="Search configuration properties…" value={staticSearch} onChange={event => setStaticSearch(event.target.value)} /><span>{chosenStaticKeys.filter(name => staticVisibleKeys.includes(name)).length} selected</span><button className="cc-primary" disabled={!canManage || !!busy || staticTargetIds.length === 0 || !chosenStaticKeys.some(name => staticVisibleKeys.includes(name))} onClick={() => void reviewStatic()}>Review selected changes</button></div>
+        <div className="cc-config-toolbar"><input type="search" aria-label="Search restart-required properties" placeholder="Search configuration properties…" value={staticSearch} onChange={event => setStaticSearch(event.target.value)} /><span>{chosenStaticKeys.filter(name => staticVisibleKeys.includes(name)).length} selected</span><button className="cc-primary" disabled={!canManage || !!busy || staticTargetIds.length === 0 || !chosenStaticKeys.some(name => staticVisibleKeys.includes(name))} onClick={() => void reviewStatic()}>Review selected changes</button><button className="cc-delete-button" disabled={!canManage || !!busy || !chosenStaticKeys.some(name => staticVisibleKeys.includes(name))} onClick={() => void reviewDeletion(chosenStaticKeys.filter(name => staticVisibleKeys.includes(name)), true)}>Review deletion</button></div>
         <div className="cc-table-wrap"><table className="cc-property-table">
           <thead><tr><th>Select</th><th>Property</th><th>Current value in file</th><th>New value</th><th>Actions</th></tr></thead>
           <tbody>{staticVisibleKeys.filter(name => name.toLowerCase().includes(staticSearch.toLowerCase().trim())).map(name => <tr key={name} className={staticPreview?.properties?.some(property => property.key === name) ? 'cc-reviewed-row' : ''}>
@@ -206,7 +237,11 @@ export function ConfigChange() {
               return <div key={nodeId}><span>Node {nodeId}</span><code>{current === undefined ? 'Unset' : current === '' ? '(Empty)' : current}</code></div>;
             })}</div></td>
             <td><input aria-label={`New value for ${name}`} value={staticDraftValues[name] ?? ''} disabled={!canManage || !!busy} onChange={event => { setStaticDraftValues(current => ({ ...current, [name]: event.target.value })); setStaticPreview(null); }} placeholder="Enter new value" /></td>
-            <td><div className="cc-row-actions"><button type="button" title={`Review ${name} and run precheck`} aria-label={`Review ${name} and run precheck`} disabled={!canManage || !!busy} onClick={() => void reviewStatic([name])}><Check size={17} /></button><button type="button" title={`Remove ${name} from this view`} aria-label={`Remove ${name} from this view`} disabled={!canManage || !!busy} onClick={() => { setChosenStaticKeys(current => current.filter(key => key !== name)); setStaticRemovedKeys(current => [...current, name]); setStaticDraftValues(current => { const next = { ...current }; delete next[name]; return next; }); setStaticPreview(null); }}><Trash2 size={16} /></button></div></td>
+            <td><div className="cc-row-actions"><button type="button" title={`Review ${name} and run precheck`} aria-label={`Review ${name} and run precheck`} disabled={!canManage || !!busy} onClick={() => void reviewStatic([name])}><Check size={17} /></button><button type="button" title={`Review deletion of ${name}`} aria-label={`Review deletion of ${name}`} disabled={!canManage || !!busy} onClick={() => {
+              if (staticTargetIds.every(nodeId => fileValues[String(nodeId)]?.[name] === undefined)) {
+                setStaticRemovedKeys(current => [...current, name]); setChosenStaticKeys(current => current.filter(key => key !== name)); setStaticPreview(null);
+              } else void reviewDeletion([name], true);
+            }}><Trash2 size={16} /></button></div></td>
           </tr>)}</tbody>
         </table></div>
         {staticSearch && !staticVisibleKeys.some(name => name.toLowerCase().includes(staticSearch.toLowerCase().trim())) && <p>No properties match your search.</p>}
@@ -226,10 +261,10 @@ export function ConfigChange() {
     {busy === 'load' && <div className="cc-loading"><Loader2 className="spin" /> Loading live configuration…</div>}
     {payload && <>
       <section className="cc-card"><div className="cc-section-heading"><span>1</span><div><h3>Select service role</h3><p>Broker and controller changes use separate target lists.</p></div></div><div className="cc-role-grid"><button className={role === 'BROKER' ? 'active' : ''} disabled={!!busy} onClick={() => updateRole('BROKER')}>Brokers <small>{(payload.serviceTopology || []).filter(item => item.role.toLowerCase().includes('broker')).length} services</small></button><button className={role === 'CONTROLLER' ? 'active' : ''} disabled={!!busy} onClick={() => updateRole('CONTROLLER')}>Controllers <small>{(payload.serviceTopology || []).filter(item => item.role.toLowerCase().includes('controller')).length} services</small></button></div></section>
-      <section className="cc-card"><div className="cc-section-heading"><span>2</span><div><h3>Select targets</h3><p>Choose all {role.toLowerCase()}s or only specific nodes.</p></div></div><div className="cc-scope"><label><input type="radio" disabled={!!busy} checked={scope === 'ALL'} onChange={() => { setScope('ALL'); setPreview(null); setStaticPreview(null); }} /> All {role.toLowerCase()}s</label><label><input type="radio" disabled={!!busy} checked={scope === 'SPECIFIC'} onChange={() => { setScope('SPECIFIC'); setPreview(null); setStaticPreview(null); }} /> Specific {role.toLowerCase()}s</label></div><div className="cc-target-list">{services.length === 0 ? <p>No {role.toLowerCase()} services were found in this cluster.</p> : services.map(service => <label key={`${service.nodeId}-${service.hostId}`}><input type="checkbox" checked={scope === 'ALL' || selected.includes(service.nodeId)} disabled={scope === 'ALL' || !!busy} onChange={() => toggle(service.nodeId)} /><span><strong>Node {service.nodeId}</strong><small>{service.hostAddress || service.hostId} · {service.role}</small></span></label>)}</div></section>
+      <section className="cc-card"><div className="cc-section-heading"><span>2</span><div><h3>Select targets</h3><p>Choose all {role.toLowerCase()}s or only specific nodes.</p></div></div><div className="cc-scope"><label><input type="radio" disabled={!!busy} checked={scope === 'ALL'} onChange={() => { setScope('ALL'); setDeletionPreview(null); setPreview(null); setStaticPreview(null); }} /> All {role.toLowerCase()}s</label><label><input type="radio" disabled={!!busy} checked={scope === 'SPECIFIC'} onChange={() => { setScope('SPECIFIC'); setDeletionPreview(null); setPreview(null); setStaticPreview(null); }} /> Specific {role.toLowerCase()}s</label></div><div className="cc-target-list">{services.length === 0 ? <p>No {role.toLowerCase()} services were found in this cluster.</p> : services.map(service => <label key={`${service.nodeId}-${service.hostId}`}><input type="checkbox" checked={scope === 'ALL' || selected.includes(service.nodeId)} disabled={scope === 'ALL' || !!busy} onChange={() => toggle(service.nodeId)} /><span><strong>Node {service.nodeId}</strong><small>{service.hostAddress || service.hostId} · {service.role}</small></span></label>)}</div></section>
       {role === 'BROKER' ? <section className="cc-card">
         <div className="cc-section-heading"><span>3</span><div><h3>Set dynamic broker properties</h3><p>Search properties, select one or more, enter their new values and review the selected changes together.</p></div></div>
-        <div className="cc-config-toolbar"><input type="search" aria-label="Search dynamic properties" placeholder="Search configuration properties…" value={search} onChange={event => setSearch(event.target.value)} /><span>{chosenKeys.filter(name => visibleKeys.includes(name)).length} selected</span><button className="cc-primary" disabled={!canManage || !!busy || targetIds.length === 0 || !chosenKeys.some(name => visibleKeys.includes(name))} onClick={() => void requestPreview()}>Review selected changes</button></div>
+        <div className="cc-config-toolbar"><input type="search" aria-label="Search dynamic properties" placeholder="Search configuration properties…" value={search} onChange={event => setSearch(event.target.value)} /><span>{chosenKeys.filter(name => visibleKeys.includes(name)).length} selected</span><button className="cc-primary" disabled={!canManage || !!busy || targetIds.length === 0 || !chosenKeys.some(name => visibleKeys.includes(name))} onClick={() => void requestPreview()}>Review selected changes</button><button className="cc-delete-button" disabled={!canManage || !!busy || !chosenKeys.some(name => visibleKeys.includes(name))} onClick={() => void reviewDeletion(chosenKeys.filter(name => visibleKeys.includes(name)), false)}>Review deletion</button></div>
         <div className="cc-table-wrap"><table className="cc-property-table">
           <thead><tr><th>Select</th><th>Property</th><th>Current value</th><th>New value</th><th>Actions</th></tr></thead>
           <tbody>{visibleKeys.filter(name => name.toLowerCase().includes(search.toLowerCase().trim())).map(name => <tr key={name} className={preview?.properties?.some(property => property.key === name) ? 'cc-reviewed-row' : ''}>
@@ -237,7 +272,11 @@ export function ConfigChange() {
             <td><code>{name}</code></td>
             <td><div className="cc-value-list">{brokerValues(name).map(target => <div key={target.nodeId}><span>Broker {target.nodeId}</span><code>{target.value === null ? 'Unset' : target.value === '' ? '(Empty)' : target.value}</code></div>)}</div></td>
             <td><input aria-label={`New value for ${name}`} value={draftValues[name] ?? ''} disabled={!canManage || !!busy} onChange={event => { setDraftValues(current => ({ ...current, [name]: event.target.value })); setPreview(null); }} placeholder="Enter new value" /></td>
-            <td><div className="cc-row-actions"><button type="button" title={`Review ${name} and run precheck`} aria-label={`Review ${name} and run precheck`} disabled={!canManage || targetIds.length === 0 || !!busy} onClick={() => void requestPreview([name])}><Check size={17} /></button><button type="button" title={`Remove ${name} from this view`} aria-label={`Remove ${name} from this view`} disabled={!canManage || !!busy} onClick={() => { setChosenKeys(current => current.filter(key => key !== name)); setRemovedKeys(current => [...current, name]); setDraftValues(current => { const next = { ...current }; delete next[name]; return next; }); setPreview(null); }}><Trash2 size={16} /></button></div></td>
+            <td><div className="cc-row-actions"><button type="button" title={`Review ${name} and run precheck`} aria-label={`Review ${name} and run precheck`} disabled={!canManage || targetIds.length === 0 || !!busy} onClick={() => void requestPreview([name])}><Check size={17} /></button><button type="button" title={`Review deletion of ${name}`} aria-label={`Review deletion of ${name}`} disabled={!canManage || !!busy} onClick={() => {
+              if (targetIds.every(nodeId => payload?.dynamicConfigs?.[String(nodeId)]?.[name]?.source === 'DEFAULT_CONFIG')) {
+                setRemovedKeys(current => [...current, name]); setChosenKeys(current => current.filter(key => key !== name)); setPreview(null);
+              } else void reviewDeletion([name], false);
+            }}><Trash2 size={16} /></button></div></td>
           </tr>)}</tbody>
         </table></div>
         {search && !visibleKeys.some(name => name.toLowerCase().includes(search.toLowerCase().trim())) && <p>No properties match your search.</p>}
@@ -248,6 +287,15 @@ export function ConfigChange() {
         {preview && <div className="cc-preview"><h4><ShieldCheck size={17} /> Change preview · {preview.key} · {preview.classification}</h4>{(preview.properties || [preview]).map(property => <div key={property.key}><strong>{property.key}</strong><div className="cc-preview-table"><div><strong>Broker</strong><strong>Current value</strong><strong>New value</strong></div>{property.targets.map(target => <div key={target.nodeId}><span>{target.nodeId}</span><code>{target.oldValue ?? 'Unset'}</code><code>{target.newValue === '' ? '(Empty)' : target.newValue}</code></div>)}</div>{property.targets.length === 0 && <p>Already matches the requested value.</p>}</div>)}<p>Cluster health: <strong>{preview.healthy ? 'Passed' : 'Failed'}</strong>{preview.clusterLocked ? ' · Another cluster job is active' : ''}</p>{!preview.healthy && <p className="cc-error">{Object.values(preview.healthFailures).join('; ')}</p>}<button className="cc-primary" disabled={!canManage || !preview.healthy || preview.clusterLocked || !!busy} onClick={() => void apply()}>{busy === 'apply' ? 'Queueing…' : 'Apply to selected brokers'}</button></div>}
       </section> : <section className="cc-card"><div className="cc-section-heading"><span>3</span><div><h3>Controller configuration</h3><p>Choose a property, review every selected node and start a controlled rolling change.</p></div></div>{staticControls()}</section>}
       {role === 'BROKER' && <section className="cc-card"><div className="cc-section-heading"><span>4</span><div><h3>Broker properties requiring restart</h3><p>File changes are backed up and applied one node at a time, with Kafka health verification after each restart.</p></div></div>{staticControls()}</section>}
+      {deletionPreview && <section ref={deletionPanel} className="cc-card cc-deletion-preview"><h3>Review property deletion</h3>
+        <p>The original configuration file is backed up before deletion, with seven-day retention. Broker-level dynamic overrides are backed up and removed when present. Each selected process restarts once, with health checks between nodes.</p>
+        <p>Removed settings use an inherited cluster value or Kafka default after restart. This does not delete topics or their data.</p>
+        {(deletionPreview.properties || [deletionPreview]).map(property => <div key={property.key}><strong>{property.key}</strong><div className="cc-preview-table"><div><strong>Node</strong><strong>File value</strong><strong>After deletion</strong></div>{property.targets.map(target => <div key={target.nodeId}><span>{target.nodeId}</span><code>{target.oldValue ?? 'Unset'}</code><span>Inherited / Kafka default{target.removesDynamicOverride ? ' · Broker override also removed' : ''}</span></div>)}</div></div>)}
+        <p>Cluster health and restart safety: <strong>{deletionPreview.healthy ? 'Passed' : 'Failed'}</strong>{deletionPreview.clusterLocked ? ' · Another cluster job is active' : ''}</p>
+        {!deletionPreview.healthy && <p className="cc-error">{Object.values(deletionPreview.healthFailures).join('; ')}</p>}
+        <button className="cc-delete-button" disabled={!canManage || !deletionPreview.healthy || deletionPreview.clusterLocked || !!busy} onClick={() => void applyDeletion()}>{busy === 'delete-apply' ? 'Queueing…' : `Back up, delete and roll ${deletionPreview.targets.length} nodes`}</button>
+        <button className="cc-refresh" disabled={!!busy} onClick={() => setDeletionPreview(null)}>Cancel deletion</button>
+      </section>}
     </>}
   </div>;
 }

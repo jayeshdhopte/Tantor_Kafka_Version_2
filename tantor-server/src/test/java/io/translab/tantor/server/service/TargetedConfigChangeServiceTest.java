@@ -180,6 +180,30 @@ class TargetedConfigChangeServiceTest {
         assertThatThrownBy(() -> service.preview(clusterId, unchanged)).hasMessageContaining("already");
     }
 
+    @Test
+    void removalPlansRealFileDeletionAndValidatesDynamicOverridesBeforeCreatingJobs() {
+        var first=controller(201); first.setRole("broker"); var second=controller(202); second.setRole("broker"); cluster.setServices(List.of(first,second));
+        when(kafka.getBrokerConfigs(clusterId)).thenReturn(Map.of(201,Map.of("num.network.threads",Map.of("value","3","isReadOnly",true),
+                "log.retention.hours",Map.of("value","72","isReadOnly",false,"source","DYNAMIC_BROKER_CONFIG")),
+                202,Map.of("num.network.threads",Map.of("value","3","isReadOnly",true),
+                "log.retention.hours",Map.of("value","72","isReadOnly",false,"source","DYNAMIC_BROKER_CONFIG"))));
+        UUID read=UUID.randomUUID(); when(deployment.readKafkaProperties(any(),anyString(),anyString(),anyString(),anyString(),anyString())).thenReturn(read);
+        Task result=new Task(); result.setLogOutput("{\"properties\":{\"num.network.threads\":\"3\",\"log.retention.hours\":\"168\"}}"); when(awaiter.await(read,90)).thenReturn(result);
+        var request=request("BROKER","ALL",List.of(),null,null); request.setOperation("REMOVE"); request.setKeys(List.of("num.network.threads","log.retention.hours"));
+        var plan=service.preview(clusterId,request);
+        assertThat(plan.get("classification")).isEqualTo("ROLLING_RESTART_REQUIRED");
+        var nodes=(List<?>)plan.get("targets"); assertThat(nodes).hasSize(2);
+        var target=(Map<?,?>)nodes.get(0); var changes=(Map<?,?>)target.get("changes");
+        assertThat(changes.containsKey("num.network.threads")).isTrue(); assertThat(changes.get("num.network.threads")).isNull();
+        assertThat((Map<?,?>)target.get("dynamicRemovalExpected")).hasSize(1);
+        verify(kafka).removeBrokerConfigs(clusterId,201,Set.of("log.retention.hours"),true);
+        verify(health).assertBrokerCanStop(clusterId,201);
+        org.mockito.Mockito.doThrow(new IllegalStateException("Unsafe restart")).when(health).assertBrokerCanStop(clusterId,201);
+        assertThat(service.preview(clusterId,request).get("healthy")).isEqualTo(false);
+        request.setKeys(List.of("node.id")); assertThatThrownBy(()->service.preview(clusterId,request)).hasMessageContaining("Protected");
+        org.mockito.Mockito.verifyNoInteractions(jobService);
+    }
+
     private ClusterServiceAssignment controller(int nodeId) {
         ClusterServiceAssignment assignment = new ClusterServiceAssignment();
         assignment.setCluster(cluster);

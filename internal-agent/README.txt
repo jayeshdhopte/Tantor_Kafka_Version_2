@@ -55,3 +55,5 @@ new cluster menu. Upgrading agents alone does not update the UI.
 Configuration backups: visible config-backup/<config filename>/ next to the active config file. Seven-day retention remains enabled, including registered legacy .tantor-backups checkpoints.
 
 Backup filenames: broker.properties.bak.<UTC timestamp> (likewise controller.properties/server.properties). Dynamic snapshots add .dynamic.json to that same filename. Existing version/job-prefixed filenames remain eligible for seven-day cleanup.
+
+Configuration removal (configchange.7): reviewed deletions remove active property lines, back up file/dynamic state first, and use one health-checked restart per target. Updated property files end with a newline.

@@ -49,3 +49,18 @@ func TestPatchPropertiesRetryAfterWrite(t *testing.T) {
 		t.Fatalf("retry should be idempotent: changed=%v err=%v output=%q", changed, err, output)
 	}
 }
+
+func TestRemovalDeletesLineAndPreservesUnrelatedPropertiesWithFinalNewline(t *testing.T) {
+	input := "# keep comment\nnode.id=1\nbroker.session.timeout.ms=2000\nnum.io.threads=8"
+	output, changed, err := patchProperties(input, map[string]*string{"broker.session.timeout.ms": nil}, map[string]*string{"broker.session.timeout.ms": valuePointer("2000")})
+	if err != nil || !changed {
+		t.Fatalf("removal failed: %v", err)
+	}
+	if strings.Contains(output, "broker.session.timeout.ms") || !strings.Contains(output, "# keep comment") || !strings.Contains(output, "num.io.threads=8") || !strings.HasSuffix(output, "\n") {
+		t.Fatalf("invalid removed configuration: %q", output)
+	}
+	retry, changed, err := patchProperties(output, map[string]*string{"broker.session.timeout.ms": nil}, map[string]*string{"broker.session.timeout.ms": valuePointer("2000")})
+	if err != nil || changed || retry != output {
+		t.Fatal("removal retry was not idempotent")
+	}
+}
