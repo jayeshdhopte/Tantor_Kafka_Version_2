@@ -5,6 +5,7 @@ import { useParams, NavLink, Outlet, useLocation, useNavigate } from 'react-rout
 import { useCluster } from '../contexts/useCluster';
 import { clusterStatusTone } from '../utils/clusterStatusTone';
 import { AnchoredMenu } from '../components/AnchoredMenu';
+import { useActiveClusterJobs, currentJobNode } from '../hooks/useActiveClusterJobs';
 import './ClusterDetails.css';
 
 interface ClusterInfo {
@@ -31,6 +32,7 @@ interface ClusterInfo {
 export function ClusterDetails() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const activeJobs = useActiveClusterJobs();
   const location = useLocation();
   const [cluster, setCluster] = useState<ClusterInfo | null>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -214,7 +216,10 @@ export function ClusterDetails() {
         </header>
 
         <div className="cluster-content cluster-logs-content" style={{ marginTop: '16px' }}>
-          <Outlet />
+          {activeJobs.filter(job => job.clusterId === id && job.type === 'ROLLING_RESTART').map(job => <div role="status" key={job.id} style={{ padding: '12px 20px', background: '#fff6df', borderRadius: 8 }}>
+        Rolling restart {job.status === 'PENDING' ? 'queued' : job.status === 'WAITING_AGENT' ? 'waiting for agent' : 'in progress'}. Cluster views remain available. {currentJobNode(job)} <button onClick={() => navigate(`/jobs/${job.id}`)}>View current node and progress</button>
+      </div>)}
+      <Outlet />
         </div>
       </div>
       </div>

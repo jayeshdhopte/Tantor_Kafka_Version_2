@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { Check, Database, Loader2, Plug, X } from 'lucide-react';
 import { KafkaConnectFields, SchemaRegistryFields, type ServiceArtifact } from './ServiceConfigurationFields';
-import { defaultKafkaConnectConfig, defaultSchemaRegistryConfig, validateServicePath } from './serviceConfiguration';
+import { defaultKafkaConnectConfig, defaultSchemaRegistryConfig, validateServiceHeap, validateServicePath } from './serviceConfiguration';
 import { runtimeConfig } from '../config/runtimeConfig';
 import '../pages/ClusterDeployment.css';
 import './AddClusterServicesModal.css';
@@ -11,7 +11,9 @@ import './AddClusterServicesModal.css';
 type Role = 'schema_registry' | 'kafka_connect';
 interface Host { hostId?: string; hostname?: string; role?: string; canDeployServices?: boolean; reason?: string }
 interface Cluster { id: string; name: string; mode?: string; hosts?: Host[] }
+interface ServiceInstance { hostId: string; role: Role; groupId?: string; status?: string }
 interface ClusterDetails extends Cluster {
+  serviceInstances?: ServiceInstance[];
   bootstrapServers?: string; kafkaVersion?: string; installDirectory?: string;
   dataDirectory?: string; logDirectory?: string; config?: Record<string, unknown>;
 }
@@ -26,9 +28,9 @@ export function AddClusterServicesModal({ cluster, onClose }: { cluster: Cluster
   const dialog = useRef<HTMLDivElement>(null);
   const [selected, setSelected] = useState<Role[]>([]);
   const [view, setView] = useState<'selection' | 'configuration' | 'prechecks'>('selection');
-  const [schema, setSchema] = useState(defaultSchemaRegistryConfig);
-  const [connect, setConnect] = useState(defaultKafkaConnectConfig);
-  const [hostIds, setHostIds] = useState<Record<Role, string>>({ schema_registry: '', kafka_connect: '' });
+  const [schema, setSchema] = useState(() => defaultSchemaRegistryConfig(cluster.mode !== 'EXTERNAL'));
+  const [connect, setConnect] = useState(() => cluster.mode === 'EXTERNAL' ? { ...defaultKafkaConnectConfig(), installDir: '/opt/tantor/kafka-connect', configDir: '/opt/tantor/kafka-connect/config', pluginDir: '/opt/tantor/kafka-connect/plugins', logDir: '/var/log/tantor/kafka-connect', workingDir: '/var/lib/tantor/kafka-connect' } : defaultKafkaConnectConfig());
+  const [hostIds, setHostIds] = useState<Record<Role, string[]>>({ schema_registry: [], kafka_connect: [] });
   const [hosts, setHosts] = useState<Host[]>([]);
   const [existing, setExisting] = useState<string[]>([]);
   const [artifacts, setArtifacts] = useState<ServiceArtifact[]>([]);
@@ -41,7 +43,7 @@ export function AddClusterServicesModal({ cluster, onClose }: { cluster: Cluster
   const [agentIssues, setAgentIssues] = useState<string[]>([]);
   const [serviceStates, setServiceStates] = useState<{ role: string; status: string; lastError?: string }[]>([]);
   const [details, setDetails] = useState<ClusterDetails | null>(null);
-  const [prechecks, setPrechecks] = useState<Partial<Record<Role, PrecheckResult>>>({});
+  const [prechecks, setPrechecks] = useState<Record<string, PrecheckResult>>({});
   const [checking, setChecking] = useState(false);
   const precheckRun = useRef(0);
 
@@ -63,7 +65,12 @@ export function AddClusterServicesModal({ cluster, onClose }: { cluster: Cluster
       const eligible = inventory.filter(host => host.hostId && (!external || host.canDeployServices) && (!host.role || !['schema_registry', 'kafka_connect'].includes(host.role)));
       const unique = [...new Map(eligible.map(host => [host.hostId, host])).values()];
       setHosts(unique);
-      if (unique.length === 1) setHostIds({ schema_registry: unique[0].hostId!, kafka_connect: unique[0].hostId! });
+      if (unique.length === 1) setHostIds({
+        schema_registry: (details.serviceInstances || []).some((instance: ServiceInstance) => instance.role === 'schema_registry' && instance.hostId === unique[0].hostId) ? [] : [unique[0].hostId!],
+        kafka_connect: (details.serviceInstances || []).some((instance: ServiceInstance) => instance.role === 'kafka_connect' && instance.hostId === unique[0].hostId) ? [] : [unique[0].hostId!],
+      });
+      const worker = (details.serviceInstances || []).find((instance: ServiceInstance) => instance.role === 'kafka_connect');
+      if (worker?.groupId) setConnect(current => ({ ...current, groupId: worker.groupId.endsWith('-' + cluster.id) ? worker.groupId.slice(0, -(cluster.id.length + 1)) : worker.groupId }));
       setArtifacts((uploaded.content || []).filter((artifact: ServiceArtifact) => artifact.status === 'AVAILABLE'));
     }).catch(reason => { if (!controller.signal.aborted) setError(reason.message); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
@@ -78,27 +85,38 @@ export function AddClusterServicesModal({ cluster, onClose }: { cluster: Cluster
     return () => { precheckRun.current += 1; document.body.style.overflow = overflow; previous?.focus(); };
   }, []);
 
+  useEffect(() => {
+    if (external) return;
+    const unified = artifacts.find(a => a.version === details?.kafkaVersion && (a.fileName || a.filename || '').toLowerCase().startsWith('tantor-unified-kafka-'));
+    if (unified) {
+      if (!connect.artifactId) setConnect(current => ({ ...current, artifactId: unified.id }));
+      if (!schema.artifactId) setSchema(current => ({ ...current, artifactId: unified.id }));
+    }
+  }, [artifacts, details?.kafkaVersion, external, connect.artifactId, schema.artifactId]);
+
   const artifactsFor = (role: Role) => artifacts.filter(artifact => artifact.serviceType === role.toUpperCase()
     || (artifact.fileName || artifact.filename || '').toLowerCase().startsWith('tantor-unified-kafka-'));
+  const eligibleHosts = (role: Role) => hosts.filter(host => external || !details?.serviceInstances?.some(instance => instance.role === role && instance.hostId === host.hostId));
+  const targets = selected.flatMap(role => hostIds[role].map(hostId => ({ role, hostId, key: role + ':' + hostId })));
   const issues = selected.flatMap(role => {
     const cfg = role === 'schema_registry' ? schema : connect;
     const label = role === 'schema_registry' ? 'Schema Registry' : 'Kafka Connect';
     const paths = [cfg.installDir, cfg.configDir, cfg.logDir, cfg.workingDir, ...(role === 'kafka_connect' ? [connect.pluginDir] : [])];
     return [
-      !hosts.some(host => host.hostId === hostIds[role]) ? `${label}: select a host.` : '',
+      !hostIds[role].length || hostIds[role].some(hostId => !eligibleHosts(role).some(host => host.hostId === hostId)) ? `${label}: select available hosts.` : '',
       !artifactsFor(role).some(artifact => artifact.id === cfg.artifactId) ? `${label}: select an available artifact.` : '',
       cfg.artifactId && !/^[0-9a-fA-F]{64}$/.test(artifactsFor(role).find(artifact => artifact.id === cfg.artifactId)?.sha256 || artifactsFor(role).find(artifact => artifact.id === cfg.artifactId)?.checksum || '') ? `${label}: artifact SHA-256 is missing.` : '',
       !Number.isInteger(cfg.port) || cfg.port < 1 || cfg.port > 65535 ? `${label}: enter a port between 1 and 65535.` : '',
-      !/^[1-9]\d*[mMgG]$/.test(cfg.heapSize) ? `${label}: use a heap size such as 512M or 1G.` : '',
-      ...paths.map(path => validateServicePath(path, `${label} directory`)),
+      validateServiceHeap(cfg.heapMin, cfg.heapSize, label),
+      ...paths.map(path => !external && !path.trim() ? '' : validateServicePath(path, `${label} directory`)),
       role === 'kafka_connect' && !/^[A-Za-z0-9._-]{1,200}$/.test(connect.groupId) ? 'Kafka Connect: enter a valid worker group ID (letters, numbers, dots, underscores or hyphens).' : '',
     ].filter(Boolean);
   });
-  if (selected.length === 2 && hostIds.schema_registry === hostIds.kafka_connect && schema.port === connect.port) issues.push('Services on the same host must use different REST ports.');
+  if (selected.length === 2 && hostIds.schema_registry.some(hostId => hostIds.kafka_connect.includes(hostId)) && schema.port === connect.port) issues.push('Services on the same host must use different REST ports.');
   const configured = selected.length > 0 && issues.length === 0 && !warning && !loading && !deploying;
-  const ready = configured && view === 'prechecks' && !checking && selected.every(role => prechecks[role]?.status === 'SUCCESS');
+  const ready = configured && view === 'prechecks' && !checking && targets.every(target => prechecks[target.key]?.status === 'SUCCESS');
 
-  function precheckParameters(role: Role) {
+  function precheckParameters(role: Role, hostId: string) {
     const cfg = role === 'schema_registry' ? schema : connect;
     const artifact = artifactsFor(role).find(item => item.id === cfg.artifactId)!;
     const configuration = details?.config || {};
@@ -106,7 +124,7 @@ export function AddClusterServicesModal({ cluster, onClose }: { cluster: Cluster
     const kafkaInstall = base.endsWith('/kafka') ? base : base.split('/').pop()?.startsWith('kafka_')
       ? `${base.slice(0, base.lastIndexOf('/'))}/kafka` : `${base}/kafka`;
     const otherRole: Role = role === 'schema_registry' ? 'kafka_connect' : 'schema_registry';
-    const other = selected.includes(otherRole) && hostIds[otherRole] === hostIds[role]
+    const other = selected.includes(otherRole) && hostIds[otherRole].includes(hostId)
       ? (otherRole === 'schema_registry' ? schema : connect) : null;
     return {
       artifact_url: `${runtimeConfig.artifactApiBasePath}/${artifact.id}/download`,
@@ -116,7 +134,7 @@ export function AddClusterServicesModal({ cluster, onClose }: { cluster: Cluster
       kafka_install_dir: kafkaInstall,
       kafka_data_dir: String(configuration.data_dir || details?.dataDirectory || '/data/kafka'),
       kafka_log_dir: String(configuration.log_dir || details?.logDirectory || '/var/log/kafka'),
-      rest_port: cfg.port, heap_size: cfg.heapSize,
+      rest_port: cfg.port, heap_size: cfg.heapSize, heap_xms: cfg.heapMin, heap_xmx: cfg.heapSize,
       install_dir: cfg.installDir.trim(), config_dir: cfg.configDir.trim(),
       log_dir: cfg.logDir.trim(), working_dir: cfg.workingDir.trim(),
       allow_deferred_kafka: false,
@@ -127,9 +145,9 @@ export function AddClusterServicesModal({ cluster, onClose }: { cluster: Cluster
         ? { schema_version: artifact.version || '', compatibility_level: schema.compatibility, schemas_topic: '_schemas' }
         : { connect_version: artifact.version || '', group_id: `${connect.groupId}-${cluster.id}`,
           plugin_dir: connect.pluginDir.trim(), min_free_disk_mb: 5120,
-          offset_topic: `tantor-connect-offsets-${cluster.id}`,
-          config_topic: `tantor-connect-configs-${cluster.id}`,
-          status_topic: `tantor-connect-status-${cluster.id}` }),
+          offset_topic: 'connect-offsets',
+          config_topic: 'connect-configs',
+          status_topic: 'connect-status' }),
     };
   }
 
@@ -143,13 +161,12 @@ export function AddClusterServicesModal({ cluster, onClose }: { cluster: Cluster
     setPrechecks({});
     setView('prechecks');
     setChecking(true);
-    await Promise.all(selected.map(async role => {
-      const hostId = hostIds[role];
+    await Promise.all(targets.map(async ({ role, hostId, key }) => {
       const label = role === 'schema_registry' ? 'Schema Registry' : 'Kafka Connect';
-      if (run === precheckRun.current) setPrechecks(current => ({ ...current, [role]: { status: 'RUNNING', logOutput: `Running ${label} pre-check…`, errorMsg: '' } }));
+      if (run === precheckRun.current) setPrechecks(current => ({ ...current, [key]: { status: 'RUNNING', logOutput: `Running ${label} pre-check…`, errorMsg: '' } }));
       try {
         const response = await fetch(`/api/v1/ui/hosts/${encodeURIComponent(hostId)}/precheck-${role === 'schema_registry' ? 'schema' : 'connect'}`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(precheckParameters(role)),
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(precheckParameters(role, hostId)),
         });
         const queued = await response.json().catch(() => ({}));
         if (!response.ok || !queued.taskId) throw new Error(queued.message || `Could not start ${label} pre-check.`);
@@ -160,7 +177,7 @@ export function AddClusterServicesModal({ cluster, onClose }: { cluster: Cluster
           const body = await result.json();
           const status = String(body.status || '').toUpperCase();
           if (status === 'SUCCESS' || status === 'FAILED') {
-            if (run === precheckRun.current) setPrechecks(current => ({ ...current, [role]: {
+            if (run === precheckRun.current) setPrechecks(current => ({ ...current, [key]: {
               status, logOutput: body.logOutput || '', errorMsg: body.errorMsg || '',
             } }));
             return;
@@ -168,7 +185,7 @@ export function AddClusterServicesModal({ cluster, onClose }: { cluster: Cluster
         }
         throw new Error(`${label} pre-check timed out. Check the agent and retry.`);
       } catch (reason) {
-        if (run === precheckRun.current) setPrechecks(current => ({ ...current, [role]: {
+        if (run === precheckRun.current) setPrechecks(current => ({ ...current, [key]: {
           status: 'FAILED', logOutput: '', errorMsg: reason instanceof Error ? reason.message : `${label} pre-check failed.`,
         } }));
       }
@@ -184,14 +201,16 @@ export function AddClusterServicesModal({ cluster, onClose }: { cluster: Cluster
       const addons = Object.fromEntries(selected.map(role => {
         const cfg = role === 'schema_registry' ? schema : connect;
         const artifact = artifactsFor(role).find(item => item.id === cfg.artifactId)!;
-        return [role, {
-          enabled: true, host_id: hostIds[role], artifact_id: artifact.id,
+        const instances = hostIds[role].map(hostId => ({
+          enabled: true, host_id: hostId, artifact_id: artifact.id,
           checksum: artifact.sha256 || artifact.checksum || '', version: artifact.version || '',
-          port: cfg.port, heap_size: cfg.heapSize, install_dir: cfg.installDir.trim(),
+          port: cfg.port, heap_size: cfg.heapSize, heap_xms: cfg.heapMin, heap_xmx: cfg.heapSize, install_dir: cfg.installDir.trim(),
           config_dir: cfg.configDir.trim(), log_dir: cfg.logDir.trim(), working_dir: cfg.workingDir.trim(),
           ...(role === 'schema_registry' ? { compatibility_level: schema.compatibility }
             : { group_id: connect.groupId, plugin_dir: connect.pluginDir.trim() }),
-        }];
+        }));
+        return [external ? role : role === 'schema_registry' ? 'schema_registries' : 'kafka_connect_workers',
+          external ? instances[0] : instances];
       }));
       const response = await fetch(endpoint, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(addons),
@@ -229,37 +248,48 @@ export function AddClusterServicesModal({ cluster, onClose }: { cluster: Cluster
         {warning && <p role="alert" className="add-services-error">{warning}</p>}
         {agentIssues.length > 0 && <ul>{agentIssues.map(issue => <li key={issue}>{issue}</li>)}</ul>}
         {external && serviceStates.map(service => <p key={service.role}>{service.role === 'schema_registry' ? 'Schema Registry' : 'Kafka Connect'}: {service.status}{service.lastError ? ` — ${service.lastError}` : ''}</p>)}
+        {!external && details?.serviceInstances?.map(instance => <p key={instance.role + ':' + instance.hostId}>
+          {instance.role === 'schema_registry' ? 'Schema Registry' : 'Kafka Connect'} on {hosts.find(host => host.hostId === instance.hostId)?.hostname || instance.hostId}: {instance.status || 'Pending'}
+        </p>)}
         {loading ? <p role="status">Loading available services…</p> : <>
           <div className="cd-deployment-cards-wrapper"><div className="cd-deployment-choice-grid">
             {choices.map(({ role, title, description, Icon }) => <button key={role} type="button"
               className={`cd-deployment-card add-service-tile ${selected.includes(role) ? 'selected' : ''}`}
-              aria-pressed={selected.includes(role)} disabled={deploying || !!warning || existing.includes(role) || hosts.length === 0}
+              aria-pressed={selected.includes(role)} disabled={deploying || !!warning || (external && existing.includes(role)) || eligibleHosts(role).length === 0}
               onClick={() => { precheckRun.current += 1; setChecking(false); setSelected(current => current.includes(role) ? current.filter(item => item !== role) : [...current, role]); setView('selection'); setPrechecks({}); setError(''); }}>
               <div className="add-service-tile-heading"><Icon size={24} />{selected.includes(role) && <Check size={20} />}</div>
-              <h3>{title}</h3><p>{description}</p><span>{existing.includes(role) ? 'Already added' : selected.includes(role) ? 'Selected' : 'Select service'}</span>
+              <h3>{title}</h3><p>{description}</p><span>{external && existing.includes(role) ? 'Already added' : selected.includes(role) ? 'Selected' : 'Select service'}</span>
             </button>)}
           </div></div>
           {hosts.length === 0 && <p role="status">No eligible Kafka hosts are available for this cluster.</p>}
           {view === 'configuration' && <fieldset disabled={deploying} className="add-services-fields">
             {selected.map(role => <section key={role}>
-              <label className="cd-field"><span>{role === 'schema_registry' ? 'Schema Registry' : 'Kafka Connect'} host</span>
-                <select value={hostIds[role]} onChange={event => setHostIds(current => ({ ...current, [role]: event.target.value }))}>
+              {external ? <label className="cd-field"><span>{role === 'schema_registry' ? 'Schema Registry' : 'Kafka Connect'} host</span>
+                <select value={hostIds[role][0] || ''} onChange={event => setHostIds(current => ({ ...current, [role]: event.target.value ? [event.target.value] : [] }))}>
                   <option value="">Select a cluster host</option>{hosts.map(host => <option key={host.hostId} value={host.hostId}>{host.hostname || host.hostId}</option>)}
                 </select>
-              </label>
+              </label> : <fieldset>
+                <legend>{role === 'schema_registry' ? 'Schema Registry instances' : 'Connect workers'} — select hosts</legend>
+                {eligibleHosts(role).map(host => <label key={host.hostId} className="cd-field">
+                  <span><input type="checkbox" checked={hostIds[role].includes(host.hostId!)}
+                    onChange={event => setHostIds(current => ({ ...current, [role]: event.target.checked
+                      ? [...current[role], host.hostId!] : current[role].filter(id => id !== host.hostId) }))} /> {host.hostname || host.hostId}</span>
+                </label>)}
+                <p>Each selected host receives one instance. Settings below apply to all selected hosts.</p>
+              </fieldset>}
               {role === 'schema_registry'
-                ? <SchemaRegistryFields cfg={schema} artifacts={artifactsFor(role)} onChange={patch => setSchema(current => ({ ...current, ...patch }))} />
-                : <KafkaConnectFields cfg={connect} artifacts={artifactsFor(role)} onChange={patch => setConnect(current => ({ ...current, ...patch }))} />}
+                ? <SchemaRegistryFields unifiedDefault={!external} cfg={schema} artifacts={artifactsFor(role)} onChange={patch => setSchema(current => ({ ...current, ...patch }))} />
+                : <KafkaConnectFields unifiedDefault={!external} cfg={connect} artifacts={artifactsFor(role)} onChange={patch => setConnect(current => ({ ...current, ...patch }))} />}
             </section>)}
             {issues.length > 0 && <ul className="add-services-validation" aria-live="polite">{[...new Set(issues)].map(issue => <li key={issue}>{issue}</li>)}</ul>}
           </fieldset>}
           {view === 'prechecks' && <section className="add-services-prechecks" aria-live="polite">
             <h3>Service pre-checks</h3>
             <p>These checks run on the selected host before deployment. The job will repeat them before installation.</p>
-            {selected.map(role => {
-              const result = prechecks[role];
-              return <div className="add-services-precheck" key={role}>
-                <strong>{role === 'schema_registry' ? 'Schema Registry' : 'Kafka Connect'} — {result?.status || 'Waiting'}</strong>
+            {targets.map(({ role, hostId, key }) => {
+              const result = prechecks[key];
+              return <div className="add-services-precheck" key={key}>
+                <strong>{role === 'schema_registry' ? 'Schema Registry' : 'Kafka Connect'} on {hosts.find(host => host.hostId === hostId)?.hostname || hostId} — {result?.status || 'Waiting'}</strong>
                 {result?.errorMsg && <p className="add-services-error">{result.errorMsg}</p>}
                 {result?.logOutput && <pre className="add-services-precheck-log">{result.logOutput}</pre>}
               </div>;

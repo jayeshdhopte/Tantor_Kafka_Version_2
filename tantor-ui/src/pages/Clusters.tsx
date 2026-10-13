@@ -1,11 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Network, RefreshCw, Trash2, ExternalLink, Plus, MoreVertical } from 'lucide-react';
+import { Network, RefreshCw, Trash2, ExternalLink, Plus, MoreVertical, Settings } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { AnchoredMenu } from '../components/AnchoredMenu';
 import { AddClusterServicesModal } from '../components/AddClusterServicesModal';
+import { ConfigChangeEntryModal } from '../components/ConfigChangeEntryModal';
 import { usePermissions } from '../hooks/usePermissions';
 import { confirmAction, notifyAction } from '../components/confirmUtils';
 import { clusterStatusTone } from '../utils/clusterStatusTone';
+import { RollingRestartModal } from '../components/RollingRestartModal';
+import { useActiveClusterJobs, currentJobNode } from '../hooks/useActiveClusterJobs';
 import './Clusters.css';
 
 interface ClusterHost {
@@ -52,11 +56,16 @@ interface ClusterInfo {
 const CLUSTER_HEALTH_REFRESH_MS = 15000;
 
 export function Clusters() {
+  const navigate = useNavigate();
+  const activeJobs = useActiveClusterJobs();
+  const locked = (id: string) => activeJobs.some(job => job.clusterId === id && job.type === 'ROLLING_RESTART');
+  const [restartCluster, setRestartCluster] = useState<ClusterInfo | null>(null);
   const { canManage } = usePermissions();
   const [clusters, setClusters] = useState<ClusterInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [showDeploymentModal, setShowDeploymentModal] = useState(false);
   const [servicesCluster, setServicesCluster] = useState<ClusterInfo | null>(null);
+  const [configCluster, setConfigCluster] = useState<ClusterInfo | null>(null);
   const [servicesMenu, setServicesMenu] = useState<{ cluster: ClusterInfo; anchor: HTMLElement } | null>(null);
 
   const refreshClusterHealth = useCallback((items: ClusterInfo[]) => {
@@ -153,7 +162,9 @@ export function Clusters() {
             )
             .filter(c => c.status !== 'DELETED')
         );
-        setTimeout(fetchClusters, 2000);
+        const deletionJobId = res.headers.get('X-Job-Id');
+        if (deletionJobId) navigate(`/jobs/${deletionJobId}`);
+        else setTimeout(fetchClusters, 2000);
       } else {
         notifyAction('Failed to delete cluster.');
       }
@@ -445,26 +456,18 @@ export function Clusters() {
                                 </span>
                                 <span className={`status-badge-v2 ${statusClass(cluster)} ${statusTagTone}`}>
                                   {statusLabel(cluster)}
-                                </span>
+                                </span>{activeJobs.filter(job => job.clusterId === cluster.id && job.type === 'ROLLING_RESTART').map(job => <button key={job.id} title={currentJobNode(job)} className="badge badge-warning" onClick={event => { event.stopPropagation(); navigate(`/jobs/${job.id}`); }}>Rolling restart {job.status === 'PENDING' ? 'queued' : job.status === 'WAITING_AGENT' ? 'waiting for agent' : 'in progress'} · View job</button>)}
                               </div>
                             </td>
                             <td>
                               {canManage ? (
                                 <div className="row-actions cluster-menu-anchor" onClick={e => e.stopPropagation()}>
                                   <button
-                                    className="btn icon-only trash-btn-action"
-                                    onClick={(e) => deleteCluster(e, cluster.id, cluster.name)}
-                                    disabled={cluster.status === 'DELETING'}
-                                    title={cluster.status === 'DELETING' ? 'Cleanup in progress' : 'Delete cluster'}
-                                  >
-                                    <Trash2 size={15} />
-                                  </button>
-                                  {(cluster.mode === 'EXTERNAL' ? !['DELETED', 'DELETING'].includes(cluster.status) : cluster.status === 'SUCCESS') && <button
                                     className="btn icon-only" title="Cluster options" aria-label={`Options for ${cluster.name}`}
                                     aria-haspopup="menu" aria-expanded={servicesMenu?.cluster.id === cluster.id}
                                     onClick={event => { const anchor = event.currentTarget; setServicesMenu(current => current?.cluster.id === cluster.id ? null : { cluster, anchor }); }}>
                                     <MoreVertical size={17} />
-                                  </button>}
+                                  </button>
                                 </div>
                               ) : (
                                 <span className="heartbeat-text">View only</span>
@@ -483,9 +486,29 @@ export function Clusters() {
       </div>
 
       {servicesMenu && <AnchoredMenu anchor={servicesMenu.anchor} className="cluster-services-menu" onClose={() => setServicesMenu(null)}>
-        <div role="menu"><button role="menuitem" autoFocus onClick={() => { setServicesCluster(servicesMenu.cluster); setServicesMenu(null); }}>Add services to this cluster</button></div>
+        <div role="menu">
+          {(servicesMenu.cluster.mode === 'EXTERNAL'
+            ? !['DELETED', 'DELETING'].includes(servicesMenu.cluster.status)
+            : servicesMenu.cluster.status === 'SUCCESS') &&
+            <button role="menuitem" disabled={locked(servicesMenu.cluster.id)} autoFocus onClick={() => { setServicesCluster(servicesMenu.cluster); setServicesMenu(null); }}><Plus size={15} /> Add service</button>}
+          {!['DELETED', 'DELETING'].includes(servicesMenu.cluster.status) &&
+            <button role="menuitem" disabled={locked(servicesMenu.cluster.id)} onClick={() => { setConfigCluster(servicesMenu.cluster); setServicesMenu(null); }}><Settings size={15} /> Configuration change</button>}
+          {servicesMenu.cluster.mode !== 'EXTERNAL' && servicesMenu.cluster.status === 'SUCCESS' &&
+            <button role="menuitem" disabled={activeJobs.some(job => job.clusterId === servicesMenu.cluster.id)} onClick={() => { setRestartCluster(servicesMenu.cluster); setServicesMenu(null); }}><RefreshCw size={15} /> Rolling restart</button>}
+          <button role="menuitem" disabled={locked(servicesMenu.cluster.id)} className="danger" onClick={event => {
+            const { id, name } = servicesMenu.cluster;
+            setServicesMenu(null);
+            void deleteCluster(event, id, name);
+          }}><Trash2 size={15} /> Delete cluster</button>
+        </div>
       </AnchoredMenu>}
+      {restartCluster && <RollingRestartModal cluster={restartCluster} onClose={() => setRestartCluster(null)} onStarted={jobId => { setRestartCluster(null); navigate(`/jobs/${jobId}`); }} />}
       {servicesCluster && <AddClusterServicesModal cluster={servicesCluster} onClose={() => setServicesCluster(null)} />}
+      {configCluster && <ConfigChangeEntryModal cluster={configCluster} onClose={() => setConfigCluster(null)} onContinue={() => {
+        const clusterId = configCluster.id;
+        setConfigCluster(null);
+        navigate(`/clusters/${clusterId}/config-change`);
+      }} />}
       {showDeploymentModal && createPortal(
         <div className="cd-modal-overlay" onClick={() => setShowDeploymentModal(false)}>
           <div className="cd-deployment-modal" onClick={e => e.stopPropagation()}>

@@ -38,6 +38,7 @@ public class RoleAuthenticationUtil {
     public static final String PRODUCE_MESSAGE = "PRODUCE_MESSAGE";
     public static final String SECURITY_CHANGE = "SECURITY_CHANGE";
     public static final String SCHEMA_REGISTRY_CHANGE = "SCHEMA_REGISTRY_CHANGE";
+    public static final String SCHEMA_REGISTRY_PERMANENT_DELETE = "SCHEMA_REGISTRY_PERMANENT_DELETE";
     public static final String KAFKA_CONNECT_CHANGE = "KAFKA_CONNECT_CHANGE";
     public static final String PARCEL_ACTION = "PARCEL_ACTION";
     public static final String ARTIFACT_UPLOAD = "ARTIFACT_UPLOAD";
@@ -75,6 +76,7 @@ public class RoleAuthenticationUtil {
         // never treated as authenticated.
         if (legacyUnauthenticatedUiApiEnabled
                 && "development".equalsIgnoreCase(runtimeEnvironment)
+                && !SCHEMA_REGISTRY_PERMANENT_DELETE.equals(normalizeAction(action))
                 && !StringUtils.hasText(authorizationHeader)) {
             return true;
         }

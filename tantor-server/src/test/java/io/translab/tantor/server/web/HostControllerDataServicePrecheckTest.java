@@ -35,7 +35,7 @@ class HostControllerDataServicePrecheckTest {
 
         when(roles.canAccess("token", RoleAuthenticationUtil.HOST_PREREQUISITES)).thenReturn(true);
         when(hosts.findById("node174.translab.io")).thenReturn(Optional.of(host));
-        when(host.getAgentVersion()).thenReturn("1.0.0-dataservices.1");
+        when(host.getAgentVersion()).thenReturn("1.0.0-dataservices.3");
         when(status.effectiveStatus(host)).thenReturn("OCCUPIED");
         when(status.agentConnectivityStatus(host)).thenReturn("ONLINE");
         when(tasks.save(any(Task.class))).thenAnswer(invocation -> {
@@ -48,5 +48,21 @@ class HostControllerDataServicePrecheckTest {
 
         assertThat(response.getStatusCode().value()).isEqualTo(200);
         verify(tasks).save(argThat(task -> "PRECHECK_CONNECT".equals(task.getCommand())));
+        when(host.getAgentVersion()).thenReturn("1.0.0-dataservices.2");
+        clearInvocations(tasks);
+        var blocked = controller.precheckConnect("token", "node174.translab.io", Map.of("rest_port", 8083));
+        assertThat(blocked.getStatusCode().value()).isEqualTo(409);
+        verifyNoInteractions(tasks);
+
+        // Schema Registry needs the newer shared-runtime feature even though
+        // the same host can already reuse Kafka for Connect.
+        when(host.getAgentVersion()).thenReturn("1.0.0-dataservices.3");
+        var schemaBlocked = controller.precheckSchema("token", "node174.translab.io", Map.of("rest_port", 8081));
+        assertThat(schemaBlocked.getStatusCode().value()).isEqualTo(409);
+        verifyNoInteractions(tasks);
+        when(host.getAgentVersion()).thenReturn("1.0.0-dataservices.4");
+        var schemaAllowed = controller.precheckSchema("token", "node174.translab.io", Map.of("rest_port", 8081));
+        assertThat(schemaAllowed.getStatusCode().value()).isEqualTo(200);
+        verify(tasks).save(argThat(task -> "PRECHECK_SCHEMA".equals(task.getCommand())));
     }
 }

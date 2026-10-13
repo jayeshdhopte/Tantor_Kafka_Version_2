@@ -280,3 +280,11 @@
   .overview-grid.uptime-grid,
   .overview-grid.partitions-grid { grid-template-columns: 1fr; }
 }
+
+.overview-service-paths { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 16px; }
+.overview-service-path-card { min-width: 0; padding: 16px; border: 1px solid #D2D2D7; border-radius: 8px; }
+.overview-service-path-card h3 { margin: 0 0 6px; color: #332849; font-size: 16px; font-weight: 500; }
+.overview-service-path-card > p { margin: 0 0 16px; color: #818181; font-size: 13px; overflow-wrap: anywhere; }
+.overview-service-path-card dl { display: grid; gap: 12px; margin: 0; }
+.overview-service-path-card dt { color: #818181; font-size: 12px; margin-bottom: 4px; }
+.overview-service-path-card dd { margin: 0; color: #332849; font-size: 13px; overflow-wrap: anywhere; }

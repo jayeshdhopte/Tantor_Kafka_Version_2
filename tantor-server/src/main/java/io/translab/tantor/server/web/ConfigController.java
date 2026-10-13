@@ -7,6 +7,7 @@ import io.translab.tantor.server.domain.ClusterServiceAssignment;
 import io.translab.tantor.server.domain.Job;
 import io.translab.tantor.server.domain.JobStatus;
 import io.translab.tantor.server.domain.JobStep;
+import io.translab.tantor.server.domain.JobStepStatus;
 import io.translab.tantor.server.domain.JobType;
 import io.translab.tantor.server.repository.ClusterRepository;
 import io.translab.tantor.server.repository.DiscoveryAgentRepository;
@@ -30,10 +31,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import io.translab.tantor.server.domain.JobStepStatus;
-import io.translab.tantor.server.domain.JobStep;
-import io.translab.tantor.server.domain.JobStatus;
-import io.translab.tantor.server.domain.JobStepStatus;
 
 @RestController
 @RequestMapping("/api/v1/clusters/{clusterId}/config")
@@ -73,6 +70,7 @@ public class ConfigController {
             
             Map<String, Object> response = new java.util.HashMap<>();
             response.put("dynamicConfigs", dynamicConfigs);
+            response.put("propertyCatalog", io.translab.tantor.server.service.KafkaPropertyCatalog.catalog(dynamicConfigs));
             
             Map<String, Object> staticConfigs = new HashMap<>();
             Map<String, Object> deploymentConfig = new HashMap<>();
@@ -103,7 +101,14 @@ public class ConfigController {
         if (externalCluster == null) return ResponseEntity.notFound().build();
 
         Map<String, Object> response = new HashMap<>();
-        response.put("dynamicConfigs", new HashMap<>());
+        try {
+            var liveConfigs = kafkaAdminService.getBrokerConfigs(clusterId);
+            response.put("dynamicConfigs", liveConfigs);
+            response.put("propertyCatalog", io.translab.tantor.server.service.KafkaPropertyCatalog.catalog(liveConfigs));
+        } catch (Exception e) {
+            log.warn("Live broker configuration is unavailable for external cluster {}", clusterId, e);
+            response.put("dynamicConfigs", new HashMap<>());
+        }
         
         List<Map<String, Object>> topology = new ArrayList<>();
         List<Map<String, Object>> configFiles = new ArrayList<>();
@@ -192,6 +197,7 @@ public class ConfigController {
         }
     }
 
+    @org.springframework.transaction.annotation.Transactional
     @PostMapping("/rolling-apply")
     public ResponseEntity<Map<String, Object>> rollingApply(
             @RequestHeader(value = "Authorization", required = false) String authorization,
@@ -200,8 +206,82 @@ public class ConfigController {
         if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.CONFIGURATION_CHANGE)) {
             return unauthorized();
         }
-        Cluster cluster = clusterRepository.findById(clusterId).orElse(null);
-        if (cluster == null) return ResponseEntity.notFound().build();
+        jobService.assertClusterMutable(clusterId);
+        var external = externalClusterRepository.findById(clusterId).orElse(null);
+        if (external == null) return ResponseEntity.badRequest().body(Map.of("message", "This rolling file-change endpoint requires a managed external cluster."));
+        if (!Boolean.TRUE.equals(payload.get("rollingRestart"))) {
+            return ResponseEntity.badRequest().body(Map.of("message", "File changes require a controlled rolling restart."));
+        }
+        if (!(payload.get("changes") instanceof List<?> rawChanges) || rawChanges.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Select at least one node and property change."));
+        }
+        List<io.translab.tantor.server.domain.ExternalClusterNode> knownNodes = externalClusterNodeRepository.findByClusterId(clusterId);
+        var taskAgents = discoveryAgentRepository.findAll();
+        java.util.Set<Integer> seenNodeIds = new java.util.HashSet<>();
+        Boolean controllerChange = null;
+        for (Object item : rawChanges) {
+            if (!(item instanceof Map<?, ?> change) || !(change.get("nodeId") instanceof Number nodeId)) {
+                return ResponseEntity.badRequest().body(Map.of("message", "Each change needs a valid node ID."));
+            }
+            var node = knownNodes.stream().filter(candidate -> candidate.getNodeId() != null
+                    && candidate.getNodeId().intValue() == nodeId.intValue()
+                    && candidate.getHost().equals(String.valueOf(change.get("host")))).findFirst().orElse(null);
+            if (node == null || !seenNodeIds.add(nodeId.intValue())
+                    || !java.util.Objects.equals(node.getConfigFile(), change.get("configFilePath"))) {
+                return ResponseEntity.badRequest().body(Map.of("message", "Target node or configuration file does not match cluster discovery."));
+            }
+            if (taskAgents.stream().noneMatch(agent -> matchesDiscoveryAgent(agent, node.getHost())
+                    && "ONLINE".equalsIgnoreCase(agent.getStatus())
+                    && Boolean.TRUE.equals(agent.getCanExecuteTasks()))) {
+                return ResponseEntity.badRequest().body(Map.of("message", "No online task-capable discovery agent is available on " + node.getHost()));
+            }
+            if (node.getDiskTotalGb() != null && node.getDiskTotalGb() > 0 && node.getDiskUsedGb() != null
+                    && node.getDiskUsedGb() * 100.0 / node.getDiskTotalGb() >= 85.0) {
+                return ResponseEntity.badRequest().body(Map.of("message", "Disk usage is too high for a safe config backup on " + node.getHost()));
+            }
+            if (Boolean.TRUE.equals(node.getIsBroker()) && Boolean.TRUE.equals(node.getIsController())) {
+                return ResponseEntity.badRequest().body(Map.of("message", "Combined broker/controller processes are not eligible for role-only rolling restart."));
+            }
+            boolean controller = Boolean.TRUE.equals(node.getIsController());
+            if (controllerChange != null && controllerChange != controller) {
+                return ResponseEntity.badRequest().body(Map.of("message", "Broker and controller file changes must be separate operations."));
+            }
+            controllerChange = controller;
+            if (!(change.get("properties") instanceof List<?> properties) || properties.isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("message", "Each target needs at least one property change."));
+            }
+            for (Object property : properties) {
+                if (!(property instanceof Map<?, ?> entry)) {
+                    return ResponseEntity.badRequest().body(Map.of("message", "Invalid property change."));
+                }
+                String key = String.valueOf(entry.get("key"));
+                String value = String.valueOf(entry.get("newValue"));
+                if (!(entry.get("newValue") instanceof String) || !(entry.get("oldValue") instanceof String)
+                        || !key.matches("[A-Za-z][A-Za-z0-9._-]{0,127}") || value.length() > 4096
+                        || value.contains("\n") || value.contains("\r") || prohibitedConfigKey(key)) {
+                    return ResponseEntity.badRequest().body(Map.of("message", "This Kafka property cannot be changed: " + key));
+                }
+            }
+        }
+        final boolean isControllerChange = Boolean.TRUE.equals(controllerChange);
+        long roleCount = knownNodes.stream().filter(node -> isControllerChange
+                ? Boolean.TRUE.equals(node.getIsController()) : Boolean.TRUE.equals(node.getIsBroker())).count();
+        if (isControllerChange && roleCount < 3) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Controller rolling change requires at least three quorum voters."));
+        }
+        if (!isControllerChange && roleCount < 2) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Broker rolling change requires at least two brokers."));
+        }
+        Integer activeController = isControllerChange ? kafkaAdminService.getControllerId(clusterId) : null;
+        if (isControllerChange && activeController == null) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Active KRaft controller could not be determined."));
+        }
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> changes = new ArrayList<>((List<Map<String, Object>>) payload.get("changes"));
+        changes.sort(java.util.Comparator
+                .comparingInt((Map<String, Object> change) -> activeController != null
+                        && activeController.intValue() == ((Number) change.get("nodeId")).intValue() ? 1 : 0)
+                .thenComparingInt(change -> ((Number) change.get("nodeId")).intValue()));
 
         Job job = new Job();
         job.setType(JobType.ROLLING_CONFIG_UPDATE);
@@ -213,7 +293,9 @@ public class ConfigController {
             Map<String, Object> jobPayload = new HashMap<>();
             jobPayload.put("clusterId", clusterId.toString());
             jobPayload.put("rollingRestart", payload.get("rollingRestart"));
-            jobPayload.put("changes", payload.get("changes"));
+            jobPayload.put("changes", changes);
+            jobPayload.put("expectedBrokerCount", knownNodes.stream().filter(node -> Boolean.TRUE.equals(node.getIsBroker())).count());
+            jobPayload.put("role", isControllerChange ? "CONTROLLER" : "BROKER");
             job.setPayload(objectMapper.writeValueAsString(jobPayload));
         } catch (JsonProcessingException e) {
             return ResponseEntity.badRequest().build();
@@ -224,7 +306,6 @@ public class ConfigController {
         steps.add(createStep("ALL", "PREFLIGHT", order++));
         steps.add(createStep("ALL", "BACKUP_ALL", order++));
 
-        List<Map<String, Object>> changes = (List<Map<String, Object>>) payload.get("changes");
         if (changes != null) {
             for (Map<String, Object> change : changes) {
                 String host = (String) change.get("host");
@@ -239,9 +320,18 @@ public class ConfigController {
 
         Job savedJob = jobService.createJob(job, steps);
         
-        activityAlertService.logActivity("INFO", "Requested rolling config update for cluster: " + cluster.getName(), clusterId);
+        activityAlertService.logActivity("INFO", "Requested rolling config update for cluster: " + external.getName(), clusterId);
         
         return ResponseEntity.ok(Map.of("jobId", savedJob.getId().toString()));
+    }
+
+    private boolean prohibitedConfigKey(String key) {
+        String normalized = key.toLowerCase(java.util.Locale.ROOT);
+        return java.util.Set.of("node.id", "broker.id", "process.roles", "log.dirs", "metadata.log.dir",
+                "listeners", "advertised.listeners", "controller.quorum.voters",
+                "controller.quorum.bootstrap.servers", "inter.broker.listener.name", "cluster.id", "zookeeper.connect")
+                .contains(normalized)
+                || normalized.matches(".*(password|secret|token|jaas|credential|keystore|truststore).*");
     }
 
     private JobStep createStep(String targetId, String name, int order) {
@@ -792,6 +882,7 @@ public class ConfigController {
     }
 
     @Deprecated
+    @org.springframework.transaction.annotation.Transactional
     @PutMapping("/unsafe-legacy/services/{serviceId}")
     public ResponseEntity<?> updateServiceConfig(
             @RequestHeader(value = "Authorization", required = false) String authorization,
@@ -802,6 +893,7 @@ public class ConfigController {
         if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.CONFIGURATION_CHANGE)) {
             return unauthorized();
         }
+        jobService.assertClusterMutable(clusterId);
         Cluster cluster = clusterRepository.findById(clusterId).orElse(null);
         if (cluster == null) return ResponseEntity.notFound().build();
         ClusterServiceAssignment service = cluster.getServices() == null ? null : cluster.getServices().stream()
@@ -891,6 +983,7 @@ public class ConfigController {
         return result.toString();
     }
 
+    @org.springframework.transaction.annotation.Transactional
     @PutMapping("/bulk")
     public ResponseEntity<?> updateConfigBulk(
             @RequestHeader(value = "Authorization", required = false) String authorization,
@@ -899,6 +992,7 @@ public class ConfigController {
         if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.CONFIGURATION_CHANGE)) {
             return unauthorized();
         }
+        jobService.assertClusterMutable(clusterId);
         Cluster cluster = clusterRepository.findById(clusterId).orElse(null);
         if (cluster == null) return ResponseEntity.notFound().build();
         if (request.getConfigKey() == null || !request.getConfigKey().matches("[A-Za-z0-9._-]+")) {

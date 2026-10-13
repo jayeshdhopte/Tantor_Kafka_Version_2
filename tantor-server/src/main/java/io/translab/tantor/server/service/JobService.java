@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -21,9 +22,11 @@ public class JobService {
     private final JobRepository jobRepository;
     private final JobStepRepository jobStepRepository;
     private final ObjectMapper objectMapper;
+    private final io.translab.tantor.server.repository.ClusterRepository clusterRepository;
 
     @Transactional
     public Job createJob(Job job, List<JobStep> steps) {
+        lockAndCheck(job.getResourceKey(), job.getType(), null);
         if (job.getRequestedBy() == null || job.getRequestedBy().isBlank()) {
             job.setRequestedBy(currentRequester());
         }
@@ -36,8 +39,34 @@ public class JobService {
         return saved;
     }
 
+    @Transactional
     public Job createJob(Job job) {
         return createJob(job, List.of());
+    }
+
+    @Transactional
+    public void assertClusterMutable(UUID clusterId) {
+        lockAndCheck("cluster:" + clusterId, null, null);
+    }
+
+    @Transactional
+    public void assertClusterDeletionAllowed(UUID clusterId) {
+        lockAndCheck("cluster:" + clusterId, JobType.CLUSTER_DELETION, null);
+    }
+
+    private void lockAndCheck(String resource, JobType incoming, UUID excluded) {
+        if (resource == null || !resource.startsWith("cluster:")) return;
+        UUID clusterId = UUID.fromString(resource.substring("cluster:".length()));
+        clusterRepository.findForServiceUpdate(clusterId);
+        var active = jobRepository.findByResourceKeyAndStatusIn(resource,
+                List.of(JobStatus.PENDING, JobStatus.IN_PROGRESS, JobStatus.ROLLBACK_PENDING, JobStatus.ROLLING_BACK));
+        var outstanding = jobRepository.findWithUnfinishedRestartTasks().stream()
+                .filter(job -> resource.equals(job.getResourceKey()) && !Objects.equals(job.getId(), excluded)).findFirst();
+        if (outstanding.isPresent()) throw new ClusterOperationConflictException("An agent task is still pending or running for job " + outstanding.get().getId() + ". Resume that job before another cluster operation.");
+        for (Job other : active) {
+            if (!other.getId().equals(excluded) && (incoming == JobType.ROLLING_RESTART || other.getType() == JobType.ROLLING_RESTART || incoming == JobType.CLUSTER_DELETION || other.getType() == JobType.CLUSTER_DELETION))
+                throw new ClusterOperationConflictException("Another operation is active on this cluster. Wait for job " + other.getId() + " to finish.");
+        }
     }
 
     public Job getJob(UUID id) {
@@ -49,13 +78,26 @@ public class JobService {
         return jobRepository.findAllByOrderByCreatedAtDesc();
     }
 
+    public List<Map<String, String>> getActiveClusterJobs() {
+        Map<UUID, Job> active = new java.util.LinkedHashMap<>();
+        java.util.stream.Stream.of(JobStatus.PENDING, JobStatus.IN_PROGRESS, JobStatus.ROLLBACK_PENDING, JobStatus.ROLLING_BACK)
+                .flatMap(status -> jobRepository.findByStatus(status).stream()).forEach(job -> active.put(job.getId(), job));
+        jobRepository.findWithUnfinishedRestartTasks().forEach(job -> active.putIfAbsent(job.getId(), job));
+        return active.values().stream().filter(job -> job.getResourceKey() != null && job.getResourceKey().startsWith("cluster:"))
+                .map(job -> Map.of("id", job.getId().toString(), "clusterId", job.getResourceKey().substring(8),
+                        "type", job.getType().name(), "status", isTerminal(job.getStatus()) ? "WAITING_AGENT" : job.getStatus().name(),
+                        "progress", isTerminal(job.getStatus()) ? "{\"message\":\"Waiting for the previous agent task to finish.\"}"
+                                : job.getProgress() == null ? "{}" : job.getProgress())).toList();
+    }
+
     public List<JobStep> getSteps(UUID jobId) {
         return jobStepRepository.findByJobIdOrderByStepOrderAsc(jobId);
     }
 
     @Transactional
     public Optional<ClaimedJob> claimNextJob() {
-        Optional<Job> normal = jobRepository.findFirstByStatusOrderByCreatedAtAsc(JobStatus.PENDING);
+        Optional<Job> normal = jobRepository.findByStatusOrderByCreatedAtAsc(JobStatus.PENDING).stream()
+                .filter(job -> !resourceBusy(job)).findFirst();
         if (normal.isPresent()) {
             Job job = normal.get();
             job.setStatus(JobStatus.IN_PROGRESS);
@@ -65,7 +107,8 @@ public class JobService {
             return Optional.of(new ClaimedJob(job.getId(), false));
         }
 
-        Optional<Job> rollback = jobRepository.findFirstByStatusOrderByCreatedAtAsc(JobStatus.ROLLBACK_PENDING);
+        Optional<Job> rollback = jobRepository.findByStatusOrderByCreatedAtAsc(JobStatus.ROLLBACK_PENDING).stream()
+                .filter(job -> !resourceBusy(job)).findFirst();
         if (rollback.isPresent()) {
             Job job = rollback.get();
             job.setStatus(JobStatus.ROLLING_BACK);
@@ -74,6 +117,12 @@ public class JobService {
             return Optional.of(new ClaimedJob(job.getId(), true));
         }
         return Optional.empty();
+    }
+
+    private boolean resourceBusy(Job job) {
+        return job.getResourceKey() != null && !job.getResourceKey().isBlank()
+                && !jobRepository.findByResourceKeyAndStatusIn(job.getResourceKey(),
+                List.of(JobStatus.IN_PROGRESS, JobStatus.ROLLING_BACK)).isEmpty();
     }
 
     @Transactional
@@ -95,6 +144,15 @@ public class JobService {
         String currentLogs = job.getLogs() == null ? "" : job.getLogs();
         job.setLogs(currentLogs + "[" + Instant.now() + "] " + logLine + "\n");
         jobRepository.save(job);
+    }
+
+    @Transactional
+    public void reportRollingRestartPhase(UUID stepId, String message) {
+        JobStep step = getStep(stepId);
+        if (step.getJob().getType() != JobType.ROLLING_RESTART || step.getStatus() != JobStepStatus.IN_PROGRESS)
+            throw new IllegalStateException("Restart phase requires an active rolling restart step.");
+        step.setLogs(message);
+        jobStepRepository.save(step);
     }
 
     @Transactional
@@ -120,6 +178,22 @@ public class JobService {
         JobStep step = getStep(stepId);
         step.setExternalServiceTaskId(taskId);
         jobStepRepository.save(step);
+    }
+
+    @Transactional
+    public void recordRollingRestartBaseline(UUID stepId, UUID taskId, Map<String, Object> baseline) {
+        JobStep step = getStep(stepId);
+        if (step.getJob().getType() != JobType.ROLLING_RESTART)
+            throw new IllegalArgumentException("Service baseline is only valid for rolling restart jobs.");
+        try {
+            Map<String, Object> payload = objectMapper.readValue(step.getPayload(), new com.fasterxml.jackson.core.type.TypeReference<>() {});
+            payload.put("baselineAgentTaskId", taskId.toString());
+            payload.put("baselineServiceState", new java.util.LinkedHashMap<>(baseline));
+            step.setPayload(objectMapper.writeValueAsString(payload));
+            jobStepRepository.save(step);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new IllegalArgumentException("Cannot persist Kafka service baseline", e);
+        }
     }
 
     @Transactional
@@ -153,19 +227,20 @@ public class JobService {
 
     @Transactional
     public Job retryJob(UUID id) {
-        Job job = getJob(id);
+        Job job = jobRepository.findForUpdateById(id).orElseThrow(() -> new IllegalArgumentException("Job not found: " + id));
         if (job.getStatus() != JobStatus.FAILED
                 && job.getStatus() != JobStatus.PARTIAL_SUCCESS
                 && job.getStatus() != JobStatus.ROLLBACK_FAILED) {
             throw new RuntimeException("Only failed or partially successful jobs can be retried.");
         }
 
+        lockAndCheck(job.getResourceKey(), job.getType(), id);
         boolean retryRollback = job.getStatus() == JobStatus.ROLLBACK_FAILED;
         if (!retryRollback) {
             for (JobStep step : getSteps(id)) {
                 if (step.getStatus() != JobStepStatus.SUCCESS) {
                     step.setStatus(JobStepStatus.PENDING);
-                    step.setAgentTaskId(null);
+                    if (job.getType() != JobType.ROLLING_RESTART && job.getType() != JobType.CLUSTER_DELETION) step.setAgentTaskId(null);
                     step.setExternalServiceTaskId(null);
                     step.setStartTime(null);
                     step.setEndTime(null);
@@ -185,8 +260,9 @@ public class JobService {
 
     @Transactional
     public Job requestRollback(UUID id) {
-        Job job = getJob(id);
-        if (!Boolean.TRUE.equals(job.getRollbackSupported())) {
+        Job job = jobRepository.findForUpdateById(id).orElseThrow(() -> new IllegalArgumentException("Job not found: " + id));
+        lockAndCheck(job.getResourceKey(), job.getType(), id);
+        if (job.getType() == JobType.ROLLING_RESTART || !Boolean.TRUE.equals(job.getRollbackSupported())) {
             throw new RuntimeException("Rollback is not supported for this job type.");
         }
         if (job.getStatus() != JobStatus.SUCCESS

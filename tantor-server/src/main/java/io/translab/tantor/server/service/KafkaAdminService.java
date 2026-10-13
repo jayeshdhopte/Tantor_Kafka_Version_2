@@ -54,7 +54,7 @@ public class KafkaAdminService {
      * a different listener than the rest of the cluster-management API.
      */
     public Properties getKafkaClientProperties(UUID clusterId) {
-        Optional<io.translab.tantor.server.domain.Cluster> clusterOpt = clusterRepository.findById(clusterId);
+        Optional<io.translab.tantor.server.domain.Cluster> clusterOpt = clusterRepository.findWithServicesById(clusterId);
         Optional<ExternalCluster> extOpt = externalClusterRepository.findById(clusterId);
         
         if (clusterOpt.isEmpty() && extOpt.isEmpty()) {
@@ -93,6 +93,14 @@ public class KafkaAdminService {
                             Integer port = null;
                             if (configJson != null && !configJson.isEmpty()) {
                                 Map<String, Object> config = objectMapper.readValue(configJson, Map.class);
+                                if (svc.getConfigJson() != null && !svc.getConfigJson().isBlank()) {
+                                    Map<String, Object> nodeConfig = objectMapper.readValue(svc.getConfigJson(), Map.class);
+                                    // An explicit node port overrides an inherited listener endpoint.
+                                    if (nodeConfig.containsKey("listener_port") && !nodeConfig.containsKey("listeners")) {
+                                        config.remove("listeners");
+                                    }
+                                    config.putAll(nodeConfig);
+                                }
                                 if (config.containsKey("listeners")) {
                                     String listeners = (String) config.get("listeners");
                                     String[] parts = listeners.split(":");
@@ -736,6 +744,8 @@ public class KafkaAdminService {
                     Map<String, Object> details = new HashMap<>();
                     details.put("value", entry.value());
                     details.put("isReadOnly", entry.isReadOnly());
+                    details.put("isSensitive", entry.isSensitive());
+                    details.put("source", entry.source().name());
                     brokerConf.put(entry.name(), details);
                 });
                 result.put(Integer.parseInt(res.name()), brokerConf);
@@ -749,16 +759,47 @@ public class KafkaAdminService {
     }
 
     public void alterBrokerConfig(UUID clusterId, int brokerId, String key, String value) {
+        alterBrokerConfigs(clusterId, brokerId, Map.of(key, value));
+    }
+
+    public void removeBrokerConfigs(UUID clusterId, int brokerId, Set<String> keys, boolean validateOnly) {
+        try {
+            var resource = new org.apache.kafka.common.config.ConfigResource(org.apache.kafka.common.config.ConfigResource.Type.BROKER, String.valueOf(brokerId));
+            var operations = keys.stream().map(key -> new org.apache.kafka.clients.admin.AlterConfigOp(
+                    new org.apache.kafka.clients.admin.ConfigEntry(key, null), org.apache.kafka.clients.admin.AlterConfigOp.OpType.DELETE)).toList();
+            getAdminClient(clusterId).incrementalAlterConfigs(Map.of(resource, operations),
+                    new org.apache.kafka.clients.admin.AlterConfigsOptions().validateOnly(validateOnly).timeoutMs(15000)).all().get(20, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt(); throw new IllegalStateException("Configuration removal interrupted", e);
+        } catch (ExecutionException | java.util.concurrent.TimeoutException e) {
+            throw new IllegalStateException("Kafka configuration removal failed on broker " + brokerId + ": " + (e.getCause() == null ? e.getMessage() : e.getCause().getMessage()), e);
+        }
+    }
+
+    public void validateBrokerConfigs(UUID clusterId, int brokerId, Map<String, String> changes) {
+        try {
+            var resource = new org.apache.kafka.common.config.ConfigResource(org.apache.kafka.common.config.ConfigResource.Type.BROKER, String.valueOf(brokerId));
+            var operations = changes.entrySet().stream().map(entry -> new org.apache.kafka.clients.admin.AlterConfigOp(
+                    new org.apache.kafka.clients.admin.ConfigEntry(entry.getKey(), entry.getValue()), org.apache.kafka.clients.admin.AlterConfigOp.OpType.SET)).toList();
+            getAdminClient(clusterId).incrementalAlterConfigs(Map.of(resource, operations),
+                    new org.apache.kafka.clients.admin.AlterConfigsOptions().validateOnly(true).timeoutMs(15000)).all().get(20, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt(); throw new IllegalStateException("Configuration validation interrupted", e);
+        } catch (ExecutionException | java.util.concurrent.TimeoutException e) {
+            throw new IllegalArgumentException("Kafka configuration validation failed on broker " + brokerId + ": " + (e.getCause() == null ? e.getMessage() : e.getCause().getMessage()), e);
+        }
+    }
+
+    public void alterBrokerConfigs(UUID clusterId, int brokerId, Map<String, String> changes) {
         AdminClient client = getAdminClient(clusterId);
         try {
             org.apache.kafka.common.config.ConfigResource resource = new org.apache.kafka.common.config.ConfigResource(
                     org.apache.kafka.common.config.ConfigResource.Type.BROKER, String.valueOf(brokerId));
 
-            org.apache.kafka.clients.admin.AlterConfigOp op = new org.apache.kafka.clients.admin.AlterConfigOp(
-                    new org.apache.kafka.clients.admin.ConfigEntry(key, value), 
-                    org.apache.kafka.clients.admin.AlterConfigOp.OpType.SET);
-
-            client.incrementalAlterConfigs(Map.of(resource, Collections.singletonList(op))).all().get();
+            var operations = changes.entrySet().stream().map(entry -> new org.apache.kafka.clients.admin.AlterConfigOp(
+                    new org.apache.kafka.clients.admin.ConfigEntry(entry.getKey(), entry.getValue()),
+                    org.apache.kafka.clients.admin.AlterConfigOp.OpType.SET)).toList();
+            client.incrementalAlterConfigs(Map.of(resource, operations)).all().get();
         } catch (InterruptedException | ExecutionException e) {
             log.error("Failed to alter broker config", e);
             refreshAdminClient(clusterId);

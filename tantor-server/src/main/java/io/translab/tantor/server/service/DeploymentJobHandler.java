@@ -79,14 +79,14 @@ public class DeploymentJobHandler implements JobHandler {
                 continue;
             }
             try {
-                if (isSchemaOperation(payload)) markSchemaService(clusterId, "DEPLOYING", null);
-                if (isConnectOperation(payload)) markConnectService(clusterId, "DEPLOYING", null);
+                if (isSchemaOperation(payload)) markSchemaService(clusterId, payload, "DEPLOYING", null);
+                if (isConnectOperation(payload)) markConnectService(clusterId, payload, "DEPLOYING", null);
                 if (isBackendSchemaOperation(payload)) {
                     jobService.startStep(step.getId());
                     String output = executeBackendSchemaOperation(clusterId, jobPayload, payload);
                     jobService.completeStep(step.getId(), output);
                     if ("save_schema_connection".equals(operation(payload))) {
-                        markSchemaService(clusterId, "ONLINE", null);
+                        markSchemaService(clusterId, payload, "ONLINE", null);
                     }
                     jobService.appendLog(job.getId(), step.getName() + " completed.");
                     i++;
@@ -97,7 +97,7 @@ public class DeploymentJobHandler implements JobHandler {
                     String output = executeBackendConnectOperation(clusterId, jobPayload, payload);
                     jobService.completeStep(step.getId(), output);
                     if ("save_connect_connection".equals(operation(payload))) {
-                        markConnectService(clusterId, "ONLINE", null);
+                        markConnectService(clusterId, payload, "ONLINE", null);
                     }
                     jobService.appendLog(job.getId(), step.getName() + " completed.");
                     i++;
@@ -118,10 +118,10 @@ public class DeploymentJobHandler implements JobHandler {
             } catch (Exception e) {
                 jobService.failStep(step.getId(), e.getMessage());
                 if (isSchemaOperation(payload)) {
-                    markSchemaService(clusterId, "FAILED", e.getMessage());
+                    markSchemaService(clusterId, payload, "FAILED", e.getMessage());
                     saveClusterStatus(cluster, "DEGRADED", job);
                 } else if (isConnectOperation(payload)) {
-                    markConnectService(clusterId, "FAILED", e.getMessage());
+                    markConnectService(clusterId, payload, "FAILED", e.getMessage());
                     saveClusterStatus(cluster, "DEGRADED", job);
                 } else {
                     saveClusterStatus(cluster, "FAILED", job);
@@ -189,6 +189,24 @@ public class DeploymentJobHandler implements JobHandler {
             Map<String, Object> payload = readMap(step.getPayload());
             try {
 				String operation = operation(payload);
+
+                if ("install_schema".equals(operation) || "install_connect".equals(operation)) {
+                    if (step.getStatus() == JobStepStatus.IN_PROGRESS && step.getAgentTaskId() != null) taskAwaiter.await(step.getAgentTaskId());
+                    String key = "install_schema".equals(operation) ? "schemaRegistry" : "kafkaConnect";
+                    Object configuration = payload.getOrDefault("serviceConfig", jobPayload.get(key));
+                    if (!(configuration instanceof Map<?, ?>)) throw new IllegalArgumentException("Service rollback configuration is missing.");
+                    Map<String, Object> cleanup = objectMapper.convertValue(configuration, new TypeReference<>() {});
+                    cleanup.put("kind", "install_schema".equals(operation) ? "schema_registry" : "kafka_connect");
+                    jobService.startStep(step.getId());
+                    UUID taskId = deploymentService.deleteClusterFromHost(clusterId, required(payload, "host_id"),
+                            stringValue(jobPayload, "kafkaVersion"), "{}", List.of(cleanup), false);
+                    jobService.attachAgentTask(step.getId(), taskId);
+                    Task completed = taskAwaiter.await(taskId);
+                    jobService.rolledBackStep(step.getId(), taskOutput(completed));
+                    if ("install_schema".equals(operation)) markSchemaService(clusterId, payload, "ROLLED_BACK", null);
+                    else markConnectService(clusterId, payload, "ROLLED_BACK", null);
+                    continue;
+                }
 				if (!"deploy".equals(operation)) {
 					if (step.getStatus() == JobStepStatus.IN_PROGRESS && step.getAgentTaskId() != null) {
 						taskAwaiter.await(step.getAgentTaskId());
@@ -293,12 +311,12 @@ public class DeploymentJobHandler implements JobHandler {
                     required(payload, "zookeeper_connect"),
                     stringValue(payload, "serviceConfigJson")
             );
-            case "precheck_schema" -> dispatchSchemaAgentTask(clusterId, jobPayload, "PRECHECK_SCHEMA");
-            case "install_schema" -> dispatchSchemaAgentTask(clusterId, jobPayload, "INSTALL_SCHEMA");
-            case "verify_schema" -> dispatchSchemaAgentTask(clusterId, jobPayload, "VERIFY_SCHEMA_REGISTRY");
-            case "precheck_connect" -> dispatchConnectAgentTask(clusterId, jobPayload, "PRECHECK_CONNECT");
-            case "install_connect" -> dispatchConnectAgentTask(clusterId, jobPayload, "INSTALL_CONNECT");
-            case "verify_connect" -> dispatchConnectAgentTask(clusterId, jobPayload, "VERIFY_CONNECT");
+            case "precheck_schema" -> dispatchSchemaAgentTask(clusterId, jobPayload, payload, "PRECHECK_SCHEMA");
+            case "install_schema" -> dispatchSchemaAgentTask(clusterId, jobPayload, payload, "INSTALL_SCHEMA");
+            case "verify_schema" -> dispatchSchemaAgentTask(clusterId, jobPayload, payload, "VERIFY_SCHEMA_REGISTRY");
+            case "precheck_connect" -> dispatchConnectAgentTask(clusterId, jobPayload, payload, "PRECHECK_CONNECT");
+            case "install_connect" -> dispatchConnectAgentTask(clusterId, jobPayload, payload, "INSTALL_CONNECT");
+            case "verify_connect" -> dispatchConnectAgentTask(clusterId, jobPayload, payload, "VERIFY_CONNECT");
             case "deploy" -> deploymentService.deployKafkaToHost(
                     clusterId,
                     required(payload, "host_id"),
@@ -315,8 +333,8 @@ public class DeploymentJobHandler implements JobHandler {
     }
 
     @SuppressWarnings("unchecked")
-    private UUID dispatchSchemaAgentTask(UUID clusterId, Map<String, Object> jobPayload, String command) {
-        Object configuration = jobPayload.get("schemaRegistry");
+    private UUID dispatchSchemaAgentTask(UUID clusterId, Map<String, Object> jobPayload, Map<String, Object> payload, String command) {
+        Object configuration = payload.getOrDefault("serviceConfig", jobPayload.get("schemaRegistry"));
         if (!(configuration instanceof Map<?, ?>)) {
             throw new IllegalArgumentException("Schema Registry job configuration is missing.");
         }
@@ -342,8 +360,8 @@ public class DeploymentJobHandler implements JobHandler {
     }
 
     @SuppressWarnings("unchecked")
-    private UUID dispatchConnectAgentTask(UUID clusterId, Map<String, Object> jobPayload, String command) {
-        Object configuration = jobPayload.get("kafkaConnect");
+    private UUID dispatchConnectAgentTask(UUID clusterId, Map<String, Object> jobPayload, Map<String, Object> payload, String command) {
+        Object configuration = payload.getOrDefault("serviceConfig", jobPayload.get("kafkaConnect"));
         if (!(configuration instanceof Map<?, ?>)) {
             throw new IllegalArgumentException("Kafka Connect job configuration is missing.");
         }
@@ -373,16 +391,16 @@ public class DeploymentJobHandler implements JobHandler {
                 || "save_connect_connection".equals(operation(payload));
     }
 
-    private void markSchemaService(UUID clusterId, String status, String error) {
-        clusterServiceAssignmentRepository.findByClusterIdAndRole(clusterId, "schema_registry").ifPresent(service -> {
+    private void markSchemaService(UUID clusterId, Map<String, Object> payload, String status, String error) {
+        clusterServiceAssignmentRepository.findByClusterIdAndRoleAndHostId(clusterId, "schema_registry", required(payload, "host_id")).ifPresent(service -> {
             service.setStatus(status);
             service.setLastError(error);
             clusterServiceAssignmentRepository.save(service);
         });
     }
 
-    private void markConnectService(UUID clusterId, String status, String error) {
-        clusterServiceAssignmentRepository.findByClusterIdAndRole(clusterId, "kafka_connect").ifPresent(service -> {
+    private void markConnectService(UUID clusterId, Map<String, Object> payload, String status, String error) {
+        clusterServiceAssignmentRepository.findByClusterIdAndRoleAndHostId(clusterId, "kafka_connect", required(payload, "host_id")).ifPresent(service -> {
             service.setStatus(status);
             service.setLastError(error);
             clusterServiceAssignmentRepository.save(service);
@@ -406,7 +424,7 @@ public class DeploymentJobHandler implements JobHandler {
     @SuppressWarnings("unchecked")
     private String executeBackendSchemaOperation(UUID clusterId, Map<String, Object> jobPayload,
                                                  Map<String, Object> payload) {
-        Object configuration = jobPayload.get("schemaRegistry");
+        Object configuration = payload.getOrDefault("serviceConfig", jobPayload.get("schemaRegistry"));
         if (!(configuration instanceof Map<?, ?>)) {
             throw new IllegalArgumentException("Schema Registry job configuration is missing.");
         }
@@ -445,20 +463,20 @@ public class DeploymentJobHandler implements JobHandler {
         }
 
         SaveConnectionRequest request = new SaveConnectionRequest();
-        request.setConnectionName("Deployed Schema Registry");
+        request.setConnectionName("Deployed Schema Registry" + (Boolean.TRUE.equals(schema.get("instance_connection")) ? " on " + schema.get("host_id") : ""));
         request.setProtocol("http");
         request.setHost(String.valueOf(schema.get("host_name")));
         request.setPort(Integer.parseInt(String.valueOf(schema.get("rest_port"))));
-        request.setIsDefault(true);
+        request.setIsDefault(dataServiceConnectionService.getActiveConnection(clusterId, "SCHEMA_REGISTRY").isEmpty());
         dataServiceConnectionService.saveConnection(clusterId, "SCHEMA_REGISTRY", request,
                 stringValue(jobPayload, "requestedBy"));
-        return "Saved the default Schema Registry connection.";
+        return "Saved Schema Registry connection for " + schema.get("host_id") + ".";
     }
 
     @SuppressWarnings("unchecked")
     private String executeBackendConnectOperation(UUID clusterId, Map<String, Object> jobPayload,
                                                   Map<String, Object> payload) {
-        Object configuration = jobPayload.get("kafkaConnect");
+        Object configuration = payload.getOrDefault("serviceConfig", jobPayload.get("kafkaConnect"));
         if (!(configuration instanceof Map<?, ?>)) {
             throw new IllegalArgumentException("Kafka Connect job configuration is missing.");
         }
@@ -478,14 +496,14 @@ public class DeploymentJobHandler implements JobHandler {
         }
 
         SaveConnectionRequest request = new SaveConnectionRequest();
-        request.setConnectionName("Deployed Kafka Connect");
+        request.setConnectionName("Deployed Kafka Connect" + (Boolean.TRUE.equals(connect.get("instance_connection")) ? " on " + connect.get("host_id") : ""));
         request.setProtocol("http");
         request.setHost(String.valueOf(connect.get("host_name")));
         request.setPort(Integer.parseInt(String.valueOf(connect.get("rest_port"))));
-        request.setIsDefault(true);
+        request.setIsDefault(dataServiceConnectionService.getActiveConnection(clusterId, "KAFKA_CONNECT").isEmpty());
         dataServiceConnectionService.saveConnection(clusterId, "KAFKA_CONNECT", request,
                 stringValue(jobPayload, "requestedBy"));
-        return "Saved the default Kafka Connect connection.";
+        return "Saved Kafka Connect connection for " + connect.get("host_id") + ".";
     }
 
     private void ensureCompactedTopic(AdminClient admin, List<String> existing, String topic,

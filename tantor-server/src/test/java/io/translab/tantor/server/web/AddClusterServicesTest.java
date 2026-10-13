@@ -83,17 +83,55 @@ class AddClusterServicesTest {
         assertThat(job.getValue().getRollbackSupported()).isFalse();
         var payload = new ObjectMapper().readTree(job.getValue().getPayload());
         assertThat(payload.path("servicesOnly").asBoolean()).isTrue();
-        assertThat(payload.path("schemaRegistry").path("bootstrap_servers").asText()).contains("broker:9092");
-        assertThat(payload.path("kafkaConnect").path("other_install_dir").asText()).isEqualTo("/opt/tantor/schema-registry");
+        var schemaPayload = new ObjectMapper().readTree(steps.getValue().get(0).getPayload()).path("serviceConfig");
+        var connectPayload = new ObjectMapper().readTree(steps.getValue().get(5).getPayload()).path("serviceConfig");
+        assertThat(schemaPayload.path("bootstrap_servers").asText()).contains("broker:9092");
+        assertThat(schemaPayload.path("install_dir").asText()).isEqualTo("/opt/kafka");
+        assertThat(schemaPayload.path("config_dir").asText()).isEqualTo("/opt/kafka/etc/schema-registry");
+        assertThat(connectPayload.path("other_install_dir").asText()).isEqualTo("/opt/kafka");
+        assertThat(connectPayload.path("other_config_dir").asText()).isEqualTo("/opt/kafka/etc/schema-registry");
         assertThat(steps.getValue()).hasSize(10).noneSatisfy(step -> assertThat(step.getPayload()).contains("\"operation\":\"deploy\""));
         assertThat(cluster.getServices()).extracting(ClusterServiceAssignment::getRole).containsExactly("broker_controller", "schema_registry", "kafka_connect");
         assertThat(cluster.getStatus()).isEqualTo("SUCCESS");
     }
 
     @Test
+    void clusterDetailsExposeExistingHostAndGroupForScaleOut() {
+        cluster.setKafkaClusterId("test-kafka-cluster-id");
+        ReflectionTestUtils.setField(controller, "brokerMetricsCacheService", mock(io.translab.tantor.server.service.BrokerMetricsCacheService.class));
+        var worker = new ClusterServiceAssignment(); worker.setRole("kafka_connect"); worker.setHostId("host-1"); worker.setStatus("ONLINE");
+        worker.setConfigJson("{\"group_id\":\"custom-connect-group\",\"rest_port\":8083}");
+        cluster.getServices().add(worker);
+        when(clusters.findById(cluster.getId())).thenReturn(Optional.of(cluster));
+        var response = controller.getCluster(cluster.getId());
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        List<java.util.Map<String, Object>> instances = (List<java.util.Map<String, Object>>) response.getBody().get("serviceInstances");
+        assertThat(instances).hasSize(1);
+        assertThat(instances.get(0)).containsEntry("hostId", "host-1").containsEntry("groupId", "custom-connect-group").containsEntry("status", "ONLINE");
+    }
+
+    @Test
+    void scaleOutCreatesHostSpecificStepsWithoutRedeployingTheExistingInstance() throws Exception {
+        var broker = new ClusterServiceAssignment(); broker.setHostId("host-2"); broker.setRole("broker");
+        cluster.getServices().add(broker);
+        var existing = new ClusterServiceAssignment(); existing.setHostId("host-1"); existing.setRole("kafka_connect"); existing.setStatus("ONLINE");
+        existing.setConfigJson("{\"group_id\":\"tantor-connect-" + cluster.getId() + "\",\"replication_factor\":1}");
+        cluster.getServices().add(existing);
+        var request = new ClusterController.AddonsReq(); var worker = request().getKafka_connect(); worker.setHost_id("host-2");
+        request.setKafka_connect_workers(List.of(worker));
+        assertThat(controller.addServicesToCluster("token", cluster.getId(), request).getStatusCode().value()).isEqualTo(200);
+        @SuppressWarnings("unchecked") ArgumentCaptor<List<JobStep>> steps = ArgumentCaptor.forClass(List.class);
+        verify(jobs).createJob(any(), steps.capture());
+        assertThat(steps.getValue()).hasSize(5).allSatisfy(step -> assertThat(step.getTargetId()).isEqualTo("host-2"));
+        assertThat(existing.getStatus()).isEqualTo("ONLINE");
+        assertThat(cluster.getServices().stream().filter(service -> "kafka_connect".equals(service.getRole()))).hasSize(2);
+    }
+
+    @Test
     void rejectsDuplicateServiceBeforeCreatingAnyJob() {
         var existing = new ClusterServiceAssignment();
         existing.setRole("schema_registry");
+        existing.setHostId("host-1");
         cluster.getServices().add(existing);
         assertThat(controller.addServicesToCluster("token", cluster.getId(), request()).getStatusCode().value()).isEqualTo(409);
         verifyNoInteractions(jobs);

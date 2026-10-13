@@ -84,6 +84,26 @@ public class RollingRestartHealthService {
                 underReplicatedPartitions, minIsrViolations, consumerLag, Collections.unmodifiableMap(new LinkedHashMap<>(failures)));
     }
 
+    public void assertBrokerCanStop(UUID clusterId, int nodeId) {
+        try {
+            AdminClient client = kafkaAdminService.getAdminClient(clusterId);
+            Set<String> names = client.listTopics(new ListTopicsOptions().listInternal(true)).names().get();
+            var minimum = loadMinimumIsr(client, names);
+            if (names.isEmpty()) return;
+            for (var topic : client.describeTopics(names).allTopicNames().get().values()) {
+                for (var partition : topic.partitions()) {
+                    if (partition.replicas().stream().noneMatch(node -> node.id() == nodeId)) continue;
+                    long remaining = partition.isr().stream().filter(node -> node.id() != nodeId).count();
+                    if (remaining < Math.max(1, minimum.getOrDefault(topic.name(), 1)))
+                        throw new IllegalStateException("Restarting broker " + nodeId + " would leave " + topic.name() + "-" + partition.partition()
+                                + " below min.insync.replicas or without an available replica.");
+                }
+            }
+        } catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new IllegalStateException("Broker safety inspection interrupted", e); }
+        catch (RuntimeException e) { throw e; }
+        catch (Exception e) { throw new IllegalStateException("Broker safety inspection failed", e); }
+    }
+
     private Map<String, Integer> loadMinimumIsr(AdminClient client, Set<String> topicNames) throws Exception {
         if (topicNames.isEmpty()) return Map.of();
         Map<ConfigResource, String> resources = topicNames.stream().collect(Collectors.toMap(
@@ -123,7 +143,8 @@ public class RollingRestartHealthService {
         for (String hostId : requiredHostIds) {
             Host host = hostRepository.findById(hostId).orElse(null);
             if (host == null || host.getLastHeartbeat() == null || host.getLastHeartbeat().isBefore(cutoff)
-                    || !"ONLINE".equalsIgnoreCase(host.getStatus())) {
+                    || (!"ONLINE".equalsIgnoreCase(host.getStatus())
+                        && !"OCCUPIED".equalsIgnoreCase(host.getStatus()))) {
                 unavailable.add(hostId);
                 continue;
             }

@@ -40,6 +40,11 @@ public class ApiExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(error("NODE_NAME_CONFLICT", cleanMessage(ex)));
     }
 
+    @ExceptionHandler(io.translab.tantor.server.service.ClusterOperationConflictException.class)
+    public ResponseEntity<ApiError> handleClusterOperationConflict(io.translab.tantor.server.service.ClusterOperationConflictException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(error("CLUSTER_OPERATION_ACTIVE", cleanMessage(ex)));
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ApiError> handleIllegalArgument(IllegalArgumentException ex) {
         return ResponseEntity.badRequest().body(error("BAD_REQUEST", cleanMessage(ex)));

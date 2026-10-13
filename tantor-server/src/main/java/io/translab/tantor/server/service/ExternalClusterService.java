@@ -1131,6 +1131,7 @@ public class ExternalClusterService {
             if (payload.containsKey("backupFilePath")) task.setBackupFilePath(String.valueOf(payload.get("backupFilePath")));
             if (payload.containsKey("serviceName")) task.setServiceName(String.valueOf(payload.get("serviceName")));
             if (payload.containsKey("configChanges")) task.setConfigChanges((Map<String, String>) payload.get("configChanges"));
+            if (payload.containsKey("expectedValues")) task.setExpectedValues((Map<String, String>) payload.get("expectedValues"));
         }
         
         String key = taskKey(cluster.getName(), hostname, cluster.getBootstrapServers());
@@ -1174,6 +1175,9 @@ public class ExternalClusterService {
         }
         if (task.getConfigChanges() != null) {
             response.put("configChanges", task.getConfigChanges());
+        }
+        if (task.getExpectedValues() != null) {
+            response.put("expectedValues", task.getExpectedValues());
         }
         if (task.getServiceName() != null) {
             response.put("serviceName", task.getServiceName());
@@ -2197,6 +2201,7 @@ public class ExternalClusterService {
         private String backupDirPath;
         private String backupFilePath;
         private Map<String, String> configChanges;
+        private Map<String, String> expectedValues;
         private String serviceName;
         private Map<String, String> data;
     }

@@ -23,6 +23,7 @@ public class ConfigVersionService {
     private static final Set<String> GENERATED_KEYS = Set.of(
             "process.roles", "node.id", "broker.id", "listeners", "advertised.listeners",
             "controller.quorum.voters", "controller.quorum.bootstrap.servers", "zookeeper.connect",
+            "log.dirs", "metadata.log.dir", "inter.broker.listener.name",
             "dataDir", "clientPort", "servers"
     );
     private static final Set<String> POSITIVE_INTEGER_KEYS = Set.of(
@@ -60,8 +61,8 @@ public class ConfigVersionService {
                 if (value.contains("\n") || value.contains("\r")) {
                     errors.add("Multi-line values are not allowed: " + key);
                 }
-                if (GENERATED_KEYS.contains(key) && oldConfig.containsKey(key)
-                        && !Objects.equals(stringValue(oldConfig.get(key)), value)) {
+                if (GENERATED_KEYS.contains(key)
+                        && !Objects.equals(oldConfig == null ? null : oldConfig.get(key), entry.getValue())) {
                     errors.add(key + " is topology-managed and cannot be changed here.");
                 }
                 if (POSITIVE_INTEGER_KEYS.contains(key)) {
@@ -71,6 +72,13 @@ public class ConfigVersionService {
                         errors.add(key + " must be a positive integer.");
                     }
                 }
+            }
+        }
+
+        for (String protectedKey : GENERATED_KEYS) {
+            if (oldConfig != null && oldConfig.containsKey(protectedKey)
+                    && (newConfig == null || !newConfig.containsKey(protectedKey))) {
+                errors.add(protectedKey + " is topology-managed and cannot be removed here.");
             }
         }
 
@@ -152,6 +160,10 @@ public class ConfigVersionService {
 
     @Transactional
     public Job apply(UUID clusterId, UUID versionId, boolean restart) {
+        jobService.assertClusterMutable(clusterId);
+        if (!restart) {
+            throw new IllegalArgumentException("Versioned file changes require a controlled service restart. Use the dynamic broker change flow for restart-free changes.");
+        }
         ConfigVersion version = ownedVersion(clusterId, versionId);
         ConfigVersionStatus previousStatus = version.getStatus();
         if (version.getStatus() != ConfigVersionStatus.VALIDATED
@@ -184,7 +196,7 @@ public class ConfigVersionService {
         activeServiceConfig.put("properties", newProperties);
 
         Map<String, Object> stepPayload = new LinkedHashMap<>();
-        stepPayload.put("operation", "service");
+        stepPayload.put("operation", "EXTERNAL".equalsIgnoreCase(cluster.getMode()) ? "service" : "patch_service");
         stepPayload.put("configVersionId", version.getId().toString());
         stepPayload.put("configVersion", version.getConfigVersion().toString());
         stepPayload.put("configPath", version.getConfigFileName());
@@ -196,6 +208,23 @@ public class ConfigVersionService {
         stepPayload.put("previousConfigJson", service.getConfigJson() == null ? "{}" : service.getConfigJson());
         stepPayload.put("previousPropertiesTemplate", serializeProperties(readMap(version.getOldConfig())));
         stepPayload.put("restart", restart);
+        Map<String, Object> changes = new LinkedHashMap<>();
+        Map<String, Object> expected = new LinkedHashMap<>();
+        Map<String, Object> oldProperties = readMap(version.getOldConfig());
+        for (Map.Entry<String, Object> entry : newProperties.entrySet()) {
+            if (!Objects.equals(entry.getValue(), oldProperties.get(entry.getKey()))) {
+                changes.put(entry.getKey(), entry.getValue());
+                expected.put(entry.getKey(), oldProperties.get(entry.getKey()));
+            }
+        }
+        for (String oldKey : oldProperties.keySet()) {
+            if (!newProperties.containsKey(oldKey)) {
+                changes.put(oldKey, null);
+                expected.put(oldKey, oldProperties.get(oldKey));
+            }
+        }
+        stepPayload.put("changes", changes);
+        stepPayload.put("expected", expected);
 
         JobStep step = new JobStep();
         step.setStepOrder(1);

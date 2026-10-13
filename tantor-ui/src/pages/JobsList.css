@@ -226,3 +226,5 @@
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+.job-cluster-name { margin-top: 4px; color: #818181; font-size: 12px; overflow-wrap: anywhere; }

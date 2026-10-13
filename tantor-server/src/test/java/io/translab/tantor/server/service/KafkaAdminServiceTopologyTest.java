@@ -23,6 +23,23 @@ import static org.mockito.Mockito.when;
 
 class KafkaAdminServiceTopologyTest {
     @Test
+    void usesEachBrokerPortInsteadOfInheritedClusterListener() {
+        UUID id = UUID.randomUUID();
+        Cluster cluster = cluster(id, "{\"listeners\":\"PLAINTEXT://0.0.0.0:9092\"}", "broker-a", "broker-b", "broker-c");
+        cluster.getServices().get(0).setConfigJson("{\"listener_port\":9094}");
+        cluster.getServices().get(1).setConfigJson("{\"listener_port\":9092}");
+        cluster.getServices().get(2).setConfigJson("{\"listener_port\":9073}");
+        HostRepository hosts = mock(HostRepository.class);
+        when(hosts.findById("broker-a")).thenReturn(Optional.of(host("broker-a", "192.168.3.191")));
+        when(hosts.findById("broker-b")).thenReturn(Optional.of(host("broker-b", "192.168.3.213")));
+        when(hosts.findById("broker-c")).thenReturn(Optional.of(host("broker-c", "192.168.3.229")));
+
+        assertThat(service(cluster, hosts).getKafkaClientProperties(id)
+                .getProperty(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG))
+                .isEqualTo("192.168.3.191:9094,192.168.3.213:9092,192.168.3.229:9073");
+    }
+
+    @Test
     void usesExplicitNonDefaultPortForEveryBrokerInMultiHostTopology() {
         UUID id = UUID.randomUUID();
         Cluster cluster = cluster(id, "{\"listener_port\":19094}", "broker-a", "broker-b");
@@ -52,7 +69,7 @@ class KafkaAdminServiceTopologyTest {
     private KafkaAdminService service(Cluster cluster, HostRepository hosts) {
         ClusterRepository clusters = mock(ClusterRepository.class);
         ExternalClusterRepository external = mock(ExternalClusterRepository.class);
-        when(clusters.findById(cluster.getId())).thenReturn(Optional.of(cluster));
+        when(clusters.findWithServicesById(cluster.getId())).thenReturn(Optional.of(cluster));
         when(external.findById(cluster.getId())).thenReturn(Optional.empty());
         return new KafkaAdminService(clusters, external, hosts, new ObjectMapper(),
                 mock(EncryptionService.class), mock(TruststoreStorageService.class));

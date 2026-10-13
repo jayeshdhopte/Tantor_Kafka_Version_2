@@ -85,6 +85,7 @@ class ClusterControllerHostReleaseTest {
 
     @Test
     void deletingClusterKeepsOccupiedHostUntilAgentConfirmsCleanup() {
+        prepareDeletionHistory();
         UUID clusterId = UUID.randomUUID();
         String hostId = "agent-vm-229";
 
@@ -124,6 +125,7 @@ class ClusterControllerHostReleaseTest {
 
     @Test
     void deletionIncludesManagedDataServicesOnTheirOwnHosts() {
+        prepareDeletionHistory();
         UUID clusterId = UUID.randomUUID();
         Cluster cluster = new Cluster();
         cluster.setId(clusterId);
@@ -441,5 +443,24 @@ class ClusterControllerHostReleaseTest {
         host.setStatus("OCCUPIED");
         host.setHostIp("192.0.2.1");
         return host;
+    }
+    private void prepareDeletionHistory() {
+        ReflectionTestUtils.setField(controller, "deletionHistory", new io.translab.tantor.server.service.ClusterDeletionHistoryService(jobService, deploymentService, hostRepository, new ObjectMapper()));
+        when(roleAuthenticationUtil.extractUsername(any())).thenReturn("operator");
+        when(jobService.createJob(any(),org.mockito.ArgumentMatchers.anyList())).thenAnswer(call->{
+            io.translab.tantor.server.domain.Job job=call.getArgument(0);job.setId(UUID.randomUUID());
+            for(io.translab.tantor.server.domain.JobStep step:call.<List<io.translab.tantor.server.domain.JobStep>>getArgument(1)) step.setId(UUID.randomUUID());return job;
+        });
+    }
+
+    @Test void externalRemovalReturnsItsCompletedHistoryJobAndRecordsAuditAfterRemoval() {
+        prepareDeletionHistory(); UUID id=UUID.randomUUID(); ExternalCluster external=new ExternalCluster();external.setId(id);external.setName("external-deleted");
+        when(roleAuthenticationUtil.canAccess(any(),anyString())).thenReturn(true);when(externalClusterRepository.findById(id)).thenReturn(Optional.of(external));
+        var response=controller.deleteCluster("Bearer test-token",id);
+        assertThat(response.getHeaders().getFirst("X-Job-Id")).isNotBlank();assertThat(response.getStatusCode().value()).isEqualTo(200);
+        verify(externalClusterService).deleteExternalCluster(id);
+        verify(auditService).record(org.mockito.ArgumentMatchers.eq("CLUSTER_CHANGE"),org.mockito.ArgumentMatchers.eq("EXTERNAL_CLUSTER_DELETED"),org.mockito.ArgumentMatchers.eq("CLUSTER"),org.mockito.ArgumentMatchers.eq(id.toString()),org.mockito.ArgumentMatchers.eq(id),org.mockito.ArgumentMatchers.eq("SUCCESS"),any(),any(),any(),any());
+        verify(jobService).createJob(org.mockito.ArgumentMatchers.argThat(job->job.getStatus()==io.translab.tantor.server.domain.JobStatus.SUCCESS&&job.getPayload().contains("external-deleted")),org.mockito.ArgumentMatchers.anyList());
+        verify(deploymentService,never()).deleteClusterFromHost(any(),any(),any(),any(),any(),org.mockito.ArgumentMatchers.anyBoolean());
     }
 }

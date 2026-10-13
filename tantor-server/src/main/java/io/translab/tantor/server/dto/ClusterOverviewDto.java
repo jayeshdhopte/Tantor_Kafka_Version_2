@@ -31,6 +31,20 @@ public class ClusterOverviewDto {
     private List<BrokerRow> brokers;
     private List<ControllerRow> controllers;
     private List<NodePathRow> nodePaths;
+    private List<DataServicePathRow> dataServicePaths;
+
+    @Data @Builder @NoArgsConstructor @AllArgsConstructor
+    public static class DataServicePathRow {
+        private String serviceType;
+        private String hostId;
+        private String hostname;
+        private String ipAddress;
+        private String installDir;
+        private String configFile;
+        private String pluginDir;
+        private String workingDir;
+        private String logDir;
+    }
 
     @Data
     @Builder

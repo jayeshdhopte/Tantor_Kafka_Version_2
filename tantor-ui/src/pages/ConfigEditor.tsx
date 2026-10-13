@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { Loader2, Play, RefreshCw, Save, ShieldAlert } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Loader2, Play, RefreshCw, Save, ShieldAlert, Plus, Trash2 } from 'lucide-react';
 import { InternalConfigEditor } from './InternalConfigEditor';
 import { usePermissions } from '../hooks/usePermissions';
 import { notifyAction } from '../components/confirmUtils';
@@ -94,6 +94,7 @@ export function ConfigEditor() {
 function ExternalConfigEditor() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { canManage } = usePermissions();
   
   const [loading, setLoading] = useState(false);
@@ -111,17 +112,25 @@ function ExternalConfigEditor() {
   
   // currently editing draft
   const [draftProperties, setDraftProperties] = useState<Record<string, string>>({});
-  const [rollingRestart, setRollingRestart] = useState(true);
+  const [newPropertyKey, setNewPropertyKey] = useState('');
+  const [newPropertyValue, setNewPropertyValue] = useState('');
+  const rollingRestart = true;
   const [applying, setApplying] = useState(false);
 
-  const fetchConfigs = async () => {
+  const fetchConfigs = useCallback(async () => {
     setLoading(true);
     try {
       const response = await fetch(`/api/v1/clusters/${id}/config`);
       if (response.ok) {
         const payload: ConfigPayload = await response.json();
-        setTopology(payload.serviceTopology || []);
-        setConfigFiles(payload.staticConfigs.configFiles || []);
+        const allowed = new URLSearchParams(location.search).get('targets');
+        const targetIds = allowed ? new Set(allowed.split(',').map(Number).filter(Number.isFinite)) : null;
+        setTopology((payload.serviceTopology || []).filter(node => !targetIds || targetIds.has(node.nodeId)));
+        setConfigFiles((payload.staticConfigs.configFiles || []).filter(file => !targetIds || targetIds.has(file.nodeId || -1)));
+        const requestedNodeId = Number(new URLSearchParams(location.search).get('nodeId'));
+        if (requestedNodeId && (payload.serviceTopology || []).some(node => node.nodeId === requestedNodeId)) {
+          setSelectedNodeId(requestedNodeId);
+        }
       } else {
         notifyAction('Failed to fetch cluster configuration');
       }
@@ -130,7 +139,8 @@ function ExternalConfigEditor() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, location.search]);
+  useEffect(() => { void Promise.resolve().then(fetchConfigs); }, [fetchConfigs]);
 
   const selectedNode = useMemo(() => {
     if (selectedNodeId === null) return null;
@@ -179,7 +189,7 @@ function ExternalConfigEditor() {
       const taskId = startData.taskId;
 
       let complete = false;
-      while (!complete) {
+      for (let attempt = 0; attempt < 45 && !complete; attempt++) {
         await new Promise(r => setTimeout(r, 2000));
         const statusRes = await fetch(`/api/v1/ui/external-clusters/tasks/${taskId}`);
         if (!statusRes.ok) break;
@@ -195,6 +205,7 @@ function ExternalConfigEditor() {
            setReadStatus('Waiting for agent to read file...');
         }
       }
+      if (!complete) setReadStatus('Timed out reading the active config from this node. Retry when the agent is online.');
     } catch {
        setReadStatus('Error reading config.');
     } finally {
@@ -203,9 +214,9 @@ function ExternalConfigEditor() {
   };
 
   const saveDraftToStaged = () => {
-    if (!selectedNode || !selectedFile) return;
+    if (!selectedNode || !selectedFile) return stagedChanges;
     const baseProperties = Object.fromEntries(
-      Object.entries(selectedFile.properties || {}).map(([key, value]) => [key, String(value ?? '')])
+      Object.entries(fetchedProperties[selectedNode.nodeId] || selectedFile.properties || {}).map(([key, value]) => [key, String(value ?? '')])
     );
     const changed: StagedProperty[] = [];
     
@@ -223,9 +234,8 @@ function ExternalConfigEditor() {
       }
     }
 
-    setStagedChanges(prev => {
-      const next = { ...prev };
-      if (changed.length > 0) {
+    const next = { ...stagedChanges };
+    if (changed.length > 0) {
         next[selectedNode.nodeId] = {
           nodeId: selectedNode.nodeId,
           host: selectedNode.hostAddress,
@@ -233,11 +243,11 @@ function ExternalConfigEditor() {
           configFilePath: selectedNode.configPath,
           properties: changed,
         };
-      } else {
-        delete next[selectedNode.nodeId];
-      }
-      return next;
-    });
+    } else {
+      delete next[selectedNode.nodeId];
+    }
+    setStagedChanges(next);
+    return next;
   };
 
   useEffect(() => {
@@ -278,9 +288,7 @@ function ExternalConfigEditor() {
   const applyChanges = async () => {
     if (!canManage) return;
     // save current screen
-    saveDraftToStaged();
-    
-    const changesArray = Object.values(stagedChanges);
+    const changesArray = Object.values(saveDraftToStaged());
     if (changesArray.length === 0) {
       notifyAction('No changes staged.');
       return;
@@ -400,6 +408,7 @@ function ExternalConfigEditor() {
                                 <RefreshCw size={14} />
                               </button>
                             )}
+                            {canManage && <button className="icon-btn danger" onClick={() => mutateDraft(key, null)} title={`Remove ${key}`} aria-label={`Remove ${key}`}><Trash2 size={14} /></button>}
                           </div>
                         </td>
                       </tr>
@@ -407,6 +416,11 @@ function ExternalConfigEditor() {
                   })}
                 </tbody>
               </table>
+              {canManage && <div className="cc-external-add"><input aria-label="New Kafka property key" value={newPropertyKey} onChange={event => setNewPropertyKey(event.target.value)} placeholder="Property key" /><input aria-label="New Kafka property value" value={newPropertyValue} onChange={event => setNewPropertyValue(event.target.value)} placeholder="Value" /><button type="button" disabled={!newPropertyKey.trim()} onClick={() => {
+                const key = newPropertyKey.trim();
+                if (!/^[A-Za-z][A-Za-z0-9._-]{0,127}$/.test(key)) { notifyAction('Enter a valid Kafka property key.'); return; }
+                mutateDraft(key, newPropertyValue); setNewPropertyKey(''); setNewPropertyValue('');
+              }}><Plus size={14} /> Add property</button></div>}
             </div>
           )}
           
@@ -442,10 +456,7 @@ function ExternalConfigEditor() {
           </div>
 
           <div className="config-review-footer">
-            {canManage && <label>
-              <input type="checkbox" checked={rollingRestart} onChange={e => setRollingRestart(e.target.checked)} /> 
-              Perform rolling restart to apply immediately
-            </label>}
+            {canManage && <span>Controlled rolling restart is required for file changes.</span>}
             {canManage && <button className="primary" onClick={applyChanges} disabled={applying}>
               {applying ? <Loader2 size={14} className="spin" /> : <Play size={14} />} Apply Changes
             </button>}

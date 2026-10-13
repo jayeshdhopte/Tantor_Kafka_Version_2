@@ -6,6 +6,8 @@ import './JobsList.css';
 type Job = {
   id: string;
   type: string;
+  payload?: string | { clusterName?: string };
+  requestedBy?: string;
   status: string;
   startTime: string;
   endTime: string;
@@ -66,12 +68,17 @@ export function JobsList() {
     }
   };
 
+  const clusterName = (job: Job) => {
+    try { const payload = typeof job.payload === 'string' ? JSON.parse(job.payload) as { clusterName?: string } : job.payload; return payload?.clusterName || ''; }
+    catch { return ''; }
+  };
+
   return (
     <div className="jobs-list-page animate-fade-in">
       <header className="page-header-jobs">
         <div className="header-titles">
           <h2>Job History</h2>
-          <p>Track all asynchronous operations in the cluster.</p>
+          <p>Track cluster operations and their execution history.</p>
         </div>
         <button className="refresh-btn" onClick={() => fetchJobs(true)} disabled={loading || refreshing} title="Refresh">
           <RefreshCw size={14} className={refreshing ? 'spin' : ''} />
@@ -101,7 +108,8 @@ export function JobsList() {
                 <tr key={job.id}>
                   <td>{job.id.slice(0, 8)}</td>
                   <td className="job-type">
-                    {job.type.charAt(0).toUpperCase() + job.type.slice(1).toLowerCase()}
+                    {job.type.toLowerCase().replaceAll('_', ' ').replace(/\b\w/g, letter => letter.toUpperCase())}
+                    {clusterName(job) && <div className="job-cluster-name">{clusterName(job)}</div>}
                   </td>
                   <td>
                     <div className={`status-pill ${getStatusClass(job.status)}`}>

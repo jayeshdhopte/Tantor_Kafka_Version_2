@@ -4,190 +4,162 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.translab.tantor.server.domain.*;
 import io.translab.tantor.server.repository.ClusterRepository;
+import io.translab.tantor.server.repository.HostRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.time.Instant;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 @Component
 @RequiredArgsConstructor
 public class RollingRestartJobHandler implements JobHandler {
-
     private final JobService jobService;
     private final DeploymentService deploymentService;
     private final AgentTaskAwaiter taskAwaiter;
     private final ClusterRepository clusterRepository;
+    private final HostRepository hostRepository;
     private final KafkaAdminService kafkaAdminService;
-    private final ExternalClusterService externalClusterService;
+    private final RollingRestartHealthService healthService;
     private final ObjectMapper objectMapper;
+    private final RollingRestartTaskDispatcher restartDispatcher;
+    @Value("${tantor.rolling-restart.health-timeout-seconds:300}") private long healthTimeoutSeconds;
+    @Value("${tantor.rolling-restart.health-poll-seconds:10}") private long healthPollSeconds;
+    @Value("${tantor.rolling-restart.stable-samples:2}") private int stableSamples;
 
-    @Override
-    public boolean supports(JobType type) {
-        return type == JobType.ROLLING_RESTART;
-    }
+    @Override public boolean supports(JobType type) { return type == JobType.ROLLING_RESTART; }
 
-    @Override
-    public void execute(Job job) {
-        Map<String, Object> jobPayload = readMap(job.getPayload());
-        UUID clusterId = UUID.fromString(String.valueOf(jobPayload.get("clusterId")));
-        Cluster cluster = clusterRepository.findWithServicesById(clusterId)
-                .orElseThrow(() -> new RuntimeException("Cluster not found: " + clusterId));
-        if ("EXTERNAL".equalsIgnoreCase(cluster.getMode())) {
-            executeExternal(job, clusterId);
-            return;
+    @Override public void execute(Job job) {
+        var request = readMap(job.getPayload());
+        UUID clusterId = UUID.fromString(String.valueOf(request.get("clusterId")));
+        Cluster cluster = clusterRepository.findWithServicesById(clusterId).orElseThrow(() -> new IllegalArgumentException("Cluster not found."));
+        if ("EXTERNAL".equalsIgnoreCase(cluster.getMode())) throw new IllegalArgumentException("Managed rolling restart requires internal node agents.");
+        var topology = RollingRestartPlan.topology(cluster);
+        int brokers = (int) topology.stream().filter(RollingRestartPlan::broker).count();
+        var hosts = topology.stream().map(ClusterServiceAssignment::getHostId).collect(Collectors.toSet());
+        boolean singleOverride = hosts.size() == 1 && Boolean.TRUE.equals(request.get("confirmSingleNode"));
+        var steps = new ArrayList<>(jobService.getSteps(job.getId()));
+        Set<String> allowed = topology.stream().map(RollingRestartPlan::key).collect(Collectors.toSet());
+        boolean controllers = false;
+        for (var step : steps) {
+            var payload = readMap(step.getPayload());
+            String role = String.valueOf(payload.get("role"));
+            String host = String.valueOf(payload.get("hostId"));
+            if (!allowed.contains(host + ":" + RollingRestartPlan.unit(role)) || topology.stream().noneMatch(service -> host.equals(service.getHostId()) && role.equals(service.getRole()) && Objects.equals(service.getNodeId(), ((Number) payload.get("nodeId")).intValue()))) throw new IllegalStateException("Restart topology changed. Create a new restart plan.");
+            controllers |= role.contains("controller");
+            if (step.getStatus() != JobStepStatus.SUCCESS) {
+                var agent = hostRepository.findById(host).orElseThrow(() -> new IllegalStateException("Agent host missing: " + host));
+                if (agent.getAgentVersion() == null || !agent.getAgentVersion().contains("rollingrestart."))
+                    throw new IllegalStateException("Update the internal agent on " + host + " to the rolling-restart release before starting.");
+            }
         }
-        List<ClusterServiceAssignment> services = cluster.getServices() == null
-                ? List.of()
-                : new ArrayList<>(cluster.getServices());
-        long brokerCount = services.stream().filter(this::isBroker).count();
-        long metadataCount = services.stream().filter(service -> "zookeeper".equalsIgnoreCase(cluster.getMode())
-                ? "zookeeper".equals(service.getRole()) : isController(service)).count();
-        long uniqueHosts = services.stream().map(ClusterServiceAssignment::getHostId).distinct().count();
-        boolean confirmedSingleNode = Boolean.parseBoolean(String.valueOf(jobPayload.getOrDefault("confirmSingleNode", false)));
-        boolean singleNodeOverride = uniqueHosts == 1 && confirmedSingleNode;
-        if (!singleNodeOverride && brokerCount < 2) throw new RuntimeException("Rolling restart requires at least two brokers.");
-        if (!singleNodeOverride && metadataCount < 3) throw new RuntimeException("Rolling restart requires at least three controller or ZooKeeper quorum nodes.");
-
-        Integer activeController = "kraft".equalsIgnoreCase(cluster.getMode())
-                ? kafkaAdminService.getControllerId(clusterId) : null;
-        List<JobStep> steps = new ArrayList<>(jobService.getSteps(job.getId()));
-        steps.sort(Comparator
-                .comparingInt((JobStep step) -> phase(readMap(step.getPayload()).get("role").toString(), cluster.getMode()))
-                .thenComparingInt(step -> activeController != null
-                        && activeController.toString().equals(String.valueOf(readMap(step.getPayload()).get("nodeId"))) ? 1 : 0)
-                .thenComparing(JobStep::getStepOrder));
-
-        waitForHealth(clusterId, (int) brokerCount);
+        if (!singleOverride && brokers < 2) throw new IllegalStateException("At least two brokers are required; single-host interruption needs confirmation.");
+        if (controllers && !singleOverride && topology.stream().filter(RollingRestartPlan::controller).count() < 3)
+            throw new IllegalStateException("Restarting controllers requires at least three metadata quorum members.");
+        Integer leader = controllers ? kafkaAdminService.getControllerId(clusterId) : null;
+        steps.sort(Comparator.comparingInt((JobStep step) -> step.getStatus() != JobStepStatus.SUCCESS && step.getAgentTaskId() != null ? -1 : 0)
+                .thenComparingInt((JobStep step) -> {
+            var payload = readMap(step.getPayload());
+            if (!String.valueOf(payload.get("role")).contains("controller")) return 0;
+            return leader != null && leader.toString().equals(String.valueOf(payload.get("nodeId"))) ? 2 : 1;
+        }).thenComparing(JobStep::getStepOrder));
+        boolean recovery = steps.stream().anyMatch(step -> step.getStatus() != JobStepStatus.SUCCESS && step.getAgentTaskId() != null);
+        if (!recovery) waitForHealth(clusterId, brokers, hosts, controllers, singleOverride);
         for (JobStep step : steps) {
             if (step.getStatus() == JobStepStatus.SUCCESS) continue;
-            Map<String, Object> payload = readMap(step.getPayload());
+            var payload = readMap(step.getPayload());
+            String host = String.valueOf(payload.get("hostId"));
+            String unit = RollingRestartPlan.unit(String.valueOf(payload.get("role")));
+            jobService.startStep(step.getId());
             try {
-                if (step.getStatus() == JobStepStatus.IN_PROGRESS && step.getAgentTaskId() != null) {
-                    Task completed = taskAwaiter.await(step.getAgentTaskId());
-                    waitForHealth(clusterId, (int) brokerCount);
-                    jobService.completeStep(step.getId(), completed.getLogOutput());
-                    continue;
+                boolean alreadyRestarted = false;
+                if (step.getAgentTaskId() != null) {
+                    String prior = taskAwaiter.status(step.getAgentTaskId());
+                    if (!List.of("FAILED", "CANCELLED").contains(prior)) {
+                        taskAwaiter.await(step.getAgentTaskId());
+                        alreadyRestarted = true;
+                    } else {
+                        // A failed task response can still follow a recovered process. Probe it before repeating the restart.
+                        UUID probe = deploymentService.verifyKafkaService(clusterId, host, unit);
+                        var observed = readMap(taskAwaiter.await(probe).getLogOutput());
+                        if ("active".equals(observed.get("state"))) {
+                            if (payload.get("baselineServiceState") instanceof Map<?, ?> before) {
+                                alreadyRestarted = !Objects.equals(before.get("pid"), observed.get("pid"))
+                                        || !Objects.equals(before.get("started"), observed.get("started"));
+                            }
+                            if (!alreadyRestarted) waitForHealth(clusterId, brokers, hosts, controllers, singleOverride);
+                        } else if (!List.of("inactive", "failed").contains(String.valueOf(observed.get("state"))))
+                            throw new IllegalStateException("Kafka process has not settled: " + observed.get("state"));
+                    }
                 }
-                jobService.startStep(step.getId());
-                UUID taskId = deploymentService.restartService(
-                        clusterId,
-                        payload.get("hostId").toString(),
-                        systemdServiceName(payload.get("role").toString())
-                );
-                jobService.attachAgentTask(step.getId(), taskId);
-                Task task = taskAwaiter.await(taskId);
-                waitForHealth(clusterId, (int) brokerCount);
-                jobService.completeStep(step.getId(), task.getLogOutput());
-            } catch (Exception e) {
+                if (!alreadyRestarted) {
+                    if (step.getAgentTaskId() == null) waitForHealth(clusterId, brokers, hosts, controllers, singleOverride);
+                    UUID baselineTask = deploymentService.verifyKafkaService(clusterId, host, unit);
+                    var baseline = readMap(taskAwaiter.await(baselineTask).getLogOutput());
+                    boolean active = "active".equals(baseline.get("state"));
+                    if (step.getAgentTaskId() == null && !active) throw new IllegalStateException("Kafka process must be active before starting a new restart.");
+                    if (active && !singleOverride && String.valueOf(payload.get("role")).contains("broker"))
+                        healthService.assertBrokerCanStop(clusterId, ((Number) payload.get("nodeId")).intValue());
+                    jobService.recordRollingRestartBaseline(step.getId(), baselineTask, baseline);
+                    jobService.appendLog(job.getId(), "Restarting " + unit + " on " + host + "; waiting for service and cluster health before continuing.");
+                    UUID task = restartDispatcher.dispatch(clusterId, host, unit, step.getId());
+                    taskAwaiter.await(task);
+                } else jobService.appendLog(job.getId(), "Resuming health verification on " + host + "; no repeated restart.");
+                Task verified = taskAwaiter.await(deploymentService.verifyKafkaService(clusterId, host, unit));
+                if (!"active".equals(readMap(verified.getLogOutput()).get("state"))) throw new IllegalStateException("Kafka service is not active: " + verified.getLogOutput());
+                jobService.reportRollingRestartPhase(step.getId(), "Service active; verifying cluster health.");
+                jobService.appendLog(job.getId(), "Service active on " + host + "; verifying quorum, replicas, ISR and host health.");
+                waitForHealth(clusterId, brokers, hosts, controllers, singleOverride, job.getId(), step.getId());
+                jobService.completeStep(step.getId(), "Service active; brokers, controller, replicas, ISR, lag and host health verified.");
+            } catch (RuntimeException e) {
                 jobService.failStep(step.getId(), e.getMessage());
-                clusterRepository.findById(clusterId).ifPresent(c -> {
-                    c.setStatus("FAILED");
-                    clusterRepository.save(c);
-                });
+                jobService.appendLog(job.getId(), "Stopped at " + host + ". Completed nodes are preserved; use Retry / Resume after resolving the failure.");
                 throw e;
             }
         }
-        clusterRepository.findById(clusterId).ifPresent(c -> {
-            c.setStatus("SUCCESS");
-            clusterRepository.save(c);
-        });
     }
 
-    @Override
-    public void rollback(Job job) {
-        UUID clusterId = UUID.fromString(String.valueOf(readMap(job.getPayload()).get("clusterId")));
-        Cluster cluster = clusterRepository.findWithServicesById(clusterId)
-                .orElseThrow(() -> new RuntimeException("Cluster not found: " + clusterId));
-        int brokerCount = (int) cluster.getServices().stream().filter(this::isBroker).count();
-        waitForHealth(clusterId, brokerCount);
-        for (JobStep step : jobService.getSteps(job.getId())) {
-            if (step.getStatus() == JobStepStatus.SUCCESS || step.getStatus() == JobStepStatus.ROLLBACK_FAILED) {
-                jobService.rolledBackStep(step.getId(), "Rolling restart changed no desired configuration; cluster health was verified.");
-            }
-        }
+    private void waitForHealth(UUID clusterId, int brokers, Set<String> hosts, boolean controllers, boolean singleOverride) {
+        waitForHealth(clusterId, brokers, hosts, controllers, singleOverride, null, null);
     }
 
-    private void waitForHealth(UUID clusterId, int expectedBrokers) {
-        for (int attempt = 0; attempt < 30; attempt++) {
-            try {
-                long underReplicated = kafkaAdminService.listTopics(clusterId).stream()
-                        .mapToLong(topic -> ((Number) topic.getOrDefault("underReplicated", 0)).longValue()).sum();
-                int visibleBrokers = kafkaAdminService.describeClusterNodes(clusterId).size();
-                if (underReplicated == 0 && visibleBrokers >= expectedBrokers) return;
-            } catch (Exception e) {
-                kafkaAdminService.refreshAdminClient(clusterId);
-            }
-            try {
-                Thread.sleep(10000);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new RuntimeException("Interrupted while waiting for cluster health", e);
-            }
-        }
-        throw new RuntimeException("Timed out waiting for brokers and replicas to become healthy.");
-    }
-
-    private void executeExternal(Job job, UUID clusterId) {
-        JobStep step = jobService.getSteps(job.getId()).stream().findFirst()
-                .orElseThrow(() -> new RuntimeException("External restart job has no step."));
-        if (step.getStatus() == JobStepStatus.SUCCESS) return;
-        jobService.startStep(step.getId());
-        try {
-            Map<String, Object> queued = externalClusterService.queueRestart(clusterId);
-            String taskId = String.valueOf(queued.get("taskId"));
-            for (int attempt = 0; attempt < 120; attempt++) {
-                Map<String, Object> statusMap = externalClusterService.getExternalTaskStatus(taskId);
-                String status = String.valueOf(statusMap.get("status"));
-                if ("SUCCESS".equals(status)) {
-                    jobService.completeStep(step.getId(), "Restart task completed successfully");
-                    return;
-                }
-                if ("FAILED".equals(status)) throw new RuntimeException(String.valueOf(statusMap.get("message")));
+    private void waitForHealth(UUID clusterId, int brokers, Set<String> hosts, boolean controllers, boolean singleOverride, UUID jobId, UUID stepId) {
+        String reported = null;
+        Instant deadline = Instant.now().plusSeconds(Math.max(1, healthTimeoutSeconds));
+        int stable = 0;
+        String reason = "Cluster health is not stable.";
+        while (Instant.now().isBefore(deadline)) {
+            var snapshot = healthService.inspect(clusterId, brokers, hosts);
+            boolean healthy = snapshot.healthy();
+            reason = snapshot.failureReason();
+            if (healthy && controllers) {
                 try {
-                    Thread.sleep(2000);
+                    var quorum = kafkaAdminService.getAdminClient(clusterId).describeMetadataQuorum().quorumInfo().get(15, TimeUnit.SECONDS);
+                    healthy = RollingRestartQuorumHealth.healthy(quorum, singleOverride);
+                    if (!healthy) reason = "Metadata quorum voters have not all caught up.";
                 } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    throw new RuntimeException("Interrupted while waiting for external restart", e);
-                }
+                    Thread.currentThread().interrupt(); throw new IllegalStateException("Quorum inspection interrupted", e);
+                } catch (Exception e) { healthy = false; reason = "Metadata quorum inspection failed: " + e.getMessage(); }
             }
-            throw new RuntimeException("Timed out waiting for external restart.");
-        } catch (Exception e) {
-            jobService.failStep(step.getId(), e.getMessage());
-            throw e;
+            stable = healthy ? stable + 1 : 0;
+            if (stable >= Math.max(1, stableSamples)) return;
+            String phase = healthy ? "Waiting for the next stable cluster health sample." : "Waiting for cluster health: " + reason;
+            if (jobId != null && !phase.equals(reported)) {
+                jobService.appendLog(jobId, phase);
+                jobService.reportRollingRestartPhase(stepId, "Service active; " + phase);
+                reported = phase;
+            }
+            try { Thread.sleep(Math.max(1, healthPollSeconds) * 1000); }
+            catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new IllegalStateException("Health verification interrupted", e); }
         }
+        throw new IllegalStateException("Timed out waiting for stable cluster health: " + reason);
     }
 
-    private int phase(String role, String mode) {
-        if ("zookeeper".equalsIgnoreCase(mode)) return "zookeeper".equals(role) ? 0 : 1;
-        if ("controller".equals(role)) return 0;
-        if ("broker_controller".equals(role)) return 1;
-        return 2;
-    }
-
-    private boolean isBroker(ClusterServiceAssignment service) {
-        return List.of("broker", "broker_controller", "broker_zookeeper").contains(service.getRole());
-    }
-
-    private boolean isController(ClusterServiceAssignment service) {
-        return "controller".equals(service.getRole()) || "broker_controller".equals(service.getRole());
-    }
-
-    private String systemdServiceName(String role) {
-        if ("controller".equals(role)) return "controller";
-        if ("zookeeper".equals(role)) return "zookeeper";
-        if ("broker_controller".equals(role) || "broker_zookeeper".equals(role)) return "kafka";
-        return "broker";
-    }
-
+    @Override public void rollback(Job job) { throw new IllegalStateException("Standalone rolling restart changes no configuration. Use Retry / Resume."); }
     private Map<String, Object> readMap(String json) {
-        try {
-            return objectMapper.readValue(json, new TypeReference<>() {});
-        } catch (Exception e) {
-            throw new IllegalArgumentException("Invalid rolling restart payload", e);
-        }
+        try { return objectMapper.readValue(json, new TypeReference<>() {}); }
+        catch (Exception e) { throw new IllegalArgumentException("Invalid rolling restart payload", e); }
     }
 }

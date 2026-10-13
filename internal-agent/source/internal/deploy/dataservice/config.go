@@ -18,12 +18,12 @@ const Schema = "schema-registry"
 const Connect = "kafka-connect"
 
 type Settings struct {
-	Kind, Install, Config, Log, Working, Plugin, Heap, User, Group, Host string
-	Port, Replication, MinDisk                                           int
-	Bootstrap, KafkaBin, Compatibility, GroupID, SchemaTopic             string
-	OffsetTopic, ConfigTopic, StatusTopic, HAPeers                       string
-	Deferred                                                             bool
-	Protected                                                            []string
+	Kind, Install, Config, Log, Working, Plugin, HeapMin, HeapMax, User, Group, Host string
+	Port, Replication, MinDisk                                                       int
+	Bootstrap, KafkaBin, Compatibility, GroupID, SchemaTopic                         string
+	OffsetTopic, ConfigTopic, StatusTopic, HAPeers                                   string
+	Deferred, SharedConnect, SharedSchema                                            bool
+	Protected                                                                        []string
 }
 
 var heapPattern = regexp.MustCompile(`^[1-9][0-9]*[mMgG]$`)
@@ -57,7 +57,11 @@ func Parse(kind string, task *api.Task) (Settings, error) {
 		return s, fmt.Errorf("unsupported data service %q", kind)
 	}
 	p := task.Parameters
-	s.Install = Value(p, "install_dir", "/opt/tantor/"+kind)
+	kafkaInstall := Value(p, "kafka_install_dir", "/opt/kafka")
+	defaultInstall := kafkaInstall
+	s.Install = Value(p, "install_dir", defaultInstall)
+	s.SharedConnect = kind == Connect && s.Install == kafkaInstall
+	s.SharedSchema = kind == Schema && s.Install == kafkaInstall
 	defaultConfig := s.Install + "/config"
 	port := "8083"
 	if kind == Schema {
@@ -67,8 +71,14 @@ func Parse(kind string, task *api.Task) (Settings, error) {
 	s.Config = Value(p, "config_dir", defaultConfig)
 	s.Log = Value(p, "log_dir", "/var/log/tantor/"+kind)
 	s.Working = Value(p, "working_dir", "/var/lib/tantor/"+kind)
-	s.Plugin = Value(p, "plugin_dir", s.Install+"/plugins")
-	s.Heap = Value(p, "heap_size", "1G")
+	defaultPlugin := s.Install + "/plugins"
+	if s.SharedConnect {
+		defaultPlugin = s.Install + "/connect-plugins"
+	}
+	s.Plugin = Value(p, "plugin_dir", defaultPlugin)
+	heap := Value(p, "heap_size", "1G")
+	s.HeapMin = Value(p, "heap_xms", heap)
+	s.HeapMax = Value(p, "heap_xmx", heap)
 	s.User = Value(p, "service_user", "root")
 	s.Group = Value(p, "service_group", s.User)
 	s.Host = Value(p, "host_name", Value(p, "host_ip", "localhost"))
@@ -90,8 +100,13 @@ func Parse(kind string, task *api.Task) (Settings, error) {
 	if s.MinDisk, err = strconv.Atoi(Value(p, "min_free_disk_mb", "5120")); err != nil || s.MinDisk < 5120 {
 		return s, fmt.Errorf("Connect working disk requirement must be at least 5120 MiB")
 	}
-	if !heapPattern.MatchString(s.Heap) {
-		return s, fmt.Errorf("heap_size must be a positive size such as 512M or 1G")
+	minMiB, minErr := heapMiB(s.HeapMin)
+	maxMiB, maxErr := heapMiB(s.HeapMax)
+	if minErr != nil || maxErr != nil {
+		return s, fmt.Errorf("heap_xms and heap_xmx must be positive sizes such as 512M or 1G")
+	}
+	if minMiB > maxMiB {
+		return s, fmt.Errorf("heap_xms cannot exceed heap_xmx")
 	}
 	if !identityPattern.MatchString(s.User) || !identityPattern.MatchString(s.Group) {
 		return s, fmt.Errorf("invalid service user/group")
@@ -118,7 +133,6 @@ func Parse(kind string, task *api.Task) (Settings, error) {
 			return s, err
 		}
 	}
-	kafkaInstall := Value(p, "kafka_install_dir", "/opt/kafka")
 	if err = SafePath(kafkaInstall); err != nil {
 		return s, err
 	}
@@ -153,8 +167,31 @@ func Parse(kind string, task *api.Task) (Settings, error) {
 			return s, err
 		}
 		for _, protected := range s.Protected {
-			if Overlaps(dir, protected) {
+			if Overlaps(dir, protected) && !s.allowedSharedPath(dir, protected, kafkaInstall) {
 				return s, fmt.Errorf("data-service path %s overlaps protected path %s", dir, protected)
+			}
+		}
+	}
+	if s.SharedConnect {
+		if Overlaps(s.Config, s.Install) && s.Config != s.Install+"/config" {
+			return s, fmt.Errorf("shared Connect config must use Kafka's config directory")
+		}
+		if Overlaps(s.Plugin, s.Install) && s.Plugin != s.Install+"/connect-plugins" {
+			return s, fmt.Errorf("shared Connect plugins must use Kafka's connect-plugins directory")
+		}
+		for _, dir := range []string{s.Log, s.Working} {
+			if Overlaps(dir, s.Install) {
+				return s, fmt.Errorf("Connect log/work paths must be outside the shared Kafka installation")
+			}
+		}
+	}
+	if s.SharedSchema {
+		if s.Config != s.Install+"/etc/schema-registry" {
+			return s, fmt.Errorf("shared Schema Registry config must use Kafka's etc/schema-registry directory")
+		}
+		for _, dir := range []string{s.Log, s.Working} {
+			if Overlaps(dir, s.Install) {
+				return s, fmt.Errorf("Schema Registry log/work paths must be outside the shared Kafka installation")
 			}
 		}
 	}
@@ -166,6 +203,23 @@ func Parse(kind string, task *api.Task) (Settings, error) {
 		}
 	}
 	return s, nil
+}
+
+func heapMiB(value string) (int64, error) {
+	if !heapPattern.MatchString(value) {
+		return 0, fmt.Errorf("invalid heap size")
+	}
+	amount, err := strconv.ParseInt(value[:len(value)-1], 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	if value[len(value)-1] == 'G' || value[len(value)-1] == 'g' {
+		if amount > int64(^uint64(0)>>1)/1024 {
+			return 0, fmt.Errorf("heap size is too large")
+		}
+		amount *= 1024
+	}
+	return amount, nil
 }
 
 func (s Settings) Directories() []string {
@@ -191,4 +245,22 @@ func Endpoints(value string) (string, error) {
 		endpoints = append(endpoints, net.JoinHostPort(host, port))
 	}
 	return strings.Join(endpoints, ","), nil
+}
+
+// Only these exact shared paths are permitted. Kafka storage and all runtime
+// trees remain protected, including paths redirected through symlinks.
+func (s Settings) allowedSharedPath(dir, protected, kafkaRoot string) bool {
+	if !s.SharedConnect && !s.SharedSchema {
+		return false
+	}
+	// The existing shared root may contain the other service's protected config.
+	// Individual service paths still cannot overlap one another.
+	if dir == kafkaRoot && (protected == kafkaRoot+"/config" || protected == kafkaRoot+"/etc/schema-registry" || protected == kafkaRoot+"/connect-plugins") {
+		return true
+	}
+	if protected != kafkaRoot {
+		return false
+	}
+	return dir == kafkaRoot || (s.SharedConnect && (dir == kafkaRoot+"/config" || dir == kafkaRoot+"/connect-plugins")) ||
+		(s.SharedSchema && dir == kafkaRoot+"/etc/schema-registry")
 }

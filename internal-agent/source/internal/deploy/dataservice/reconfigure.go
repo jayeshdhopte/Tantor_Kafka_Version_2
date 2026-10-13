@@ -15,7 +15,7 @@ import (
 
 // A port-only retry preserves the installed distribution, service unit, and all
 // non-port properties. It must not silently turn into a binary or cluster upgrade.
-func portConfiguration(current, desired string) (string, error) {
+func portConfiguration(current, desired string, preserveExtra ...bool) (string, error) {
 	parse := func(content string) (map[string]string, error) {
 		values := map[string]string{}
 		for _, line := range strings.Split(content, "\n") {
@@ -43,7 +43,7 @@ func portConfiguration(current, desired string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if len(old) != len(want) {
+	if (len(preserveExtra) == 0 || !preserveExtra[0]) && len(old) != len(want) {
 		return "", fmt.Errorf("existing configuration differs beyond REST ports; a separate configuration migration is required")
 	}
 	for key, value := range want {
@@ -75,7 +75,7 @@ func reconfigurePorts(ctx context.Context, exec executor.Executor, s Settings, t
 	if err != nil {
 		return "", fmt.Errorf("existing runtime has no readable configuration at %s: %w: %s", file.Path, err, detail)
 	}
-	updated, err := portConfiguration(current, file.Content)
+	updated, err := portConfiguration(current, file.Content, s.SharedConnect || s.SharedSchema)
 	if err != nil {
 		return "", err
 	}

@@ -1,5 +1,5 @@
 import { SchemaRegistryFields, KafkaConnectFields } from '../components/ServiceConfigurationFields';
-import { validateServicePath as validatePath, defaultSchemaRegistryConfig, defaultKafkaConnectConfig, type SchemaRegistryConfig, type KafkaConnectConfig } from '../components/serviceConfiguration';
+import { validateServicePath as validatePath, validateServiceHeap, defaultSchemaRegistryConfig, defaultKafkaConnectConfig, type SchemaRegistryConfig, type KafkaConnectConfig } from '../components/serviceConfiguration';
 import { useState, useEffect, useMemo, useRef, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -689,8 +689,17 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   const hostHasAddonRole = (hostId: string, role: AddonRole) => (addonRolesByHost[hostId] || []).includes(role);
   const schemaHosts = selectedHosts.filter(host => hostHasAddonRole(host.id, 'schema_registry'));
   const connectHosts = selectedHosts.filter(host => hostHasAddonRole(host.id, 'kafka_connect'));
-  const schemaConfigFor = (hostId: string) => schemaConfigsByHost[hostId] || defaultSchemaRegistryConfig();
-  const connectConfigFor = (hostId: string) => connectConfigsByHost[hostId] || defaultKafkaConnectConfig();
+  const schemaConfigFor = (hostId: string) => {
+    const cfg = schemaConfigsByHost[hostId] || defaultSchemaRegistryConfig();
+    const unified = schemaArtifacts.find(a => a.version === kafkaVersion && (a.fileName || a.filename || '').toLowerCase().startsWith('tantor-unified-kafka-'));
+    return { ...cfg, artifactId: cfg.artifactId || unified?.id || '' };
+  };
+  const validateOptionalPath = (value: string, label: string) => value.trim() ? validatePath(value, label) : '';
+  const connectConfigFor = (hostId: string) => {
+    const cfg = connectConfigsByHost[hostId] || defaultKafkaConnectConfig();
+    const unified = connectArtifacts.find(a => a.version === kafkaVersion && (a.fileName || a.filename || '').toLowerCase().startsWith('tantor-unified-kafka-'));
+    return { ...cfg, artifactId: cfg.artifactId || unified?.id || '' };
+  };
 
   const brokerCount = selectedHosts.filter(host => {
     const role = rolesByHost[host.id] || defaultRoleForMode;
@@ -768,11 +777,11 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     validatePath(artifactLoadDir, 'Artifacts/Load Directory'),
     ...schemaHosts.flatMap(host => {
       const cfg = schemaConfigFor(host.id);
-      return [validatePath(cfg.installDir, `${host.hostname}: Schema Registry install directory`), validatePath(cfg.configDir, `${host.hostname}: Schema Registry config directory`), validatePath(cfg.logDir, `${host.hostname}: Schema Registry log directory`), validatePath(cfg.workingDir, `${host.hostname}: Schema Registry working directory`)];
+      return [cfg.installDir.trim() ? validatePath(cfg.installDir, `${host.hostname}: Schema Registry install directory`) : '', cfg.configDir.trim() ? validatePath(cfg.configDir, `${host.hostname}: Schema Registry config directory`) : '', validatePath(cfg.logDir, `${host.hostname}: Schema Registry log directory`), validatePath(cfg.workingDir, `${host.hostname}: Schema Registry working directory`)];
     }),
     ...connectHosts.flatMap(host => {
       const cfg = connectConfigFor(host.id);
-      return [validatePath(cfg.installDir, `${host.hostname}: Kafka Connect install directory`), validatePath(cfg.configDir, `${host.hostname}: Kafka Connect config directory`), validatePath(cfg.logDir, `${host.hostname}: Kafka Connect log directory`), validatePath(cfg.workingDir, `${host.hostname}: Kafka Connect working directory`), validatePath(cfg.pluginDir, `${host.hostname}: Kafka Connect plugin directory`)];
+      return [validateOptionalPath(cfg.installDir, `${host.hostname}: Kafka Connect install directory`), validateOptionalPath(cfg.configDir, `${host.hostname}: Kafka Connect config directory`), validateOptionalPath(cfg.logDir, `${host.hostname}: Kafka Connect log directory`), validateOptionalPath(cfg.workingDir, `${host.hostname}: Kafka Connect working directory`), validateOptionalPath(cfg.pluginDir, `${host.hostname}: Kafka Connect plugin directory`)];
     }),
   ].filter(Boolean);
 
@@ -1012,12 +1021,14 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   ].filter(Boolean);
 
   const addonValidationErrors = [
-    ...schemaHosts.flatMap(host => /^[1-9]\d*[mMgG]$/.test(schemaConfigFor(host.id).heapSize)
-      ? [] : [`${host.hostname}: Schema Registry heap size must be a positive size such as 512M or 1G.`]),
+    ...schemaHosts.flatMap(host => {
+      const issue = validateServiceHeap(schemaConfigFor(host.id).heapMin, schemaConfigFor(host.id).heapSize, `${host.hostname}: Schema Registry`);
+      return issue ? [issue] : [];
+    }),
     ...connectHosts.flatMap(host => {
       const cfg = connectConfigFor(host.id);
       return [
-        /^[1-9]\d*[mMgG]$/.test(cfg.heapSize) ? '' : `${host.hostname}: Kafka Connect heap size must be a positive size such as 512M or 1G.`,
+        validateServiceHeap(cfg.heapMin, cfg.heapSize, `${host.hostname}: Kafka Connect`),
         /^[A-Za-z0-9._-]{1,200}$/.test(cfg.groupId) ? '' : `${host.hostname}: Kafka Connect worker group ID must use letters, numbers, dots, underscores or hyphens.`,
       ].filter(Boolean);
     }),
@@ -1142,12 +1153,6 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
 
   const buildDeploymentPayload = (includeGeneratedKraftConfig = true) => {
     const selectedArtifact = versions.find(version => version.version === kafkaVersion);
-    const schemaHost = schemaHosts[0];
-    const connectHost = connectHosts[0];
-    const schemaConfig = schemaHost ? schemaConfigFor(schemaHost.id) : null;
-    const connectConfig = connectHost ? connectConfigFor(connectHost.id) : null;
-    const selectedSchemaArtifact = schemaConfig ? schemaArtifacts.find(artifact => artifact.id === schemaConfig.artifactId) : undefined;
-    const selectedConnectArtifact = connectConfig ? connectArtifacts.find(artifact => artifact.id === connectConfig.artifactId) : undefined;
     const artifactRepoBaseUrl = runtimeConfig.artifactApiBasePath;
     return {
       name: clusterName.trim(),
@@ -1157,21 +1162,33 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       environment: environment.trim(),
       acknowledge_kraft_risk: kraftRiskAcknowledged,
       artifactUrl: selectedArtifact ? `${artifactRepoBaseUrl}/${selectedArtifact.id}/download` : '',
-      addons: !isAddNodeMode && (schemaHost || connectHost) ? {
-        schema_registry: schemaHost && schemaConfig ? {
-          enabled: true,
-          host_id: schemaHost.id, artifact_id: schemaConfig.artifactId,
-          artifact_url: `${artifactRepoBaseUrl}/${schemaConfig.artifactId}/download`,
-          checksum: selectedSchemaArtifact?.sha256 || selectedSchemaArtifact?.checksum || '',
-          version: selectedSchemaArtifact?.version || '',
-          port: schemaConfig.port, install_dir: schemaConfig.installDir.trim(), config_dir: schemaConfig.configDir.trim(),
-          log_dir: schemaConfig.logDir.trim(), working_dir: schemaConfig.workingDir.trim(), heap_size: schemaConfig.heapSize, compatibility_level: schemaConfig.compatibility,
-        } : undefined,
-        kafka_connect: connectHost && connectConfig ? {
-          enabled: true, host_id: connectHost.id, artifact_id: connectConfig.artifactId,
-          artifact_url: `${artifactRepoBaseUrl}/${connectConfig.artifactId}/download`, checksum: selectedConnectArtifact?.sha256 || selectedConnectArtifact?.checksum || '', version: selectedConnectArtifact?.version || '',
-          port: connectConfig.port, install_dir: connectConfig.installDir.trim(), config_dir: connectConfig.configDir.trim(), log_dir: connectConfig.logDir.trim(), working_dir: connectConfig.workingDir.trim(), plugin_dir: connectConfig.pluginDir.trim(), heap_size: connectConfig.heapSize, group_id: connectConfig.groupId,
-        } : undefined,
+      addons: !isAddNodeMode && (schemaHosts.length || connectHosts.length) ? {
+        schema_registries: schemaHosts.map(host => {
+          const config = schemaConfigFor(host.id);
+          const artifact = schemaArtifacts.find(item => item.id === config.artifactId);
+          return {
+            enabled: true, host_id: host.id, artifact_id: config.artifactId,
+            artifact_url: `${artifactRepoBaseUrl}/${config.artifactId}/download`,
+            checksum: artifact?.sha256 || artifact?.checksum || '', version: artifact?.version || '',
+            port: config.port, install_dir: config.installDir.trim(), config_dir: config.configDir.trim(),
+            log_dir: config.logDir.trim(), working_dir: config.workingDir.trim(),
+            heap_size: config.heapSize, heap_xms: config.heapMin, heap_xmx: config.heapSize,
+            compatibility_level: config.compatibility,
+          };
+        }),
+        kafka_connect_workers: connectHosts.map(host => {
+          const config = connectConfigFor(host.id);
+          const artifact = connectArtifacts.find(item => item.id === config.artifactId);
+          return {
+            enabled: true, host_id: host.id, artifact_id: config.artifactId,
+            artifact_url: `${artifactRepoBaseUrl}/${config.artifactId}/download`,
+            checksum: artifact?.sha256 || artifact?.checksum || '', version: artifact?.version || '',
+            port: config.port, install_dir: config.installDir.trim(), config_dir: config.configDir.trim(),
+            log_dir: config.logDir.trim(), working_dir: config.workingDir.trim(), plugin_dir: config.pluginDir.trim(),
+            heap_size: config.heapSize, heap_xms: config.heapMin, heap_xmx: config.heapSize,
+            group_id: config.groupId,
+          };
+        }),
       } : undefined,
       config: {
         configuration_mode: clusterConfigMode,
@@ -1310,11 +1327,6 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   const toggleAddonRole = (hostId: string, role: AddonRole) => {
     setPrereqResults({});
     setPortCheckResults({});
-    const assignedHost = selectedHosts.find(host => host.id !== hostId && hostHasAddonRole(host.id, role));
-    if (assignedHost && !hostHasAddonRole(hostId, role)) {
-      notifyAction(`${role === 'schema_registry' ? 'Schema Registry' : 'Kafka Connect'} is currently deployed once per cluster. Remove the role from ${assignedHost.hostname} before assigning it to another host.`);
-      return;
-    }
     setAddonRolesByHost(prev => {
       const active = (prev[hostId] || []).includes(role);
       const nextRoles = active ? (prev[hostId] || []).filter(item => item !== role) : [...(prev[hostId] || []), role];
@@ -1490,7 +1502,8 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
           kafka_version: kafkaVersion,
           rest_port: cfg.port, install_dir: cfg.installDir,
           config_dir: cfg.configDir, log_dir: cfg.logDir, working_dir: cfg.workingDir,
-          heap_size: cfg.heapSize, compatibility_level: cfg.compatibility, schemas_topic: '_schemas',
+          heap_size: cfg.heapSize, heap_xms: cfg.heapMin, heap_xmx: cfg.heapSize,
+          compatibility_level: cfg.compatibility, schemas_topic: '_schemas',
           bootstrap_servers: plannedBootstrapServers(),
           kafka_install_dir: kafkaVersionedInstallDir,
           allow_deferred_kafka: true,
@@ -1537,9 +1550,10 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
           connect_version: artifact?.version || '',
           rest_port: cfg.port, install_dir: cfg.installDir,
           config_dir: cfg.configDir, log_dir: cfg.logDir, working_dir: cfg.workingDir,
-          heap_size: cfg.heapSize, group_id: cfg.groupId, plugin_dir: cfg.pluginDir,
+          heap_size: cfg.heapSize, heap_xms: cfg.heapMin, heap_xmx: cfg.heapSize,
+          group_id: cfg.groupId, plugin_dir: cfg.pluginDir,
           kafka_version: kafkaVersion, min_free_disk_mb: 5120,
-          kafka_install_dir: `${installDir.replace(/\/$/, '')}/kafka_${versions.find(item => item.version === kafkaVersion)?.scala_version || '2.13'}-${kafkaVersion}`,
+          kafka_install_dir: `${installDir.replace(/\/$/, '')}/kafka`,
           bootstrap_servers: plannedBootstrapServers(),
           allow_deferred_kafka: true,
           ...dataServiceSafetyParameters(hostId, 'kafka_connect'),

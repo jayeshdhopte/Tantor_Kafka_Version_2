@@ -39,6 +39,7 @@ func TestCleanupRemovesOnlyMatchingManagedService(t *testing.T) {
 	for _, kind := range []string{Schema, Connect} {
 		t.Run(kind, func(t *testing.T) {
 			task := taskFor()
+			task.Parameters["install_dir"] = "/opt/tantor/" + kind
 			s, err := Parse(kind, task)
 			if err != nil {
 				t.Fatal(err)

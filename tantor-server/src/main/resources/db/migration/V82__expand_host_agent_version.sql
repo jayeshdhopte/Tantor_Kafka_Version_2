@@ -1,0 +1,1 @@
+ALTER TABLE kf_hosts ALTER COLUMN agent_version TYPE VARCHAR(128);

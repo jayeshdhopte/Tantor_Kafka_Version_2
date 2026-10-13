@@ -27,72 +27,63 @@ public class ClusterActionsController {
     private final AuditService auditService;
     private final RoleAuthenticationUtil roleAuthenticationUtil;
 
+    @GetMapping("/rolling-restart/topology")
+    public ResponseEntity<?> restartTopology(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                             @PathVariable UUID clusterId) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.ROLLING_RESTART))
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        Cluster cluster = clusterRepository.findWithServicesById(clusterId).orElseThrow(() -> new IllegalArgumentException("Cluster not found."));
+        return ResponseEntity.ok(io.translab.tantor.server.service.RollingRestartPlan.topology(cluster).stream().map(service -> Map.of(
+                "key", io.translab.tantor.server.service.RollingRestartPlan.key(service), "hostId", service.getHostId(),
+                "role", service.getRole(), "nodeId", service.getNodeId() == null ? 0 : service.getNodeId())).toList());
+    }
+
+    @org.springframework.transaction.annotation.Transactional
     @PostMapping("/rolling-restart")
     public ResponseEntity<Map<String, String>> startRollingRestart(
             @RequestHeader(value = "Authorization", required = false) String authorization,
             @PathVariable UUID clusterId,
             @RequestBody(required = false) RollingRestartRequest request) {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.ROLLING_RESTART)) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.ROLLING_RESTART))
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Unauthorized"));
-        }
-        return clusterRepository.findWithServicesById(clusterId)
-                .map(cluster -> {
-                    Job job = new Job();
-                    job.setType(JobType.ROLLING_RESTART);
-                    job.setStatus(JobStatus.PENDING);
-                    job.setRollbackSupported(true);
-                    job.setResourceKey("cluster:" + clusterId);
-                    try {
-                        long uniqueHosts = cluster.getServices() == null ? 0 : cluster.getServices().stream()
-                                .map(ClusterServiceAssignment::getHostId).distinct().count();
-                        boolean confirmedSingleNode = request != null && request.confirmSingleNode;
-                        if (uniqueHosts == 1 && !confirmedSingleNode) {
-                            return ResponseEntity.badRequest().body(Map.of("error",
-                                    "Only one node is present. Explicit confirmation is required because Kafka will be interrupted."));
-                        }
-                        job.setPayload(objectMapper.writeValueAsString(Map.of(
-                                "clusterId", clusterId.toString(),
-                                "confirmSingleNode", confirmedSingleNode)));
-                    } catch (Exception e) {
-                        return ResponseEntity.internalServerError().body(Map.of("error", "Unable to create rolling restart job."));
-                    }
-
-                    java.util.List<JobStep> steps = new java.util.ArrayList<>();
-                    int order = 1;
-                    if ("EXTERNAL".equalsIgnoreCase(cluster.getMode())) {
-                        JobStep step = new JobStep();
-                        step.setStepOrder(order++);
-                        step.setTargetId(clusterId.toString());
-                        step.setName("Restart external Kafka cluster");
-                        try {
-                            step.setPayload(objectMapper.writeValueAsString(Map.of("operation", "external")));
-                        } catch (Exception e) {
-                            return ResponseEntity.internalServerError().body(Map.of("error", "Unable to create external restart step."));
-                        }
-                        steps.add(step);
-                    }
-                    for (ClusterServiceAssignment service : cluster.getServices() == null ? java.util.List.<ClusterServiceAssignment>of() : cluster.getServices()) {
-                        JobStep step = new JobStep();
-                        step.setStepOrder(order++);
-                        step.setTargetId(service.getHostId());
-                        step.setName("Restart " + service.getRole() + " node " + service.getNodeId() + " on " + service.getHostId());
-                        try {
-                            step.setPayload(objectMapper.writeValueAsString(Map.of(
-                                    "hostId", service.getHostId(),
-                                    "role", service.getRole(),
-                                    "nodeId", service.getNodeId() == null ? 0 : service.getNodeId()
-                            )));
-                        } catch (Exception e) {
-                            return ResponseEntity.internalServerError().body(Map.of("error", "Unable to create rolling restart steps."));
-                        }
-                        steps.add(step);
-                    }
-                    Job saved = jobService.createJob(job, steps);
-                    return ResponseEntity.ok(Map.of("jobId", saved.getId().toString(), "status", saved.getStatus().name()));
-                })
-                .orElse(ResponseEntity.notFound().build());
+        Cluster cluster = clusterRepository.findWithServicesById(clusterId).orElseThrow(() -> new IllegalArgumentException("Cluster not found."));
+        if ("EXTERNAL".equalsIgnoreCase(cluster.getMode()))
+            return ResponseEntity.badRequest().body(Map.of("error", "Managed rolling restart requires internal node agents."));
+        if (!"SUCCESS".equalsIgnoreCase(cluster.getStatus()))
+            return ResponseEntity.badRequest().body(Map.of("error", "Cluster must finish deployment before a rolling restart."));
+        RollingRestartRequest effective = request == null ? new RollingRestartRequest() : request;
+        effective.scope = effective.scope == null ? "BROKERS" : effective.scope.toUpperCase(java.util.Locale.ROOT);
+        var topology = io.translab.tantor.server.service.RollingRestartPlan.topology(cluster);
+        var selected = io.translab.tantor.server.service.RollingRestartPlan.select(cluster, effective.scope, effective.targets);
+        boolean single = topology.stream().map(ClusterServiceAssignment::getHostId).distinct().count() == 1;
+        if (single && !effective.confirmSingleNode)
+            return ResponseEntity.badRequest().body(Map.of("error", "Confirm interruption for this single-host cluster."));
+        if (selected.stream().anyMatch(service -> service.getRole().contains("_") && !effective.confirmCombined))
+            return ResponseEntity.badRequest().body(Map.of("error", "Confirm that combined Kafka processes restart both roles together."));
+        Job job = new Job();
+        job.setType(JobType.ROLLING_RESTART);
+        job.setStatus(JobStatus.PENDING);
+        job.setRollbackSupported(false);
+        job.setResourceKey("cluster:" + clusterId);
+        var steps = new java.util.ArrayList<JobStep>();
+        try {
+            job.setPayload(objectMapper.writeValueAsString(Map.of("clusterId", clusterId.toString(), "scope", effective.scope,
+                    "confirmSingleNode", effective.confirmSingleNode, "confirmCombined", effective.confirmCombined)));
+            for (var service : selected) {
+                JobStep step = new JobStep();
+                step.setStepOrder(steps.size() + 1);
+                step.setTargetId(service.getHostId());
+                step.setName("Restart " + service.getRole() + " node " + service.getNodeId() + " on " + service.getHostId());
+                step.setPayload(objectMapper.writeValueAsString(Map.of("hostId", service.getHostId(), "role", service.getRole(),
+                        "nodeId", service.getNodeId() == null ? 0 : service.getNodeId())));
+                steps.add(step);
+            }
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) { throw new IllegalStateException("Unable to save restart plan", e); }
+        Job saved = jobService.createJob(job, steps);
+        return ResponseEntity.ok(Map.of("jobId", saved.getId().toString(), "status", saved.getStatus().name()));
     }
 
+    @org.springframework.transaction.annotation.Transactional
     @PostMapping("/normal-restart")
     public ResponseEntity<Map<String, String>> startNormalRestart(
             @RequestHeader(value = "Authorization", required = false) String authorization,
@@ -100,6 +91,7 @@ public class ClusterActionsController {
         if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.ROLLING_RESTART)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Unauthorized"));
         }
+        jobService.assertClusterMutable(clusterId);
         return clusterRepository.findById(clusterId)
                 .map(cluster -> {
                     int count = 0;
@@ -120,6 +112,7 @@ public class ClusterActionsController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
+    @org.springframework.transaction.annotation.Transactional
     @PostMapping("/enable-monitoring")
     public ResponseEntity<Map<String, String>> enableMonitoring(
             @RequestHeader(value = "Authorization", required = false) String authorization,
@@ -129,6 +122,7 @@ public class ClusterActionsController {
         if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.MONITORING_ENABLE)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Unauthorized"));
         }
+        jobService.assertClusterMutable(clusterId);
         return clusterRepository.findWithServicesById(clusterId)
                 .map(cluster -> {
                     String hostId = request.hostId;
@@ -175,6 +169,7 @@ public class ClusterActionsController {
         }
     }
 
+    @org.springframework.transaction.annotation.Transactional
     @PostMapping("/tasks/{taskId}/retry")
     public ResponseEntity<Void> retryTask(
             @RequestHeader(value = "Authorization", required = false) String authorization,
@@ -183,9 +178,11 @@ public class ClusterActionsController {
         if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.JOB_CONTROL)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
+        jobService.assertClusterMutable(clusterId);
         return deploymentService.retryTask(taskId) ? ResponseEntity.ok().build() : ResponseEntity.notFound().build();
     }
 
+    @org.springframework.transaction.annotation.Transactional
     @PostMapping("/tasks/{taskId}/resume")
     public ResponseEntity<Void> resumeTask(
             @RequestHeader(value = "Authorization", required = false) String authorization,
@@ -194,9 +191,11 @@ public class ClusterActionsController {
         if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.JOB_CONTROL)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
+        jobService.assertClusterMutable(clusterId);
         return deploymentService.resumeTask(taskId) ? ResponseEntity.ok().build() : ResponseEntity.notFound().build();
     }
 
+    @org.springframework.transaction.annotation.Transactional
     @PostMapping("/tasks/{taskId}/rollback")
     public ResponseEntity<Void> rollbackTask(
             @RequestHeader(value = "Authorization", required = false) String authorization,
@@ -205,9 +204,11 @@ public class ClusterActionsController {
         if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.JOB_CONTROL)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
+        jobService.assertClusterMutable(clusterId);
         return deploymentService.rollbackTask(clusterId, taskId) ? ResponseEntity.ok().build() : ResponseEntity.notFound().build();
     }
 
+    @org.springframework.transaction.annotation.Transactional
     @PostMapping("/tasks/{taskId}/cleanup")
     public ResponseEntity<Void> cleanupTask(
             @RequestHeader(value = "Authorization", required = false) String authorization,
@@ -216,6 +217,7 @@ public class ClusterActionsController {
         if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.JOB_CONTROL)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
+        jobService.assertClusterMutable(clusterId);
         return deploymentService.cleanupTask(clusterId, taskId) ? ResponseEntity.ok().build() : ResponseEntity.notFound().build();
     }
 
@@ -238,6 +240,9 @@ public class ClusterActionsController {
     }
 
     public static class RollingRestartRequest {
+        public String scope = "BROKERS";
+        public java.util.List<String> targets = java.util.List.of();
+        public boolean confirmCombined;
         public boolean confirmSingleNode;
     }
 }

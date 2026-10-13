@@ -18,13 +18,14 @@ import (
 )
 
 type AgentTask struct {
-	TaskID         string            `json:"taskId"`
-	Task           string            `json:"task"`
-	ConfigFilePath string            `json:"configFilePath"`
-	BackupDirPath  string            `json:"backupDirPath"`
-	BackupFilePath string            `json:"backupFilePath"`
-	ConfigChanges  map[string]string `json:"configChanges"`
-	ServiceName    string            `json:"serviceName"`
+	TaskID         string             `json:"taskId"`
+	Task           string             `json:"task"`
+	ConfigFilePath string             `json:"configFilePath"`
+	BackupDirPath  string             `json:"backupDirPath"`
+	BackupFilePath string             `json:"backupFilePath"`
+	ConfigChanges  map[string]string  `json:"configChanges"`
+	ExpectedValues map[string]*string `json:"expectedValues,omitempty"`
+	ServiceName    string             `json:"serviceName"`
 }
 
 type AgentTaskResult struct {
@@ -370,6 +371,14 @@ func executeReadConfig(path string, cluster DiscoveredCluster) (map[string]strin
 	return parseProperties(string(content)), nil
 }
 
+var protectedPatchKeys = map[string]bool{
+	"node.id": true, "broker.id": true, "process.roles": true,
+	"log.dirs": true, "metadata.log.dir": true, "listeners": true,
+	"advertised.listeners": true, "controller.quorum.voters": true,
+	"controller.quorum.bootstrap.servers": true, "inter.broker.listener.name": true,
+	"cluster.id": true, "zookeeper.connect": true,
+}
+
 func validateConfigChanges(changes map[string]string) error {
 	keyRE := regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 	for key, value := range changes {
@@ -378,6 +387,11 @@ func validateConfigChanges(changes map[string]string) error {
 		}
 		if strings.ContainsAny(value, "\r\n\x00") {
 			return fmt.Errorf("invalid newline or NUL in value for property %s", key)
+		}
+		lower := strings.ToLower(key)
+		if protectedPatchKeys[lower] || strings.Contains(lower, "password") || strings.Contains(lower, "secret") ||
+			strings.Contains(lower, "token") || strings.Contains(lower, "jaas") || strings.Contains(lower, "credential") {
+			return fmt.Errorf("property %s cannot be changed by the agent", key)
 		}
 	}
 	return nil
@@ -413,6 +427,26 @@ func applyConfigChanges(content string, changes map[string]string) string {
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+func validateExpectedChanges(current map[string]string, changes map[string]string, expected map[string]*string) error {
+	for key, desired := range changes {
+		want, ok := expected[key]
+		if !ok {
+			return fmt.Errorf("missing expected value for %s", key)
+		}
+		actual, found := current[key]
+		if actual == desired {
+			continue
+		} // idempotent retry
+		if want == nil && found {
+			return fmt.Errorf("property %s changed since preview", key)
+		}
+		if want != nil && (!found || actual != *want) {
+			return fmt.Errorf("property %s changed since preview", key)
+		}
+	}
+	return nil
 }
 
 func overwriteLockedFile(path string, content []byte) error {
@@ -468,6 +502,11 @@ func executeWriteConfig(task AgentTask, cluster DiscoveredCluster, cfg RuntimeCo
 	original, err := io.ReadAll(f)
 	if err != nil {
 		return "", fmt.Errorf("read locked config: %w", err)
+	}
+	if task.ExpectedValues != nil {
+		if err := validateExpectedChanges(parseProperties(string(original)), task.ConfigChanges, task.ExpectedValues); err != nil {
+			return "", err
+		}
 	}
 	backupPath, err := safeBackupTarget(cluster, cfg)
 	if err != nil {

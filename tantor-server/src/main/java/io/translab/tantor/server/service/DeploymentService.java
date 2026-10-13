@@ -356,6 +356,15 @@ public class DeploymentService {
     }
 
     @Transactional
+    public UUID verifyKafkaService(UUID clusterId, String hostId, String serviceName) {
+        Task task = createTask(clusterId, hostId, "VERIFY_KAFKA_SERVICE");
+        try { task.setParameters(objectMapper.writeValueAsString(Map.of("service_name", serviceName))); }
+        catch (JsonProcessingException e) { throw new IllegalArgumentException("Cannot serialize service check", e); }
+        taskRepository.save(task);
+        return task.getId();
+    }
+
+    @Transactional
     public UUID restartService(UUID clusterId, String hostId, String serviceName) {
         Task task = createTask(clusterId, hostId, "RESTART_SERVICE");
         
@@ -388,6 +397,7 @@ public class DeploymentService {
             String configVersion,
             String configPath
     ) {
+        requireConfigBackupAgent(hostId);
         Task task = createTask(clusterId, hostId, "UPDATE_KAFKA_CONFIG");
         
         try {
@@ -426,6 +436,120 @@ public class DeploymentService {
             log.error("Failed to serialize parameters", e);
         }
 
+        taskRepository.save(task);
+        return task.getId();
+    }
+
+    @Transactional
+    public UUID patchKafkaConfig(UUID clusterId, String hostId, String role, String nodeId,
+                                 String configJsonStr, String configPath,
+                                 Map<String, Object> changes, Map<String, Object> expected,
+                                 boolean restart, String version) {
+        if (configPath == null || configPath.isBlank() || changes == null || changes.isEmpty()) {
+            throw new IllegalArgumentException("A concrete config file and property changes are required.");
+        }
+        requireConfigBackupAgent(hostId);
+        Task task = createTask(clusterId, hostId, "PATCH_KAFKA_CONFIG");
+        try {
+            Map<String, Object> params = new java.util.HashMap<>();
+            mergeConfigParams(params, configJsonStr);
+            String normalizedRole = role == null || role.isBlank() ? "broker" : role;
+            params.put("role", normalizedRole);
+            params.put("service_role", normalizedRole);
+            params.put("node_id", nodeId);
+            params.put("service_name", systemdServiceName(normalizedRole));
+            params.put("systemd_service", systemdServiceName(normalizedRole));
+            params.put("config_path", configPath.trim());
+            params.put("config_changes_json", objectMapper.writeValueAsString(changes));
+            params.put("expected_values_json", objectMapper.writeValueAsString(expected));
+            params.put("restart", String.valueOf(restart));
+            params.put("config_version", version == null ? "unversioned" : version);
+            task.setParameters(objectMapper.writeValueAsString(params));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Unable to queue Kafka config patch", e);
+        }
+        taskRepository.save(task);
+        return task.getId();
+    }
+
+    public void requireConfigDeletionAgent(String hostId) {
+        var host = hostRepository.findById(hostId).orElseThrow(() -> new IllegalArgumentException("Managed host is required for configuration removal."));
+        var version = java.util.regex.Pattern.compile("-configchange\\.([0-9]{1,6})(?:$|[.-])").matcher(java.util.Objects.toString(host.getAgentVersion(), ""));
+        if (!version.find() || Integer.parseInt(version.group(1)) < 7) throw new IllegalStateException("Update host " + hostId + " to internal agent configchange.7 or newer before deleting configuration properties.");
+    }
+
+    private void requireConfigBackupAgent(String hostId) {
+        var host = hostRepository.findById(hostId).orElseThrow(() -> new IllegalArgumentException("Managed host is required for configuration backups."));
+        var version = java.util.regex.Pattern.compile("-configchange\\.([0-9]{1,6})(?:$|[.-])").matcher(java.util.Objects.toString(host.getAgentVersion(), ""));
+        if (!version.find() || Integer.parseInt(version.group(1)) < 4) {
+            throw new IllegalStateException("Update host " + hostId + " to internal agent configchange.4 or newer before changing configuration; mandatory backups with seven-day retention are unavailable on its current agent.");
+        }
+    }
+
+    @Transactional
+    public UUID backupKafkaConfig(UUID clusterId, String hostId, String role, String nodeId,
+                                  String configJsonStr, String configPath, String key,
+                                  Map<String, Object> snapshot, String version) {
+        requireConfigBackupAgent(hostId);
+        if (configPath == null || configPath.isBlank()) throw new IllegalArgumentException("A concrete configuration file is required for backup.");
+        Task task = createTask(clusterId, hostId, "BACKUP_KAFKA_CONFIG");
+        try {
+            Map<String, Object> params = new java.util.HashMap<>();
+            mergeConfigParams(params, configJsonStr);
+            params.put("config_path", configPath);
+            params.put("config_key", key);
+            params.put("role", role);
+            params.put("service_role", role);
+            params.put("node_id", nodeId);
+            params.put("config_version", version);
+            params.put("dynamic_snapshot_json", objectMapper.writeValueAsString(snapshot));
+            task.setParameters(objectMapper.writeValueAsString(params));
+        } catch (JsonProcessingException e) { throw new IllegalStateException("Unable to queue required config backup", e); }
+        taskRepository.save(task);
+        return task.getId();
+    }
+
+    @Transactional
+    public UUID readKafkaProperty(UUID clusterId, String hostId, String role, String nodeId,
+                                  String configJsonStr, String configPath, String key) {
+        if (configPath == null || configPath.isBlank() || key == null || key.isBlank()) {
+            throw new IllegalArgumentException("A concrete config file and property are required.");
+        }
+        Task task = createTask(clusterId, hostId, "READ_KAFKA_PROPERTY");
+        try {
+            Map<String, Object> params = new java.util.HashMap<>();
+            mergeConfigParams(params, configJsonStr);
+            params.put("config_path", configPath);
+            params.put("config_key", key);
+            params.put("role", role);
+            params.put("service_role", role);
+            params.put("node_id", nodeId);
+            task.setParameters(objectMapper.writeValueAsString(params));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Unable to queue Kafka property read", e);
+        }
+        taskRepository.save(task);
+        return task.getId();
+    }
+
+    @Transactional
+    public UUID readKafkaProperties(UUID clusterId, String hostId, String role, String nodeId,
+                                    String configJsonStr, String configPath) {
+        if (configPath == null || configPath.isBlank()) {
+            throw new IllegalArgumentException("A concrete config file is required.");
+        }
+        Task task = createTask(clusterId, hostId, "READ_KAFKA_PROPERTIES");
+        try {
+            Map<String, Object> params = new java.util.HashMap<>();
+            mergeConfigParams(params, configJsonStr);
+            params.put("config_path", configPath);
+            params.put("role", role);
+            params.put("service_role", role);
+            params.put("node_id", nodeId);
+            task.setParameters(objectMapper.writeValueAsString(params));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Unable to queue Kafka properties read", e);
+        }
         taskRepository.save(task);
         return task.getId();
     }

@@ -138,6 +138,7 @@ public class ClusterOverviewService {
                     .logDirectory(logDirectory)
                     .generatedAt(OffsetDateTime.now())
                     .warnings(warnings)
+                    .dataServicePaths(dataServicePaths(internalCluster))
                     .uptime(ClusterOverviewDto.UptimeSummary.builder()
                             .brokerCount(brokerCount)
                             .activeController(activeControllerId)
@@ -165,6 +166,34 @@ public class ClusterOverviewService {
             kafkaAdminService.refreshAdminClient(clusterId);
             throw new RuntimeException("Failed to load cluster overview: " + e.getMessage(), e);
         }
+    }
+
+    List<ClusterOverviewDto.DataServicePathRow> dataServicePaths(Cluster cluster) {
+        if (cluster == null || cluster.getServices() == null) return List.of();
+        var rows = new ArrayList<ClusterOverviewDto.DataServicePathRow>();
+        for (var service : cluster.getServices()) {
+            boolean schema = "schema_registry".equals(service.getRole());
+            if ((!schema && !"kafka_connect".equals(service.getRole()))
+                    || !Set.of("ONLINE", "SUCCESS", "DEPLOYED").contains(java.util.Objects.toString(service.getStatus(), ""))) continue;
+            Map<String, Object> config;
+            try { config = new com.fasterxml.jackson.databind.ObjectMapper().readValue(service.getConfigJson(), new com.fasterxml.jackson.core.type.TypeReference<>() {}); }
+            catch (Exception e) { config = Map.of(); }
+            var host = hostRepository.findById(service.getHostId());
+            String install = path(config, "install_dir"), dir = path(config, "config_dir");
+            rows.add(ClusterOverviewDto.DataServicePathRow.builder()
+                    .serviceType(schema ? "SCHEMA_REGISTRY" : "KAFKA_CONNECT")
+                    .hostId(service.getHostId()).hostname(host.map(io.translab.tantor.server.domain.Host::getHostname).orElse(service.getHostId()))
+                    .ipAddress(host.map(io.translab.tantor.server.domain.Host::getHostIp).orElse(null))
+                    .installDir(install).configFile(dir == null ? null : dir.replaceAll("/+$", "") + (schema ? "/schema-registry.properties" : "/connect-distributed.properties"))
+                    .pluginDir(schema ? null : path(config, "plugin_dir")).workingDir(path(config, "working_dir")).logDir(path(config, "log_dir")).build());
+        }
+        rows.sort(Comparator.comparing(ClusterOverviewDto.DataServicePathRow::getServiceType).thenComparing(ClusterOverviewDto.DataServicePathRow::getHostId));
+        return rows;
+    }
+
+    private static String path(Map<String, Object> config, String key) {
+        Object raw = config.get(key);
+        return raw instanceof String value && !value.isBlank() ? value : null;
     }
 
     private List<ClusterOverviewDto.ControllerRow> internalControllerRows(

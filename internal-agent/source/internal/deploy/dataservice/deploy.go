@@ -25,6 +25,13 @@ func Deploy(ctx context.Context, cfg *config.Config, download Downloader, exec e
 	if err != nil {
 		return "", err
 	}
+	if kind == Connect {
+		connectDeploymentLock.Lock()
+		defer connectDeploymentLock.Unlock()
+	} else {
+		schemaDeploymentLock.Lock()
+		defer schemaDeploymentLock.Unlock()
+	}
 	if s.Deferred {
 		return "", fmt.Errorf("installation cannot defer Kafka connectivity checks")
 	}
@@ -42,6 +49,9 @@ func Deploy(ctx context.Context, cfg *config.Config, download Downloader, exec e
 	// Validate resolved paths before any privileged filesystem mutation.
 	if err = CheckPaths(ctx, exec, s); err != nil {
 		return logs.String(), err
+	}
+	if s.SharedConnect || s.SharedSchema {
+		return deploySharedDataService(ctx, exec, s, task)
 	}
 	for _, tree := range []string{"bin", "libs", "share"} {
 		_, _, e := exec.RunSudo(ctx, "bash", "-c", `test ! -e "$1" && test ! -L "$1"`, "--", s.Install+"/"+tree)
@@ -204,6 +214,12 @@ schema.registry.group.id=%s
 schema.compatibility.level=%s
 `, s.Port, s.Host, strings.Join(endpoints, ","), s.SchemaTopic, s.Replication, s.GroupID, s.Compatibility)
 	}
+	loggingPath := s.Config + "/log4j2.xml"
+	if s.SharedConnect {
+		loggingPath = s.Config + "/tantor-kafka-connect-log4j2.xml"
+	} else if s.SharedSchema {
+		loggingPath = s.Config + "/tantor-schema-registry-log4j2.xml"
+	}
 	// Journald handles retention; avoid sharing Kafka's log config or JVM options.
 	logging := `<?xml version="1.0" encoding="UTF-8"?>
 <Configuration status="WARN"><Appenders><Console name="Console" target="SYSTEM_OUT"><PatternLayout pattern="%d{ISO8601} %-5p %c - %m%n"/></Console></Appenders><Loggers><Root level="info"><AppenderRef ref="Console"/></Root></Loggers></Configuration>
@@ -221,7 +237,7 @@ Environment="JAVA_HOME=%s"
 Environment="LOG_DIR=%s"
 Environment="JMX_PORT="
 Environment="%s=-Xms%s -Xmx%s"
-Environment="%s=-Dlog4j2.configurationFile=%s/log4j2.xml"
+Environment="%s=-Dlog4j2.configurationFile=%s"
 WorkingDirectory=%s
 ExecStart=%s/bin/%s %s/%s
 Restart=on-failure
@@ -234,6 +250,6 @@ StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
-`, s.Kind, s.User, s.Group, javaHome, s.Log, heapVariable, s.Heap, s.Heap, logVariable, s.Config, s.Working, s.Install, launcher, s.Config, propertyName)
-	return []ConfigFile{{s.Config + "/" + propertyName, properties}, {s.Config + "/log4j2.xml", logging}, {"/etc/systemd/system/" + s.Kind + ".service", unit}}
+`, s.Kind, s.User, s.Group, javaHome, s.Log, heapVariable, s.HeapMin, s.HeapMax, logVariable, loggingPath, s.Working, s.Install, launcher, s.Config, propertyName)
+	return []ConfigFile{{s.Config + "/" + propertyName, properties}, {loggingPath, logging}, {"/etc/systemd/system/" + s.Kind + ".service", unit}}
 }

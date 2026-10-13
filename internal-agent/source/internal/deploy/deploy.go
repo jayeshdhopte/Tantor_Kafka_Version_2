@@ -73,10 +73,20 @@ func (e *Engine) Execute(ctx context.Context, t *api.Task) (*api.TaskResult, err
 		return e.startService(ctx, t)
 	case "STOP_SERVICE":
 		return e.stopService(ctx, t)
+	case "VERIFY_KAFKA_SERVICE":
+		return e.verifyKafkaService(ctx, t)
 	case "RESTART_SERVICE":
 		return e.restartService(ctx, t)
 	case "UPDATE_KAFKA_CONFIG":
 		return e.updateKafkaConfig(ctx, t)
+	case "BACKUP_KAFKA_CONFIG":
+		return e.backupKafkaConfig(ctx, t)
+	case "PATCH_KAFKA_CONFIG":
+		return e.patchKafkaConfig(ctx, t)
+	case "READ_KAFKA_PROPERTY":
+		return e.readKafkaProperty(ctx, t)
+	case "READ_KAFKA_PROPERTIES":
+		return e.readKafkaProperties(ctx, t)
 	case "DELETE_CLUSTER":
 		return e.deleteCluster(ctx, t)
 	case "ROLLBACK_DEPLOYMENT":
@@ -342,6 +352,37 @@ func (e *Engine) restartService(ctx context.Context, t *api.Task) (*api.TaskResu
 	}, nil
 }
 
+// verifyKafkaService is read-only and restricted to managed Kafka processes.
+func (e *Engine) verifyKafkaService(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
+	name := strings.TrimSuffix(strings.TrimSpace(t.Parameters["service_name"]), ".service")
+	if name != "broker" && name != "controller" && name != "kafka" {
+		return e.fail(t, "Service check requires broker, controller or kafka"), nil
+	}
+	out, errOut, err := e.exec.RunSudo(ctx, "systemctl", "show", name+".service", "--property=ActiveState", "--property=MainPID", "--property=ExecMainStartTimestampMonotonic")
+	if err != nil {
+		return e.fail(t, fmt.Sprintf("Cannot inspect service %s: %v %s", name, err, errOut)), nil
+	}
+	fields := map[string]string{}
+	for _, line := range strings.Split(out, "\n") {
+		pair := strings.SplitN(line, "=", 2)
+		if len(pair) == 2 {
+			fields[pair[0]] = strings.TrimSpace(pair[1])
+		}
+	}
+	state := fields["ActiveState"]
+	if state != "active" && state != "inactive" && state != "failed" && state != "activating" && state != "deactivating" {
+		return e.fail(t, "Cannot determine Kafka service state"), nil
+	}
+	if state == "active" && (fields["MainPID"] == "" || fields["MainPID"] == "0" || fields["ExecMainStartTimestampMonotonic"] == "") {
+		return e.fail(t, "Active Kafka service has no process identity"), nil
+	}
+	output, err := json.Marshal(map[string]string{"state": state, "pid": fields["MainPID"], "started": fields["ExecMainStartTimestampMonotonic"]})
+	if err != nil {
+		return e.fail(t, "Cannot encode Kafka service state"), nil
+	}
+	return &api.TaskResult{TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS", LogOutput: string(output)}, nil
+}
+
 func validatedServiceName(raw string) (string, error) {
 	name := strings.TrimSuffix(strings.TrimSpace(raw), ".service")
 	if kafkaName, err := taskvalidate.KafkaServiceName(name, "service_name"); err == nil {
@@ -365,6 +406,33 @@ func (e *Engine) updateKafkaConfig(ctx context.Context, t *api.Task) (*api.TaskR
 		Status:    "SUCCESS",
 		LogOutput: logOutput,
 	}, nil
+}
+
+func (e *Engine) patchKafkaConfig(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
+	deployer := kafka.NewDeployer(e.cfg, e.client, e.exec)
+	logOutput, err := deployer.PatchConfig(ctx, t)
+	if err != nil {
+		return e.fail(t, fmt.Sprintf("Kafka config patch failed: %v\nLogs: %s", err, logOutput)), nil
+	}
+	return &api.TaskResult{TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS", LogOutput: logOutput}, nil
+}
+
+func (e *Engine) readKafkaProperty(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
+	deployer := kafka.NewDeployer(e.cfg, e.client, e.exec)
+	output, err := deployer.ReadConfigProperty(ctx, t)
+	if err != nil {
+		return e.fail(t, fmt.Sprintf("Kafka property read failed: %v", err)), nil
+	}
+	return &api.TaskResult{TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS", LogOutput: output}, nil
+}
+
+func (e *Engine) readKafkaProperties(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
+	deployer := kafka.NewDeployer(e.cfg, e.client, e.exec)
+	output, err := deployer.ReadConfigProperties(ctx, t)
+	if err != nil {
+		return e.fail(t, fmt.Sprintf("Kafka properties read failed: %v", err)), nil
+	}
+	return &api.TaskResult{TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS", LogOutput: output}, nil
 }
 
 func (e *Engine) checkPrerequisites(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
@@ -840,4 +908,13 @@ func (e *Engine) deleteMonitoring(ctx context.Context, t *api.Task) (*api.TaskRe
 		Status:    "SUCCESS",
 		LogOutput: "Monitoring services stopped and files removed.",
 	}, nil
+}
+
+func (e *Engine) backupKafkaConfig(ctx context.Context, t *api.Task) (*api.TaskResult, error) {
+	d := kafka.NewDeployer(e.cfg, e.client, e.exec)
+	output, err := d.BackupDynamicConfig(ctx, t)
+	if err != nil {
+		return e.fail(t, fmt.Sprintf("Kafka config backup failed: %v", err)), nil
+	}
+	return &api.TaskResult{TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS", LogOutput: output}, nil
 }

@@ -18,6 +18,7 @@ import (
 
 	"io.translab/tantor-agent/internal/client"
 	"io.translab/tantor-agent/internal/config"
+	"io.translab/tantor-agent/internal/configbackup"
 	"io.translab/tantor-agent/internal/executor"
 	"io.translab/tantor-agent/internal/taskvalidate"
 	"io.translab/tantor-agent/pkg/api"
@@ -437,11 +438,11 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 	setStep("Backup old config if exists")
 	configPath := configPathForTask(activeInstallDir, t)
 	if _, err := os.Stat(configPath); err == nil {
-		backupPath := configPath + ".bak." + time.Now().Format("20060102150405")
-		log("Backing up existing config: %s -> %s", configPath, backupPath)
-		if _, errOut, err := d.exec.RunSudo(ctx, "cp", "-p", configPath, backupPath); err != nil {
-			return logs.String(), fmt.Errorf("failed to back up existing Kafka config: %w (%s)", err, strings.TrimSpace(errOut))
+		backupPath, err := d.backupConfig(ctx, t, configPath)
+		if err != nil {
+			return logs.String(), err
 		}
+		log("Backing up existing config (7-day retention): %s -> %s", configPath, backupPath)
 	} else {
 		log("No existing config to backup")
 	}
@@ -1782,22 +1783,26 @@ func (d *Deployer) UpdateConfig(ctx context.Context, t *api.Task) (string, error
 }
 
 func (d *Deployer) backupConfig(ctx context.Context, t *api.Task, configPath string) (string, error) {
+	if os.Geteuid() != 0 {
+		return "", fmt.Errorf("configuration backups with seven-day retention require a root agent")
+	}
 	if _, _, err := d.exec.RunSudo(ctx, "test", "-f", configPath); err != nil {
 		return "", fmt.Errorf("active configuration file does not exist at %s; no changes were applied", configPath)
 	}
-	version := strings.TrimSpace(t.Parameters["config_version"])
-	if version == "" {
-		version = "unversioned"
-	}
-	version = strings.NewReplacer("/", "_", "\\", "_", ":", "_", " ", "_").Replace(version)
-	backupDir := filepath.Join(filepath.Dir(configPath), ".tantor-backups", filepath.Base(configPath))
-	backupName := fmt.Sprintf("v%s-%s.bak", version, time.Now().UTC().Format("20060102T150405.000000000Z"))
+	backupDir := filepath.Join(filepath.Dir(configPath), "config-backup", filepath.Base(configPath))
+	backupName := configbackup.Filename(configPath, time.Now())
 	backupPath := filepath.Join(backupDir, backupName)
-	if out, errOut, err := d.exec.RunSudo(ctx, "mkdir", "-p", backupDir); err != nil {
+	if out, errOut, err := d.exec.RunSudo(ctx, "mkdir", "-p", "-m", "0700", "--", backupDir); err != nil {
 		return "", fmt.Errorf("failed to create config backup directory: %w (%s %s)", err, out, errOut)
+	}
+	if _, detail, err := d.exec.RunSudo(ctx, "chmod", "0700", "--", backupDir); err != nil {
+		return "", fmt.Errorf("secure backup directory: %w (%s)", err, detail)
 	}
 	if out, errOut, err := d.exec.RunSudo(ctx, "cp", "-p", configPath, backupPath); err != nil {
 		return "", fmt.Errorf("failed to back up existing config: %w (%s %s)", err, out, errOut)
+	}
+	if err := configbackup.Register(ctx, d.exec, backupDir); err != nil {
+		return "", err
 	}
 	return backupPath, nil
 }

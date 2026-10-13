@@ -16,6 +16,7 @@
   "PRODUCE_MESSAGE": ["admin"],
   "SECURITY_CHANGE": ["admin"],
   "SCHEMA_REGISTRY_CHANGE": ["admin"],
+  "SCHEMA_REGISTRY_PERMANENT_DELETE": ["admin"],
   "KAFKA_CONNECT_CHANGE": ["admin"],
   "PARCEL_ACTION": ["admin"],
   "ARTIFACT_UPLOAD": ["admin"],

@@ -10,6 +10,7 @@ import io.translab.tantor.server.domain.JobType;
 import org.springframework.stereotype.Service;
 import io.translab.tantor.server.domain.Cluster;
 import io.translab.tantor.server.repository.ClusterRepository;
+import io.translab.tantor.server.repository.ExternalClusterRepository;
 
 import java.util.Map;
 import java.util.List;
@@ -23,6 +24,8 @@ public class RollingConfigUpdateJobHandler implements JobHandler {
     private final ExternalClusterService externalClusterService;
     private final ClusterRepository clusterRepository;
     private final KafkaAdminService kafkaAdminService;
+    private final ExternalClusterRepository externalClusterRepository;
+    private final RollingRestartHealthService healthService;
     private final ObjectMapper objectMapper;
 
     public RollingConfigUpdateJobHandler(
@@ -30,11 +33,15 @@ public class RollingConfigUpdateJobHandler implements JobHandler {
             ExternalClusterService externalClusterService,
             ClusterRepository clusterRepository,
             KafkaAdminService kafkaAdminService,
+            ExternalClusterRepository externalClusterRepository,
+            RollingRestartHealthService healthService,
             ObjectMapper objectMapper) {
         this.jobService = jobService;
         this.externalClusterService = externalClusterService;
         this.clusterRepository = clusterRepository;
         this.kafkaAdminService = kafkaAdminService;
+        this.externalClusterRepository = externalClusterRepository;
+        this.healthService = healthService;
         this.objectMapper = objectMapper;
     }
 
@@ -50,9 +57,10 @@ public class RollingConfigUpdateJobHandler implements JobHandler {
             UUID clusterId = UUID.fromString(jobPayload.get("clusterId").toString());
             boolean rollingRestart = (boolean) jobPayload.get("rollingRestart");
             List<Map<String, Object>> changes = (List<Map<String, Object>>) jobPayload.get("changes");
+            int expectedBrokerCount = ((Number) jobPayload.getOrDefault("expectedBrokerCount", 1)).intValue();
+            boolean controllerChange = "CONTROLLER".equals(jobPayload.get("role"));
 
-            Cluster cluster = clusterRepository.findById(clusterId).orElse(null);
-            if (cluster == null) {
+            if (!externalClusterRepository.existsById(clusterId)) {
                 failJob(job, "Cluster not found");
                 return;
             }
@@ -61,7 +69,6 @@ public class RollingConfigUpdateJobHandler implements JobHandler {
             List<JobStep> steps = jobService.getSteps(job.getId());
 
             // We iterate over the steps that were pre-created by ConfigController
-            Map<String, String> hostToBackupFile = new HashMap<>();
 
             for (JobStep step : steps) {
                 if (step.getStatus() == JobStepStatus.SUCCESS) continue;
@@ -70,7 +77,9 @@ public class RollingConfigUpdateJobHandler implements JobHandler {
 
                 if (step.getName().equals("PREFLIGHT")) {
                     try {
-                        kafkaAdminService.describeClusterNodes(clusterId);
+                        var snapshot = healthService.inspect(clusterId, expectedBrokerCount, java.util.Set.of());
+                        if (!snapshot.healthy()) throw new IllegalStateException(snapshot.failureReason());
+                        if (controllerChange) verifyQuorum(clusterId);
                         jobService.completeStep(step.getId(), "Preflight Validation Passed");
                     } catch (Exception e) {
                         jobService.failStep(step.getId(), "Cluster health check failed during preflight");
@@ -92,7 +101,7 @@ public class RollingConfigUpdateJobHandler implements JobHandler {
                             success = false;
                             break;
                         }
-                        hostToBackupFile.put(host, backupResult.get("backupFilePath") != null ? backupResult.get("backupFilePath").toString() : null);
+                        jobService.appendStepLog(step.getId(), "Checkpoint on " + host + ": " + backupResult.get("backupFilePath"));
                     }
                     if (success) jobService.completeStep(step.getId(), "All configurations backed up");
                     else return;
@@ -100,21 +109,28 @@ public class RollingConfigUpdateJobHandler implements JobHandler {
                     String host = step.getTargetId();
                     Map<String, Object> change = findChangeForHost(changes, host);
                     if (change != null) {
+                        if (!healthService.inspect(clusterId, expectedBrokerCount, java.util.Set.of()).healthy()) {
+                            failJob(job, "Cluster health precheck failed before writing " + host);
+                        }
+                        if (controllerChange) verifyQuorum(clusterId);
                         String configFilePath = (String) change.get("configFilePath");
                         List<Map<String, Object>> properties = (List<Map<String, Object>>) change.get("properties");
                         Map<String, String> configChanges = new HashMap<>();
+                        Map<String, String> expectedValues = new HashMap<>();
                         if (properties != null) {
                             for (Map<String, Object> prop : properties) {
                                 configChanges.put((String) prop.get("key"), (String) prop.get("newValue"));
+                                String oldValue = String.valueOf(prop.getOrDefault("oldValue", ""));
+                                expectedValues.put((String) prop.get("key"), oldValue.isEmpty() ? null : oldValue);
                             }
                         }
-                        Map<String, Object> writeResult = executeAgentTask(clusterId, host, "write_config", Map.of(
-                                "configFilePath", configFilePath,
-                                "configChanges", configChanges
-                        ), step);
+                        Map<String, Object> writePayload = new HashMap<>();
+                        writePayload.put("configFilePath", configFilePath);
+                        writePayload.put("configChanges", configChanges);
+                        writePayload.put("expectedValues", expectedValues);
+                        Map<String, Object> writeResult = executeAgentTask(clusterId, host, "write_config", writePayload, step);
                         if (writeResult == null || !"SUCCESS".equals(writeResult.get("status"))) {
-                            executeRollback(job, clusterId, host, configFilePath, hostToBackupFile.get(host), (String) change.get("serviceName"), rollingRestart);
-                            return;
+                            failJob(job, "Configuration write failed on " + host + ". Check the saved backup before operator recovery.");
                         }
                     } else {
                         jobService.completeStep(step.getId(), "No changes");
@@ -123,13 +139,16 @@ public class RollingConfigUpdateJobHandler implements JobHandler {
                     String host = step.getTargetId();
                     Map<String, Object> change = findChangeForHost(changes, host);
                     if (change != null) {
+                        if (!healthService.inspect(clusterId, expectedBrokerCount, java.util.Set.of()).healthy()) {
+                            failJob(job, "Cluster health precheck failed before restarting " + host);
+                        }
+                        if (controllerChange) verifyQuorum(clusterId);
                         String serviceName = (String) change.get("serviceName");
                         Map<String, Object> restartResult = executeAgentTask(clusterId, host, "restart_service", Map.of(
                                 "serviceName", serviceName
                         ), step);
                         if (restartResult == null || !"SUCCESS".equals(restartResult.get("status"))) {
-                            executeRollback(job, clusterId, host, (String) change.get("configFilePath"), hostToBackupFile.get(host), serviceName, true);
-                            return;
+                            failJob(job, "Restart failed on " + host + ". Further nodes were not changed; inspect the saved backup before recovery.");
                         }
                     } else {
                         jobService.completeStep(step.getId(), "No restart");
@@ -138,11 +157,14 @@ public class RollingConfigUpdateJobHandler implements JobHandler {
                     String host = step.getTargetId();
                     Map<String, Object> change = findChangeForHost(changes, host);
                     if (change != null) {
-                        boolean healthy = verifyHealthWithTimeout(clusterId, 30);
+                        boolean healthy = verifyHealthWithTimeout(clusterId, expectedBrokerCount, 90);
+                        if (healthy && controllerChange) {
+                            try { verifyQuorum(clusterId); }
+                            catch (Exception e) { healthy = false; }
+                        }
                         if (!healthy) {
                             jobService.failStep(step.getId(), "Health check failed after restart");
-                            executeRollback(job, clusterId, host, (String) change.get("configFilePath"), hostToBackupFile.get(host), (String) change.get("serviceName"), true);
-                            return;
+                            failJob(job, "Health check failed after restarting " + host + ". Further nodes were not changed.");
                         } else {
                             jobService.completeStep(step.getId(), "Node healthy");
                         }
@@ -150,13 +172,36 @@ public class RollingConfigUpdateJobHandler implements JobHandler {
                         jobService.completeStep(step.getId(), "OK");
                     }
                 } else if (step.getName().startsWith("FINAL_VERIFY")) {
-                    jobService.completeStep(step.getId(), "All changes successfully applied");
+                    for (Map<String, Object> change : changes) {
+                        String host = (String) change.get("host");
+                        Map<String, Object> readResult = executeAgentTask(clusterId, host, "read_config", Map.of(
+                                "configFilePath", (String) change.get("configFilePath")), null);
+                        if (!"SUCCESS".equals(readResult.get("status"))) {
+                            failJob(job, "Final config read failed on " + host);
+                        }
+                        @SuppressWarnings("unchecked")
+                        List<Map<String, Object>> properties = (List<Map<String, Object>>) change.get("properties");
+                        for (Map<String, Object> property : properties) {
+                            String desired = String.valueOf(property.get("newValue"));
+                            String actual = String.valueOf(readResult.getOrDefault(property.get("key"), ""));
+                            if (!actual.equals(desired) || (desired.isEmpty() && readResult.containsKey(property.get("key")))) {
+                                failJob(job, "Final value verification failed for " + property.get("key") + " on " + host);
+                            }
+                        }
+                    }
+                    if (!verifyHealthWithTimeout(clusterId, expectedBrokerCount, 10)) {
+                        failJob(job, "Cluster health did not pass final verification.");
+                    }
+                    jobService.completeStep(step.getId(), "All node values and cluster health verified");
                 }
             }
             
             jobService.updateJobStatus(job.getId(), JobStatus.SUCCESS);
             
         } catch (Exception e) {
+            if (jobService.getJob(job.getId()).getStatus() == JobStatus.FAILED) {
+                throw e instanceof RuntimeException runtime ? runtime : new IllegalStateException(e);
+            }
             failJob(job, "Rolling config update failed: " + e.getMessage());
         }
     }
@@ -164,26 +209,7 @@ public class RollingConfigUpdateJobHandler implements JobHandler {
     private void failJob(Job job, String message) {
         jobService.updateJobStatus(job.getId(), JobStatus.FAILED);
         jobService.appendLog(job.getId(), message);
-    }
-    
-    private void executeRollback(Job job, UUID clusterId, String host, String configFilePath, String backupFilePath, String serviceName, boolean doRestart) {
-        try {
-            executeAgentTask(clusterId, host, "restore_backup", Map.of(
-                    "configFilePath", configFilePath,
-                    "backupFilePath", backupFilePath
-            ), null);
-            
-            if (doRestart) {
-                executeAgentTask(clusterId, host, "restart_service", Map.of(
-                        "serviceName", serviceName
-                ), null);
-                
-                verifyHealthWithTimeout(clusterId, 30);
-            }
-            failJob(job, "Failed on " + host + ". Node was rolled back.");
-        } catch (Exception e) {
-            failJob(job, "Failed on " + host + ". Rollback also failed! " + e.getMessage());
-        }
+        throw new IllegalStateException(message);
     }
     
     private Map<String, Object> findChangeForHost(List<Map<String, Object>> changes, String host) {
@@ -193,18 +219,30 @@ public class RollingConfigUpdateJobHandler implements JobHandler {
         return null;
     }
     
-    private boolean verifyHealthWithTimeout(UUID clusterId, int secondsToWait) {
+    private boolean verifyHealthWithTimeout(UUID clusterId, int expectedBrokerCount, int secondsToWait) {
         long end = System.currentTimeMillis() + (secondsToWait * 1000L);
         while (System.currentTimeMillis() < end) {
             try {
-                kafkaAdminService.describeClusterNodes(clusterId);
-                kafkaAdminService.listTopics(clusterId);
-                return true; 
+                if (healthService.inspect(clusterId, expectedBrokerCount, java.util.Set.of()).healthy()) return true;
             } catch (Exception e) {
                 try { Thread.sleep(2000); } catch (InterruptedException ignored) {}
             }
         }
         return false;
+    }
+
+    private void verifyQuorum(UUID clusterId) {
+        try {
+            var quorum = kafkaAdminService.getAdminClient(clusterId).describeMetadataQuorum().quorumInfo().get();
+            if (quorum.leaderId() < 0 || quorum.voters().size() < 3) {
+                throw new IllegalStateException("KRaft controller quorum is unavailable");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted during KRaft quorum check", e);
+        } catch (java.util.concurrent.ExecutionException e) {
+            throw new IllegalStateException("KRaft quorum check failed", e);
+        }
     }
 
     private Map<String, Object> executeAgentTask(UUID clusterId, String host, String taskName, Map<String, Object> payload, JobStep step) {
