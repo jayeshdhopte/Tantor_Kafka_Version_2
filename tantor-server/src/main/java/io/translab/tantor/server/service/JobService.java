@@ -71,8 +71,10 @@ public class JobService {
         for (Job other : active) {
             if (!other.getId().equals(excluded) && (incoming == JobType.ROLLING_RESTART || incoming == JobType.EXTERNAL_ROLLING_RESTART
                     || incoming == JobType.EXTERNAL_SERVICES || incoming == JobType.ROLLING_CONFIG_UPDATE
+                    || incoming == JobType.CONFIG_CHANGE || incoming == JobType.TARGETED_CONFIG_CHANGE
                     || other.getType() == JobType.ROLLING_RESTART || other.getType() == JobType.EXTERNAL_ROLLING_RESTART
                     || other.getType() == JobType.EXTERNAL_SERVICES || other.getType() == JobType.ROLLING_CONFIG_UPDATE
+                    || other.getType() == JobType.CONFIG_CHANGE || other.getType() == JobType.TARGETED_CONFIG_CHANGE
                     || incoming == JobType.CLUSTER_DELETION || other.getType() == JobType.CLUSTER_DELETION))
                 throw new ClusterOperationConflictException("Another operation is active on this cluster. Wait for job " + other.getId() + " to finish.");
         }
