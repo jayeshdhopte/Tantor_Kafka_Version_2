@@ -272,7 +272,7 @@ function CustomSelect({ value, onChange, options, placeholder, disabled, classNa
       {isOpen && anchor && (
         <AnchoredMenu
           anchor={anchor}
-          className="ds-custom-select-dropdown"
+          className={`ds-custom-select-dropdown${className === 'ds-compat-select' ? ' ds-sr-global-compat-menu' : ''}`}
           onClose={() => setIsOpen(false)}
           align="start"
           matchAnchorWidth

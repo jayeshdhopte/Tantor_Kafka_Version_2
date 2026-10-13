@@ -1046,6 +1046,16 @@ input:checked+.cd-toggle-slider:before {
 .cd-artifact-upload-modal form { min-height: 0; overflow: auto; }
 .cd-artifact-upload-modal .cd-config-modal-body { gap: 16px; }
 .cd-artifact-upload-modal input[type="file"] { height: auto; }
+.cd-artifact-upload-modal input[type="file"]::file-selector-button {
+  background: var(--button-primary);
+  border-color: var(--button-primary);
+  border-radius: 8px;
+  color: #FFFFFF;
+}
+.cd-artifact-upload-modal input[type="file"]:not(:disabled)::file-selector-button:hover {
+  background: var(--button-primary-hover);
+  border-color: var(--button-primary-hover);
+}
 .cd-artifact-upload-error { margin: 0; color: var(--color-danger); font-size: 13px; }
 
 .cd-secondary-btn.compact.cd-fix-prereqs-btn {
@@ -1152,6 +1162,14 @@ input:checked+.cd-toggle-slider:before {
 
 .cd-prereq-card summary::-webkit-details-marker {
   display: none;
+}
+
+.cd-prereq-card > .cd-secondary-btn.compact {
+  width: fit-content;
+  max-width: 100%;
+  height: auto;
+  min-height: 32px;
+  margin: 12px 0;
 }
 
 .cd-prereq-log {

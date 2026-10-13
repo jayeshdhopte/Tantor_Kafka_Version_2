@@ -2094,6 +2094,49 @@
   margin-left: 8px;
 }
 
+.ds-sr-header .ds-compat-select:not(.disabled) .ds-custom-select-trigger {
+  border-color: color-mix(in srgb, var(--button-primary) 25%, var(--bg-surface));
+  color: var(--button-primary);
+  transition: background-color .15s, border-color .15s, box-shadow .15s;
+}
+
+.ds-sr-header .ds-compat-select:not(.disabled) .ds-custom-select-trigger:hover,
+.ds-sr-header .ds-compat-select:not(.disabled) .ds-custom-select-trigger:active,
+.ds-sr-header .ds-compat-select:not(.disabled):has(.ds-custom-select-arrow.open) .ds-custom-select-trigger {
+  background-color: color-mix(in srgb, var(--button-primary) 6%, var(--bg-surface));
+  border-color: var(--button-primary);
+}
+
+.ds-sr-header .ds-compat-select:not(.disabled):has(.ds-custom-select-arrow.open) .ds-custom-select-trigger {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--button-primary) 12%, transparent);
+}
+
+.ds-sr-header .ds-compat-select:not(.disabled) .ds-custom-select-arrow {
+  stroke: var(--button-primary);
+}
+
+.ds-sr-global-compat-menu {
+  border-color: color-mix(in srgb, var(--button-primary) 20%, var(--bg-surface));
+  border-radius: 8px;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--button-primary) 12%, transparent);
+}
+
+.ds-sr-global-compat-menu .ds-custom-select-option {
+  border-radius: 6px;
+  color: var(--text-primary);
+}
+
+.ds-sr-global-compat-menu .ds-custom-select-option:hover {
+  background-color: color-mix(in srgb, var(--button-primary) 7%, var(--bg-surface));
+  color: var(--button-primary);
+}
+
+.ds-sr-global-compat-menu .ds-custom-select-option.selected,
+.ds-sr-global-compat-menu .ds-custom-select-option:active {
+  background-color: color-mix(in srgb, var(--button-primary) 12%, var(--bg-surface));
+  color: var(--button-primary);
+}
+
 .ds-sr-header .ds-button.add-connection,
 .ds-sr-header .ds-button.create-schema {
   width: auto;
@@ -2372,9 +2415,14 @@
   font-weight: 500;
 }
 
+.ds-sr-detail-shell + .ds-section-title {
+  margin-top: 16px;
+}
+
 .ds-sr-versions-panel {
   border-color: #D2D2D7;
   border-radius: 8px;
+  max-height: none;
   overflow: visible;
 }
 

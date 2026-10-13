@@ -132,7 +132,7 @@ export function TopicEditSettings() {
                           {!['delete', 'compact', 'compact,delete'].includes(values[setting.name]) && <option value={values[setting.name]}>{values[setting.name]}</option>}
                           <option value="delete">Delete</option>
                           <option value="compact">Compact</option>
-                          <option value="compact,delete">Compact, delete</option>
+                          <option value="compact,delete">Delete + Compact</option>
                         </select>
                       ) : (
                         <input id={`setting-${setting.name}`} value={values[setting.name] ?? ''} disabled={unavailable || resetting || saving} inputMode="numeric" onChange={event => setValues(current => ({ ...current, [setting.name]: event.target.value }))} />
