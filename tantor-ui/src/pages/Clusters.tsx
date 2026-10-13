@@ -366,7 +366,7 @@ export function Clusters() {
                         <th>Hosts</th>
                         <th>Created</th>
                         <th>Tags</th>
-                        <th></th>
+                        <th>Action</th>
                       </tr>
                     </thead>
                     <tbody>

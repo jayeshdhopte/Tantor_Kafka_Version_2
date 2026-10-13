@@ -26,14 +26,14 @@
 }
 
 .topic-edit-section h3 {
-  margin: 0 0 20px;
+  margin: 0 0 16px;
   font-size: 17px;
 }
 
 .topic-edit-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px 24px;
+  gap: 24px;
 }
 
 .topic-edit-field,
@@ -44,7 +44,7 @@
 .topic-edit-field label,
 .topic-edit-custom-row label {
   display: block;
-  margin-bottom: 7px;
+  margin-bottom: 8px;
   color: var(--text-secondary);
   font-size: 13px;
   font-weight: 600;
@@ -59,16 +59,22 @@
   gap: 10px;
 }
 
+.topic-edit-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+}
+
 .topic-edit-field input,
 .topic-edit-field select,
 .topic-edit-custom-row input,
 .topic-edit-add-row select {
   width: 100%;
   min-width: 0;
-  height: 38px;
-  padding: 0 10px;
+  box-sizing: border-box;
+  height: 40px;
+  padding: 0 12px;
   border: 1px solid var(--border-default);
-  border-radius: 4px;
+  border-radius: 8px;
   background: var(--bg-surface);
   color: var(--text-primary);
   font: inherit;
@@ -88,7 +94,7 @@
 }
 
 .topic-edit-icon:hover {
-  color: var(--accent-primary);
+  color: var(--button-primary-hover);
 }
 
 .topic-edit-note {
@@ -112,7 +118,12 @@
 }
 
 .topic-edit-add-row select {
-  width: min(100%, 400px);
+  width: calc((100% - 24px) / 2);
+}
+
+.topic-edit-add {
+  flex: none;
+  white-space: nowrap;
 }
 
 .topic-edit-add,
@@ -122,9 +133,10 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-height: 38px;
+  box-sizing: border-box;
+  min-height: 40px;
   padding: 8px 14px;
-  border-radius: 4px;
+  border-radius: 8px;
   font: inherit;
   font-size: 14px;
   cursor: pointer;
@@ -138,9 +150,14 @@
 }
 
 .topic-edit-save {
-  border: 1px solid var(--accent-primary);
-  background: var(--accent-primary);
+  border: 1px solid var(--button-primary);
+  background: var(--button-primary);
   color: #fff;
+}
+
+.topic-edit-save:hover:not(:disabled) {
+  border-color: var(--button-primary-hover);
+  background: var(--button-primary-hover);
 }
 
 .topic-edit-add:disabled,
@@ -156,9 +173,10 @@
 
 .topic-edit-actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
-  gap: 10px;
-  padding-top: 20px;
+  gap: 12px;
+  padding-top: 24px;
   border-top: 1px solid var(--border-default);
 }
 
@@ -177,5 +195,9 @@
 
   .topic-edit-add-row {
     flex-wrap: wrap;
+  }
+
+  .topic-edit-add-row select {
+    width: 100%;
   }
 }

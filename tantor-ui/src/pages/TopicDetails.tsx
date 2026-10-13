@@ -649,8 +649,8 @@ function OverviewTab({ detail }: { detail: TopicDetail }) {
               <th>Leader</th>
               <th>Replicas</th>
               <th>In-sync Replicas</th>
-              <th>First Offset</th>
-              <th>Next Offset</th>
+              <th>Earliest Offset</th>
+              <th>Log End Offset (LEO)</th>
               <th>Messages</th>
             </tr>
           </thead>
