@@ -106,6 +106,11 @@ public class AuditService {
             }
         }
 
+        if ("CLUSTER".equalsIgnoreCase(resourceType) && details instanceof Map<?, ?> values
+                && values.get("clusterName") instanceof String name && !name.isBlank()
+                && (event.getResource() == null || Objects.equals(event.getResource(), resourceId))) {
+            event.setResource(name);
+        }
         return repository.saveAndFlush(event).getId();
     }
 

@@ -162,7 +162,9 @@ export function Clusters() {
             )
             .filter(c => c.status !== 'DELETED')
         );
-        setTimeout(fetchClusters, 2000);
+        const deletionJobId = res.headers.get('X-Job-Id');
+        if (deletionJobId) navigate(`/jobs/${deletionJobId}`);
+        else setTimeout(fetchClusters, 2000);
       } else {
         notifyAction('Failed to delete cluster.');
       }

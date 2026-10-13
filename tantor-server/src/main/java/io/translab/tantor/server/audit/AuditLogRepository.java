@@ -6,6 +6,10 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import java.util.UUID;
 
 public interface AuditLogRepository extends JpaRepository<AuditLog, UUID>, JpaSpecificationExecutor<AuditLog> {
+    @org.springframework.data.jpa.repository.Query(value = "SELECT EXISTS(SELECT 1 FROM kf_audit_logs WHERE action = :action AND details->>'jobId' = :jobId AND details->>'attempt' = CAST(:attempt AS text))", nativeQuery = true)
+    boolean existsDeletionEvent(@org.springframework.data.repository.query.Param("action") String action,
+                               @org.springframework.data.repository.query.Param("jobId") String jobId,
+                               @org.springframework.data.repository.query.Param("attempt") int attempt);
     long countByStatus(String status);
     long countByCategory(String category);
 

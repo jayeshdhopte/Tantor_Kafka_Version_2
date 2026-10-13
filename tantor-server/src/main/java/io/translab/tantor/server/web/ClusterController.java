@@ -63,6 +63,7 @@ public class ClusterController {
     private final io.translab.tantor.server.service.ExternalClusterService externalClusterService;
     private final io.translab.tantor.server.service.KafkaAdminService kafkaAdminService;
     private final JobService jobService;
+    private final io.translab.tantor.server.service.ClusterDeletionHistoryService deletionHistory;
     private final io.translab.tantor.server.audit.AuditService auditService;
     private final io.translab.tantor.server.repository.DiscoveryAgentRepository discoveryAgentRepository;
     private final RoleAuthenticationUtil roleAuthenticationUtil;
@@ -973,15 +974,16 @@ public class ClusterController {
         if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.DELETE_CLUSTER)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
-        jobService.assertClusterMutable(id);
+        jobService.assertClusterDeletionAllowed(id);
 
         java.util.Optional<ExternalCluster> external = externalClusterRepository.findById(id);
         if (external.isPresent()) {
             ExternalCluster cluster = external.get();
-            recordExternalClusterDeletion(cluster, "EXTERNAL_CLUSTER_DELETED");
             externalClusterService.deleteExternalCluster(id);
+            recordExternalClusterDeletion(cluster, "EXTERNAL_CLUSTER_DELETED");
+            UUID deletionJob = deletionHistory.completed(id, cluster.getName(), cluster.getKafkaClusterId(), cluster.getKafkaVersion(), "EXTERNAL", roleAuthenticationUtil.extractUsername(authorization), false, true);
             activityAlertService.logActivity("INFO", "Deleted external cluster", id);
-            return ResponseEntity.ok().build();
+            return deletionResponse(HttpStatus.OK, deletionJob);
         }
 
         java.util.Optional<Cluster> existing = clusterRepository.findById(id);
@@ -993,16 +995,17 @@ public class ClusterController {
         if ("DELETING".equalsIgnoreCase(cluster.getStatus())) {
             return ResponseEntity.accepted().build();
         }
-        boolean cleanupScheduled = !"EXTERNAL".equalsIgnoreCase(cluster.getMode())
-                && initiateClusterCleanup(cluster);
-        if (cleanupScheduled) {
+        UUID deletionJob = !"EXTERNAL".equalsIgnoreCase(cluster.getMode())
+                ? initiateClusterCleanup(cluster, roleAuthenticationUtil.extractUsername(authorization), false) : null;
+        if (deletionJob != null) {
             activityAlertService.logActivity("INFO", "Deleting cluster; waiting for VM cleanup", id);
-            return ResponseEntity.accepted().build();
+            return deletionResponse(HttpStatus.ACCEPTED, deletionJob);
         }
         hardDeleteCluster(cluster, "CLUSTER_DELETED", false);
+        deletionJob = deletionHistory.completed(id, cluster.getName(), cluster.getKafkaClusterId(), cluster.getKafkaVersion(), cluster.getMode(), roleAuthenticationUtil.extractUsername(authorization), false, false);
         activityAlertService.logActivity("INFO",
                 "Deleted cluster with no VM cleanup required", id);
-        return ResponseEntity.ok().build();
+        return deletionResponse(HttpStatus.OK, deletionJob);
     }
 
     @org.springframework.transaction.annotation.Transactional
@@ -1013,15 +1016,16 @@ public class ClusterController {
         if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.DELETE_CLUSTER)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
-        jobService.assertClusterMutable(id);
+        jobService.assertClusterDeletionAllowed(id);
 
         java.util.Optional<ExternalCluster> external = externalClusterRepository.findById(id);
         if (external.isPresent()) {
             ExternalCluster cluster = external.get();
-            recordExternalClusterDeletion(cluster, "EXTERNAL_CLUSTER_FORCE_DELETED");
             externalClusterService.deleteExternalCluster(id);
+            recordExternalClusterDeletion(cluster, "EXTERNAL_CLUSTER_FORCE_DELETED");
+            UUID deletionJob = deletionHistory.completed(id, cluster.getName(), cluster.getKafkaClusterId(), cluster.getKafkaVersion(), "EXTERNAL", roleAuthenticationUtil.extractUsername(authorization), true, true);
             activityAlertService.logActivity("INFO", "Force-deleted external cluster", id);
-            return ResponseEntity.ok().build();
+            return deletionResponse(HttpStatus.OK, deletionJob);
         }
 
         java.util.Optional<Cluster> existing = clusterRepository.findById(id);
@@ -1030,13 +1034,13 @@ public class ClusterController {
         }
 
         Cluster cluster = existing.get();
-        boolean cleanupScheduled = cluster.getServices() != null && !cluster.getServices().isEmpty()
-                && !"EXTERNAL".equalsIgnoreCase(cluster.getMode())
-                && initiateClusterCleanup(cluster);
+        UUID deletionJob = !"EXTERNAL".equalsIgnoreCase(cluster.getMode()) ? initiateClusterCleanup(cluster, roleAuthenticationUtil.extractUsername(authorization), true) : null;
+        boolean cleanupScheduled = deletionJob != null;
         hardDeleteCluster(cluster, "CLUSTER_FORCE_DELETED", cleanupScheduled);
+        if (!cleanupScheduled) deletionJob = deletionHistory.completed(id, cluster.getName(), cluster.getKafkaClusterId(), cluster.getKafkaVersion(), cluster.getMode(), roleAuthenticationUtil.extractUsername(authorization), true, false);
         activityAlertService.logActivity("WARN",
                 cleanupScheduled ? "Force-deleted cluster after dispatching VM cleanup" : "Force-deleted cluster", id);
-        return ResponseEntity.ok().build();
+        return deletionResponse(HttpStatus.OK, deletionJob);
     }
     @org.springframework.transaction.annotation.Transactional
     @PostMapping("/{id}/upgrade")
@@ -3167,36 +3171,15 @@ public class ClusterController {
         return "localhost".equalsIgnoreCase(host) || "127.0.0.1".equals(host) || "::1".equals(host);
     }
 
-    private boolean initiateClusterCleanup(Cluster cluster) {
-        if ("DELETING".equalsIgnoreCase(cluster.getStatus())) {
-            return true;
-        }
-        if (cluster.getServices() == null || cluster.getServices().isEmpty()) {
-            return false;
-        }
+    private UUID initiateClusterCleanup(Cluster cluster, String actor, boolean force) {
+        if (cluster.getServices() == null || cluster.getServices().isEmpty()) return null;
+        UUID jobId = deletionHistory.queue(cluster, actor, force);
+        cluster.setStatus("DELETING"); cluster.setUpdatedBy(actor); clusterRepository.save(cluster);
+        return jobId;
+    }
 
-        cluster.setStatus("DELETING");
-        clusterRepository.save(cluster);
-        Set<String> cleanupHosts = new HashSet<>();
-        for (ClusterServiceAssignment svc : cluster.getServices()) {
-            if (cleanupHosts.add(svc.getHostId())) {
-                List<Map<String, Object>> dataServices = new ArrayList<>();
-                boolean cleanupKafka = false;
-                for (ClusterServiceAssignment onHost : cluster.getServices()) {
-                    if (!svc.getHostId().equals(onHost.getHostId())) continue;
-                    if ("schema_registry".equals(onHost.getRole()) || "kafka_connect".equals(onHost.getRole())) {
-                        Map<String, Object> details = new LinkedHashMap<>(parseConfigJson(onHost.getConfigJson()));
-                        details.put("kind", onHost.getRole());
-                        dataServices.add(details);
-                    } else {
-                        cleanupKafka = true;
-                    }
-                }
-                deploymentService.deleteClusterFromHost(cluster.getId(), svc.getHostId(),
-                        cluster.getKafkaVersion(), cluster.getConfigJson(), dataServices, cleanupKafka);
-            }
-        }
-        return true;
+    private ResponseEntity<Void> deletionResponse(HttpStatus status, UUID jobId) {
+        return ResponseEntity.status(status).header("X-Job-Id", jobId.toString()).header("Location", "/api/v1/jobs/" + jobId).build();
     }
 
     private void hardDeleteCluster(Cluster cluster, String action, boolean cleanupScheduled) {

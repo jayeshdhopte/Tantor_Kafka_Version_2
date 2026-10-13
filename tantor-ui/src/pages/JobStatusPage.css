@@ -350,3 +350,6 @@
 .logs-text .log-line.log-error {
   color: #f87171 !important;
 }
+
+.job-deletion-context { display: flex; flex-wrap: wrap; gap: 12px; padding: 14px 16px; border: 1px solid #D2D2D7; border-radius: 8px; background: #faf8fc; margin-bottom: 16px; color: #332849; }
+.job-deletion-context span { color: #818181; font-size: 13px; }

@@ -8,6 +8,7 @@ import './JobStatusPage.css';
 type Job = {
   id: string;
   type: string;
+  payload?: string | { clusterName?: string; mode?: string; force?: boolean };
   status: string;
   requestedBy: string;
   startTime: string;
@@ -309,6 +310,7 @@ export function JobStatusPage() {
 
   const getStepDisplayName = (step: JobStep): string => {
     const businessName = getBusinessStepName(step.name);
+    if (job?.type === 'CLUSTER_DELETION') return businessName;
     if (job?.type === 'TARGETED_CONFIG_CHANGE') {
       try {
         const payload = typeof step.payload === 'string' ? JSON.parse(step.payload) as Record<string, unknown> : step.payload || {};
@@ -330,11 +332,17 @@ export function JobStatusPage() {
     return `${businessName} - ${hostLabel}`;
   };
 
+  let deletionDetails: { clusterName?: string; mode?: string; force?: boolean } | null = null;
+  if (job?.type === 'CLUSTER_DELETION') {
+    try { deletionDetails = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload || {}; }
+    catch { deletionDetails = {}; }
+  }
   const totalSteps = displaySteps.length;
   const completedStepsCount = displaySteps.filter(s => ['SUCCESS', 'ROLLED_BACK'].includes(s.status)).length;
 
   return (
     <div className="job-status-page animate-fade-in">
+      {deletionDetails && <div className="job-deletion-context"><strong>{deletionDetails.force ? 'Force deletion' : 'Cluster deletion'} · {deletionDetails.clusterName || 'Cluster'}</strong><span>{deletionDetails.mode === 'EXTERNAL' ? 'External registration removal' : 'Managed cluster cleanup'} · Requested by {job?.requestedBy || 'Not recorded'}</span></div>}
       <div className="page-header-actions">
         <div className="back-nav" onClick={() => navigate('/jobs')} style={{ cursor: 'pointer' }}>
           <ArrowLeft size={16} /> 
@@ -396,7 +404,7 @@ export function JobStatusPage() {
 
       {!isLogsExpanded && (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <h3 className="panel-title" style={{ textAlign: 'left', margin: 0, color: 'var(--button-primary)', fontSize: '18px', fontWeight: 'var(--font-semibold)' }}>Deployment Steps</h3>
+          <h3 className="panel-title" style={{ textAlign: 'left', margin: 0, color: 'var(--button-primary)', fontSize: '18px', fontWeight: 'var(--font-semibold)' }}>{job?.type === 'CLUSTER_DELETION' ? 'Deletion Steps' : 'Deployment Steps'}</h3>
           <div style={{ position: 'relative' }}>
             <button 
               onClick={() => setShowDropdown(!showDropdown)} 

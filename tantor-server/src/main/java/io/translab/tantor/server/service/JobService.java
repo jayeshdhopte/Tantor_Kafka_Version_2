@@ -49,6 +49,11 @@ public class JobService {
         lockAndCheck("cluster:" + clusterId, null, null);
     }
 
+    @Transactional
+    public void assertClusterDeletionAllowed(UUID clusterId) {
+        lockAndCheck("cluster:" + clusterId, JobType.CLUSTER_DELETION, null);
+    }
+
     private void lockAndCheck(String resource, JobType incoming, UUID excluded) {
         if (resource == null || !resource.startsWith("cluster:")) return;
         UUID clusterId = UUID.fromString(resource.substring("cluster:".length()));
@@ -57,9 +62,9 @@ public class JobService {
                 List.of(JobStatus.PENDING, JobStatus.IN_PROGRESS, JobStatus.ROLLBACK_PENDING, JobStatus.ROLLING_BACK));
         var outstanding = jobRepository.findWithUnfinishedRestartTasks().stream()
                 .filter(job -> resource.equals(job.getResourceKey()) && !Objects.equals(job.getId(), excluded)).findFirst();
-        if (outstanding.isPresent()) throw new ClusterOperationConflictException("An agent restart task is still pending or running for job " + outstanding.get().getId() + ". Resume that job before another cluster operation.");
+        if (outstanding.isPresent()) throw new ClusterOperationConflictException("An agent task is still pending or running for job " + outstanding.get().getId() + ". Resume that job before another cluster operation.");
         for (Job other : active) {
-            if (!other.getId().equals(excluded) && (incoming == JobType.ROLLING_RESTART || other.getType() == JobType.ROLLING_RESTART))
+            if (!other.getId().equals(excluded) && (incoming == JobType.ROLLING_RESTART || other.getType() == JobType.ROLLING_RESTART || incoming == JobType.CLUSTER_DELETION || other.getType() == JobType.CLUSTER_DELETION))
                 throw new ClusterOperationConflictException("Another operation is active on this cluster. Wait for job " + other.getId() + " to finish.");
         }
     }
@@ -81,7 +86,7 @@ public class JobService {
         return active.values().stream().filter(job -> job.getResourceKey() != null && job.getResourceKey().startsWith("cluster:"))
                 .map(job -> Map.of("id", job.getId().toString(), "clusterId", job.getResourceKey().substring(8),
                         "type", job.getType().name(), "status", isTerminal(job.getStatus()) ? "WAITING_AGENT" : job.getStatus().name(),
-                        "progress", isTerminal(job.getStatus()) ? "{\"message\":\"Waiting for the previous agent restart task to finish.\"}"
+                        "progress", isTerminal(job.getStatus()) ? "{\"message\":\"Waiting for the previous agent task to finish.\"}"
                                 : job.getProgress() == null ? "{}" : job.getProgress())).toList();
     }
 
@@ -235,7 +240,7 @@ public class JobService {
             for (JobStep step : getSteps(id)) {
                 if (step.getStatus() != JobStepStatus.SUCCESS) {
                     step.setStatus(JobStepStatus.PENDING);
-                    if (job.getType() != JobType.ROLLING_RESTART) step.setAgentTaskId(null);
+                    if (job.getType() != JobType.ROLLING_RESTART && job.getType() != JobType.CLUSTER_DELETION) step.setAgentTaskId(null);
                     step.setExternalServiceTaskId(null);
                     step.setStartTime(null);
                     step.setEndTime(null);

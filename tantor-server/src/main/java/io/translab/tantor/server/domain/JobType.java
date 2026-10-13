@@ -2,6 +2,7 @@ package io.translab.tantor.server.domain;
 
 public enum JobType {
     DEPLOYMENT,
+    CLUSTER_DELETION,
     EXTERNAL_SERVICES,
     CONFIG_CHANGE,
     TARGETED_CONFIG_CHANGE,
