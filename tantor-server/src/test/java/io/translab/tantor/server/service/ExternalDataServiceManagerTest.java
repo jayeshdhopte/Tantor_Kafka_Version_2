@@ -31,6 +31,18 @@ import static org.mockito.Mockito.when;
 
 class ExternalDataServiceManagerTest {
     @Test
+    void validatesAndPreservesSeparateServiceHeapValues() {
+        var range = ExternalDataServiceManager.configuration("kafka_connect", Map.of(
+                "heap_size", "2G", "heap_xms", "512M", "heap_xmx", "2G"));
+        assertThat(range).containsEntry("heap_xms", "512M").containsEntry("heap_xmx", "2G");
+        var legacy = ExternalDataServiceManager.configuration("schema_registry", Map.of("heap_size", "1G"));
+        assertThat(legacy).containsEntry("heap_xms", "1G").containsEntry("heap_xmx", "1G");
+        assertThatThrownBy(() -> ExternalDataServiceManager.configuration("schema_registry", Map.of(
+                "heap_size", "2G", "heap_xms", "3G", "heap_xmx", "2G")))
+                .hasMessageContaining("Min Heap cannot exceed Max Heap");
+    }
+
+    @Test
     void createsOneOrderedJobForBothServicesOnAReadyDiscoveryAgent() {
         var clusters = mock(ExternalClusterRepository.class);
         var agents = mock(DiscoveryAgentRepository.class);

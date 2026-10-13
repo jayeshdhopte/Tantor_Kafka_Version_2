@@ -6,6 +6,8 @@ import { usePermissions } from '../hooks/usePermissions';
 import orangeBanner from '../assets/orange.png';
 import { AnchoredMenu } from '../components/AnchoredMenu';
 import { readDataServiceSession, writeDataServiceSession } from '../utils/dataServiceSessionCache';
+import { compareSchemaFields } from '../utils/schemaFieldDiff';
+import { schemaSubmissionError } from '../utils/schemaSubmissionError';
 import './DataServiceTabs.css';
 
 interface SchemaSubject {
@@ -15,6 +17,7 @@ interface SchemaSubject {
   id: number | null;
   schemaType: string;
   schema: string;
+  deleted?: boolean;
 }
 
 interface SchemaVersion {
@@ -22,6 +25,13 @@ interface SchemaVersion {
   id: number | null;
   schemaType: string;
   schema: string;
+  deleted?: boolean;
+}
+
+interface PendingSchemaDelete {
+  subject: string;
+  version?: number;
+  permanent: boolean;
 }
 
 interface SubjectDetails {
@@ -299,7 +309,10 @@ export function SchemaRegistry() {
   const [error, setError] = useState<string | null>(null);
   const [showConnection, setShowConnection] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [subjectToDelete, setSubjectToDelete] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<PendingSchemaDelete | null>(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
+  const [showDeletedSubjects, setShowDeletedSubjects] = useState(false);
+  const [showDeletedVersions, setShowDeletedVersions] = useState(false);
   const [selected, setSelected] = useState<SchemaSubject | null>(null);
   const [details, setDetails] = useState<SubjectDetails | null>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
@@ -383,6 +396,14 @@ export function SchemaRegistry() {
       .filter(version => Number.isFinite(version.version))
       .sort((a, b) => b.version - a.version);
   }, [details]);
+  const visibleSubjects = (summary?.subjects || []).filter(subject => Boolean(subject.deleted) === showDeletedSubjects);
+  const visibleVersions = (details?.versions || []).filter(version => showDeletedVersions || !version.deleted);
+
+  const switchDeletedSubjects = (show: boolean) => {
+    if (show === showDeletedSubjects) return;
+    setShowDeletedSubjects(show);
+    void load(selectedConnectionId, undefined, show);
+  };
 
   // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Cert helpers ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
 
@@ -561,7 +582,8 @@ export function SchemaRegistry() {
 
   const load = async (
     connectionId: string | null = selectedConnectionId,
-    discovered?: DiscoveredConnection
+    discovered?: DiscoveredConnection,
+    includeDeleted: boolean = showDeletedSubjects
   ): Promise<boolean> => {
     const requestId = ++loadRequestId.current;
     setHasFetched(true);
@@ -570,6 +592,7 @@ export function SchemaRegistry() {
 
     try {
       let url = withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/summary`, connectionId);
+      if (includeDeleted) url += `${url.includes('?') ? '&' : '?'}includeDeleted=true`;
       if (!connectionId && discovered?.protocol && discovered.host && discovered.port) {
         const params = new URLSearchParams({
           protocol: discovered.protocol,
@@ -722,9 +745,11 @@ export function SchemaRegistry() {
     setLoadingDetails(true);
     setError(null);
     setExpandedVersions(new Set());
+    setShowDeletedVersions(Boolean(item.deleted));
 
     try {
-      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(item.subject)}/details`));
+      const detailUrl = withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(item.subject)}/details`);
+      const res = await fetch(`${detailUrl}${detailUrl.includes('?') ? '&' : '?'}includeDeleted=true`);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Failed to load subject details.');
       setDetails(data);
@@ -732,8 +757,8 @@ export function SchemaRegistry() {
     } catch (e: unknown) {
       setDetails({
         subject: item.subject,
-        latest: { version: item.version, id: item.id, schemaType: item.schemaType, schema: item.schema },
-        versions: [{ version: item.version, id: item.id, schemaType: item.schemaType, schema: item.schema }],
+        latest: { version: item.version, id: item.id, schemaType: item.schemaType, schema: item.schema, deleted: item.deleted },
+        versions: [{ version: item.version, id: item.id, schemaType: item.schemaType, schema: item.schema, deleted: item.deleted }],
         compatibility: globalCompatibility
       });
       setSubjectCompatibility(globalCompatibility);
@@ -779,9 +804,16 @@ export function SchemaRegistry() {
 
   const comparedSchemaA = comparableVersions.find(v => v.version === compareVersionA);
   const comparedSchemaB = comparableVersions.find(v => v.version === compareVersionB);
-  const schemasAreIdentical = Boolean(
-    comparedSchemaA && comparedSchemaB && comparedSchemaA.schema === comparedSchemaB.schema
-  );
+  const olderSchema = comparedSchemaA && comparedSchemaB
+    ? (comparedSchemaA.version < comparedSchemaB.version ? comparedSchemaA : comparedSchemaB)
+    : null;
+  const newerSchema = comparedSchemaA && comparedSchemaB
+    ? (comparedSchemaA.version > comparedSchemaB.version ? comparedSchemaA : comparedSchemaB)
+    : null;
+  const schemaComparison = olderSchema && newerSchema
+    ? compareSchemaFields(olderSchema.schema, newerSchema.schema, olderSchema.schemaType, newerSchema.schemaType)
+    : null;
+  const schemasAreIdentical = schemaComparison?.identical ?? false;
 
   const toggleVersion = (version: number) => {
     setExpandedVersions(prev => {
@@ -805,7 +837,7 @@ export function SchemaRegistry() {
         body: JSON.stringify({ schemaType: createSchemaType, schema: createSchema })
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.message || 'Failed to create schema.');
+      if (!res.ok) throw new Error(schemaSubmissionError(data, 'Failed to create schema.'));
       setShowCreate(false);
       setCreateSubject('');
       setCreateSchema(emptySchema);
@@ -830,7 +862,7 @@ export function SchemaRegistry() {
         body: JSON.stringify({ schemaType: editSchemaType, schema: newSchema })
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.message || 'Failed to update schema.');
+      if (!res.ok) throw new Error(schemaSubmissionError(data, 'Failed to update schema.'));
       // Also save compatibility if changed
       if (editCompatibility !== subjectCompatibility) {
         await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(selected.subject)}/config`), {
@@ -850,24 +882,34 @@ export function SchemaRegistry() {
     }
   };
 
-  const deleteSubject = (name: string) => {
+  const requestSchemaDelete = (subject: string, permanent: boolean, version?: number) => {
     if (!canManage) return;
-    setSubjectToDelete(name);
+    setError(null);
+    setDeleteConfirmation('');
+    setPendingDelete({ subject, version, permanent });
   };
 
-  const confirmDeleteSubject = async (name: string) => {
+  const confirmSchemaDelete = async () => {
+    if (!canManage || !pendingDelete) return;
+    const { subject, version, permanent } = pendingDelete;
+    if (permanent && deleteConfirmation !== (version ? `${subject}/${version}` : subject)) return;
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(name)}`), {
+      const path = `/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(subject)}`
+        + (version ? `/versions/${version}` : '');
+      let url = withConnId(path);
+      if (permanent) url += `${url.includes('?') ? '&' : '?'}permanent=true`;
+      const res = await fetch(url, {
         method: 'DELETE'
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.message || 'Failed to delete subject.');
+      if (!res.ok) throw new Error(data.message || `Failed to ${permanent ? 'permanently delete' : 'soft-delete'} ${version ? 'version' : 'subject'}.`);
+      setPendingDelete(null);
       backToList();
       await load();
     } catch (e: unknown) {
-      setError(errorMessage(e, 'Failed to delete subject.'));
+      setError(errorMessage(e, 'Failed to delete schema.'));
     } finally {
       setSaving(false);
     }
@@ -1056,9 +1098,9 @@ export function SchemaRegistry() {
             </div>
           ) : <>
             <div className="ds-metrics ds-sr-metrics">
-              <div className="ds-metric-card"><span>Total Subjects</span><strong>{summary?.totalSubjects ?? 0}</strong></div>
-              <div className="ds-metric-card"><span>Value Subjects</span><strong>{summary?.valueSubjects ?? 0}</strong></div>
-              <div className="ds-metric-card"><span>Key Subjects</span><strong>{summary?.keySubjects ?? 0}</strong></div>
+              <div className="ds-metric-card"><span>{showDeletedSubjects ? 'Deleted Subjects' : 'Total Subjects'}</span><strong>{visibleSubjects.length}</strong></div>
+              <div className="ds-metric-card"><span>Value Subjects</span><strong>{visibleSubjects.filter(subject => subject.type === 'VALUE').length}</strong></div>
+              <div className="ds-metric-card"><span>Key Subjects</span><strong>{visibleSubjects.filter(subject => subject.type === 'KEY').length}</strong></div>
               <div className="ds-metric-card">
                 <span>REST Endpoint</span>
                 <strong className="ds-sr-endpoint-value">
@@ -1079,6 +1121,10 @@ export function SchemaRegistry() {
             </div>
 
             <div className="ds-panel ds-sr-subjects-panel">
+              <div className="ds-schema-delete-toolbar" role="group" aria-label="Subject visibility">
+                <button type="button" className={`ds-button ${!showDeletedSubjects ? 'primary' : 'outlined'}`} onClick={() => switchDeletedSubjects(false)}>Active subjects</button>
+                <button type="button" className={`ds-button ${showDeletedSubjects ? 'primary' : 'outlined'}`} onClick={() => switchDeletedSubjects(true)}>Deleted subjects</button>
+              </div>
               <table className="ds-table ds-sr-subjects-table">
                 <thead>
                   <tr><th>Subject</th><th>Type</th><th>Latest Version</th><th>Schema ID</th><th>Schema Type</th>{canManage && <th>Actions</th>}</tr>
@@ -1086,8 +1132,8 @@ export function SchemaRegistry() {
                 <tbody>
                   {loading && !summary ? (
                     <tr><td colSpan={canManage ? 6 : 5} className="ds-empty">Loading schemas...</td></tr>
-                  ) : summary && summary.subjects.length > 0 ? (
-                    summary.subjects.map(item => (
+                  ) : visibleSubjects.length > 0 ? (
+                    visibleSubjects.map(item => (
                       <tr key={item.subject} className="ds-hoverable-row" onClick={() => openSubject(item)} style={{ cursor: 'pointer' }}>
                         <td><span className="ds-link-button">{item.subject}</span></td>
                         <td><span className="ds-status">{item.type}</span></td>
@@ -1097,8 +1143,8 @@ export function SchemaRegistry() {
                         {canManage && (
                           <td>
                             <div className="ds-inline-actions" onClick={e => e.stopPropagation()}>
-                              <button className="ds-table-delete-btn" onClick={() => deleteSubject(item.subject)} disabled={saving}>
-                                <Trash2 size={14} /> Delete
+                              <button className="ds-table-delete-btn" onClick={() => requestSchemaDelete(item.subject, Boolean(item.deleted))} disabled={saving}>
+                                <Trash2 size={14} /> {item.deleted ? 'Permanently delete' : 'Soft delete'}
                               </button>
                             </div>
                           </td>
@@ -1106,7 +1152,7 @@ export function SchemaRegistry() {
                       </tr>
                     ))
                   ) : (
-                    <tr><td colSpan={canManage ? 6 : 5} className="ds-empty">No schemas found in this registry.</td></tr>
+                    <tr><td colSpan={canManage ? 6 : 5} className="ds-empty">{showDeletedSubjects ? 'No deleted subjects found.' : 'No active schemas found in this registry.'}</td></tr>
                   )}
                 </tbody>
               </table>
@@ -1132,11 +1178,11 @@ export function SchemaRegistry() {
               </button>
               {canManage && (
                 <>
-                  <button className="ds-button primary" onClick={openEdit} disabled={!details?.latest}>
+                  {!selected.deleted && <button className="ds-button primary" onClick={openEdit} disabled={!details?.latest || details.latest.version < 1}>
                     <Edit3 size={16} /> Edit Schema
-                  </button>
-                  <button className="ds-icon-button" onClick={() => deleteSubject(selected.subject)} disabled={saving} title="Delete subject">
-                    <Trash2 size={16} />
+                  </button>}
+                  <button className="ds-button outlined" onClick={() => requestSchemaDelete(selected.subject, Boolean(selected.deleted))} disabled={saving}>
+                    <Trash2 size={16} /> {selected.deleted ? 'Permanently delete subject' : 'Soft delete subject'}
                   </button>
                 </>
               )}
@@ -1187,10 +1233,10 @@ export function SchemaRegistry() {
                     <CustomSelect
                       value={subjectCompatibility}
                       onChange={setSubjectCompatibility}
-                      disabled={!canManage}
+                      disabled={!canManage || Boolean(selected.deleted)}
                       options={compatibilityOptions.map(o => ({ value: o, label: o }))}
                     />
-                    {canManage && (
+                    {canManage && !selected.deleted && (
                       <button className="ds-icon-button ds-compat-save-btn" onClick={saveSubjectCompatibility} disabled={saving} title="Save">
                         <FileDown size={16} />
                       </button>
@@ -1201,8 +1247,10 @@ export function SchemaRegistry() {
             </div>
           </div>
 
-          {/* Old versions */}
-          <h4 className="ds-section-title">Old versions</h4>
+          <div className="ds-schema-delete-toolbar">
+            <h4 className="ds-section-title">Versions</h4>
+            <label><input type="checkbox" checked={showDeletedVersions} onChange={event => setShowDeletedVersions(event.target.checked)} /> Show soft-deleted versions</label>
+          </div>
           <div className="ds-panel ds-sr-versions-panel">
             <table className="ds-table ds-sr-versions-table">
               <thead>
@@ -1211,10 +1259,12 @@ export function SchemaRegistry() {
                   <th>Version</th>
                   <th>ID</th>
                   <th>Type</th>
+                  <th>Status</th>
+                  {canManage && <th>Actions</th>}
                 </tr>
               </thead>
               <tbody>
-                {(details?.versions || []).map(version => (
+                {visibleVersions.map(version => (
                   <Fragment key={version.version}>
                     <tr key={version.version} className="ds-hoverable-row" style={{ cursor: 'pointer' }} onClick={() => toggleVersion(version.version)}>
                       <td>
@@ -1232,10 +1282,17 @@ export function SchemaRegistry() {
                       <td>{version.version}</td>
                       <td>{version.id}</td>
                       <td>{version.schemaType}</td>
+                      <td>{version.deleted ? 'Soft-deleted' : 'Active'}</td>
+                      {canManage && <td onClick={event => event.stopPropagation()}>
+                        <button type="button" className="ds-table-delete-btn" disabled={saving}
+                          onClick={() => requestSchemaDelete(selected.subject, Boolean(version.deleted), version.version)}>
+                          <Trash2 size={14} /> {version.deleted ? 'Permanently delete' : 'Soft delete'}
+                        </button>
+                      </td>}
                     </tr>
                     {expandedVersions.has(version.version) && (
                       <tr key={`${version.version}-schema`} className="ds-version-expand-row">
-                        <td colSpan={4} style={{ padding: '16px 20px' }}>
+                        <td colSpan={canManage ? 6 : 5} style={{ padding: '16px 20px' }}>
                           <div className="ds-expanded-schema-container">
                             <div className="ds-schema-card-header">
                               <button
@@ -1258,8 +1315,8 @@ export function SchemaRegistry() {
                     )}
                   </Fragment>
                 ))}
-                {!loadingDetails && (!details?.versions || details.versions.length === 0) && (
-                  <tr><td colSpan={4} className="ds-empty">No older versions found.</td></tr>
+                {!loadingDetails && visibleVersions.length === 0 && (
+                  <tr><td colSpan={canManage ? 6 : 5} className="ds-empty">No versions in this view.</td></tr>
                 )}
               </tbody>
             </table>
@@ -1309,8 +1366,37 @@ export function SchemaRegistry() {
             ) : (
               <>
                 <div className={`ds-compare-alert ${schemasAreIdentical ? 'success' : 'different'}`}>
-                  {schemasAreIdentical ? 'The selected schema versions are identical.' : 'The selected schema versions are different.'}
+                  {schemasAreIdentical
+                    ? 'The selected schema versions are identical.'
+                    : schemaComparison?.changes.length
+                      ? `${schemaComparison.changes.length} field change${schemaComparison.changes.length === 1 ? '' : 's'} found.`
+                      : 'The selected schema versions are different.'}
                 </div>
+                {!schemasAreIdentical && schemaComparison && (
+                  <section className="ds-compare-summary" aria-label="Field changes">
+                    <div className="ds-compare-summary-heading">
+                      <strong>Field changes</strong>
+                      <span>Version {olderSchema?.version} → Version {newerSchema?.version}</span>
+                    </div>
+                    {schemaComparison.supported && schemaComparison.changes.length > 0 ? (
+                      <ul className="ds-compare-changes">
+                        {schemaComparison.changes.map((change, index) => (
+                          <li key={`${change.field}-${change.kind}-${index}`}>
+                            <span className={`ds-compare-change-kind ${change.kind}`}>{change.kind === 'type' ? 'Type changed' : change.kind === 'required' ? 'Required changed' : change.kind === 'default' ? 'Default changed' : change.kind}</span>
+                            <code>{change.field}</code>
+                            {change.kind === 'added'
+                              ? <span>added as <code>{change.after}</code></span>
+                              : change.kind === 'removed'
+                                ? <span>removed (was <code>{change.before}</code>)</span>
+                                : <span><code>{change.before}</code> → <code>{change.after}</code></span>}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p>{schemaComparison.reason || 'No field-level changes found. Other schema details or field order may differ.'}</p>
+                    )}
+                  </section>
+                )}
                 <div className="ds-compare-grid">
                   <div className="ds-compare-card">
                     <div className="ds-schema-card-header">
@@ -1611,6 +1697,7 @@ export function SchemaRegistry() {
               </div>
               <button type="button" className="ds-close-btn" onClick={() => setShowCreate(false)}><X size={20} /></button>
             </div>
+            {error && <div className="ds-alert" role="alert">{error}</div>}
             <div className="ds-form" style={{ padding: 0 }}>
               <div className="ds-modal-inner-card">
                 <div className="ds-field"><label>Subject</label><input value={createSubject} onChange={e => setCreateSubject(e.target.value)} placeholder="orders-value" required /></div>
@@ -1668,25 +1755,35 @@ export function SchemaRegistry() {
       )}
 
       {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Custom Delete Subject Confirmation Modal ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
-      {subjectToDelete && createPortal(
+      {pendingDelete && createPortal(
         <div className="ds-modal-backdrop ds-delete-backdrop" role="dialog" aria-modal="true">
           <div className="ds-delete-confirm-modal animate-fade-in">
             <div className="ds-delete-modal-banner">
               <img src={orangeBanner} alt="banner" className="ds-delete-banner-img" />
-              <button className="ds-delete-modal-close" onClick={() => setSubjectToDelete(null)}><X size={20} /></button>
+              <button className="ds-delete-modal-close" onClick={() => setPendingDelete(null)} disabled={saving}><X size={20} /></button>
             </div>
             <div className="ds-delete-confirm-content">
               <div className="ds-delete-confirm-title-row">
                 <AlertOctagon className="ds-delete-alert-icon" size={24} />
-                <h2>{selectedConn ? `${selectedConn.host || selectedConn.connectionName} says` : 'Delete Subject'}</h2>
+                <h2>{pendingDelete.permanent ? 'Permanently delete' : 'Soft delete'} {pendingDelete.version ? 'schema version' : 'subject'}</h2>
               </div>
-              <p className="ds-delete-confirm-desc">Are you sure you want to delete this subject?</p>
+              <p className="ds-delete-confirm-desc">
+                {pendingDelete.subject}{pendingDelete.version ? ` / version ${pendingDelete.version}` : ' / all versions'}
+              </p>
+              <p className="ds-delete-confirm-desc">{pendingDelete.permanent
+                ? 'This permanently removes Schema Registry metadata and cannot be undone. Kafka records are not deleted.'
+                : 'This hides the schema from normal views. Schema Registry keeps its metadata and schema ID; an admin can permanently delete it later.'}</p>
+              {pendingDelete.permanent && <label className="ds-delete-confirm-field">
+                Type <strong>{pendingDelete.version ? `${pendingDelete.subject}/${pendingDelete.version}` : pendingDelete.subject}</strong> to confirm
+                <input value={deleteConfirmation} onChange={event => setDeleteConfirmation(event.target.value)} autoComplete="off" />
+              </label>}
+              {error && <div className="ds-alert" role="alert">{error}</div>}
               <div className="ds-delete-modal-footer">
-                <button className="ds-delete-btn-cancel" onClick={() => setSubjectToDelete(null)}>Cancel</button>
-                <button className="ds-delete-btn-ok" onClick={() => {
-                  confirmDeleteSubject(subjectToDelete);
-                  setSubjectToDelete(null);
-                }}>OK</button>
+                <button className="ds-delete-btn-cancel" onClick={() => setPendingDelete(null)} disabled={saving}>Cancel</button>
+                <button className="ds-delete-btn-ok" onClick={() => void confirmSchemaDelete()}
+                  disabled={saving || (pendingDelete.permanent && deleteConfirmation !== (pendingDelete.version ? `${pendingDelete.subject}/${pendingDelete.version}` : pendingDelete.subject))}>
+                  {saving ? 'Deleting...' : pendingDelete.permanent ? 'Permanently delete' : 'Soft delete'}
+                </button>
               </div>
             </div>
           </div>

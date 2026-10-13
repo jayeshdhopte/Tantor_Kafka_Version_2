@@ -250,6 +250,6 @@ StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
-`, s.Kind, s.User, s.Group, javaHome, s.Log, heapVariable, s.Heap, s.Heap, logVariable, loggingPath, s.Working, s.Install, launcher, s.Config, propertyName)
+`, s.Kind, s.User, s.Group, javaHome, s.Log, heapVariable, s.HeapMin, s.HeapMax, logVariable, loggingPath, s.Working, s.Install, launcher, s.Config, propertyName)
 	return []ConfigFile{{s.Config + "/" + propertyName, properties}, {loggingPath, logging}, {"/etc/systemd/system/" + s.Kind + ".service", unit}}
 }

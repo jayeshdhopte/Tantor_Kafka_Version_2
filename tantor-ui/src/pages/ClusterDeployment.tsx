@@ -1,5 +1,5 @@
 import { SchemaRegistryFields, KafkaConnectFields } from '../components/ServiceConfigurationFields';
-import { validateServicePath as validatePath, defaultSchemaRegistryConfig, defaultKafkaConnectConfig, type SchemaRegistryConfig, type KafkaConnectConfig } from '../components/serviceConfiguration';
+import { validateServicePath as validatePath, validateServiceHeap, defaultSchemaRegistryConfig, defaultKafkaConnectConfig, type SchemaRegistryConfig, type KafkaConnectConfig } from '../components/serviceConfiguration';
 import { useState, useEffect, useMemo, useRef, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -1021,12 +1021,14 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   ].filter(Boolean);
 
   const addonValidationErrors = [
-    ...schemaHosts.flatMap(host => /^[1-9]\d*[mMgG]$/.test(schemaConfigFor(host.id).heapSize)
-      ? [] : [`${host.hostname}: Schema Registry heap size must be a positive size such as 512M or 1G.`]),
+    ...schemaHosts.flatMap(host => {
+      const issue = validateServiceHeap(schemaConfigFor(host.id).heapMin, schemaConfigFor(host.id).heapSize, `${host.hostname}: Schema Registry`);
+      return issue ? [issue] : [];
+    }),
     ...connectHosts.flatMap(host => {
       const cfg = connectConfigFor(host.id);
       return [
-        /^[1-9]\d*[mMgG]$/.test(cfg.heapSize) ? '' : `${host.hostname}: Kafka Connect heap size must be a positive size such as 512M or 1G.`,
+        validateServiceHeap(cfg.heapMin, cfg.heapSize, `${host.hostname}: Kafka Connect`),
         /^[A-Za-z0-9._-]{1,200}$/.test(cfg.groupId) ? '' : `${host.hostname}: Kafka Connect worker group ID must use letters, numbers, dots, underscores or hyphens.`,
       ].filter(Boolean);
     }),
@@ -1170,7 +1172,8 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
             checksum: artifact?.sha256 || artifact?.checksum || '', version: artifact?.version || '',
             port: config.port, install_dir: config.installDir.trim(), config_dir: config.configDir.trim(),
             log_dir: config.logDir.trim(), working_dir: config.workingDir.trim(),
-            heap_size: config.heapSize, compatibility_level: config.compatibility,
+            heap_size: config.heapSize, heap_xms: config.heapMin, heap_xmx: config.heapSize,
+            compatibility_level: config.compatibility,
           };
         }),
         kafka_connect_workers: connectHosts.map(host => {
@@ -1182,7 +1185,8 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
             checksum: artifact?.sha256 || artifact?.checksum || '', version: artifact?.version || '',
             port: config.port, install_dir: config.installDir.trim(), config_dir: config.configDir.trim(),
             log_dir: config.logDir.trim(), working_dir: config.workingDir.trim(), plugin_dir: config.pluginDir.trim(),
-            heap_size: config.heapSize, group_id: config.groupId,
+            heap_size: config.heapSize, heap_xms: config.heapMin, heap_xmx: config.heapSize,
+            group_id: config.groupId,
           };
         }),
       } : undefined,
@@ -1498,7 +1502,8 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
           kafka_version: kafkaVersion,
           rest_port: cfg.port, install_dir: cfg.installDir,
           config_dir: cfg.configDir, log_dir: cfg.logDir, working_dir: cfg.workingDir,
-          heap_size: cfg.heapSize, compatibility_level: cfg.compatibility, schemas_topic: '_schemas',
+          heap_size: cfg.heapSize, heap_xms: cfg.heapMin, heap_xmx: cfg.heapSize,
+          compatibility_level: cfg.compatibility, schemas_topic: '_schemas',
           bootstrap_servers: plannedBootstrapServers(),
           kafka_install_dir: kafkaVersionedInstallDir,
           allow_deferred_kafka: true,
@@ -1545,7 +1550,8 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
           connect_version: artifact?.version || '',
           rest_port: cfg.port, install_dir: cfg.installDir,
           config_dir: cfg.configDir, log_dir: cfg.logDir, working_dir: cfg.workingDir,
-          heap_size: cfg.heapSize, group_id: cfg.groupId, plugin_dir: cfg.pluginDir,
+          heap_size: cfg.heapSize, heap_xms: cfg.heapMin, heap_xmx: cfg.heapSize,
+          group_id: cfg.groupId, plugin_dir: cfg.pluginDir,
           kafka_version: kafkaVersion, min_free_disk_mb: 5120,
           kafka_install_dir: `${installDir.replace(/\/$/, '')}/kafka`,
           bootstrap_servers: plannedBootstrapServers(),

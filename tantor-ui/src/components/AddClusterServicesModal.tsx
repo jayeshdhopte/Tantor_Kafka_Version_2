@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { Check, Database, Loader2, Plug, X } from 'lucide-react';
 import { KafkaConnectFields, SchemaRegistryFields, type ServiceArtifact } from './ServiceConfigurationFields';
-import { defaultKafkaConnectConfig, defaultSchemaRegistryConfig, validateServicePath } from './serviceConfiguration';
+import { defaultKafkaConnectConfig, defaultSchemaRegistryConfig, validateServiceHeap, validateServicePath } from './serviceConfiguration';
 import { runtimeConfig } from '../config/runtimeConfig';
 import '../pages/ClusterDeployment.css';
 import './AddClusterServicesModal.css';
@@ -107,7 +107,7 @@ export function AddClusterServicesModal({ cluster, onClose }: { cluster: Cluster
       !artifactsFor(role).some(artifact => artifact.id === cfg.artifactId) ? `${label}: select an available artifact.` : '',
       cfg.artifactId && !/^[0-9a-fA-F]{64}$/.test(artifactsFor(role).find(artifact => artifact.id === cfg.artifactId)?.sha256 || artifactsFor(role).find(artifact => artifact.id === cfg.artifactId)?.checksum || '') ? `${label}: artifact SHA-256 is missing.` : '',
       !Number.isInteger(cfg.port) || cfg.port < 1 || cfg.port > 65535 ? `${label}: enter a port between 1 and 65535.` : '',
-      !/^[1-9]\d*[mMgG]$/.test(cfg.heapSize) ? `${label}: use a heap size such as 512M or 1G.` : '',
+      validateServiceHeap(cfg.heapMin, cfg.heapSize, label),
       ...paths.map(path => !external && !path.trim() ? '' : validateServicePath(path, `${label} directory`)),
       role === 'kafka_connect' && !/^[A-Za-z0-9._-]{1,200}$/.test(connect.groupId) ? 'Kafka Connect: enter a valid worker group ID (letters, numbers, dots, underscores or hyphens).' : '',
     ].filter(Boolean);
@@ -134,7 +134,7 @@ export function AddClusterServicesModal({ cluster, onClose }: { cluster: Cluster
       kafka_install_dir: kafkaInstall,
       kafka_data_dir: String(configuration.data_dir || details?.dataDirectory || '/data/kafka'),
       kafka_log_dir: String(configuration.log_dir || details?.logDirectory || '/var/log/kafka'),
-      rest_port: cfg.port, heap_size: cfg.heapSize,
+      rest_port: cfg.port, heap_size: cfg.heapSize, heap_xms: cfg.heapMin, heap_xmx: cfg.heapSize,
       install_dir: cfg.installDir.trim(), config_dir: cfg.configDir.trim(),
       log_dir: cfg.logDir.trim(), working_dir: cfg.workingDir.trim(),
       allow_deferred_kafka: false,
@@ -204,7 +204,7 @@ export function AddClusterServicesModal({ cluster, onClose }: { cluster: Cluster
         const instances = hostIds[role].map(hostId => ({
           enabled: true, host_id: hostId, artifact_id: artifact.id,
           checksum: artifact.sha256 || artifact.checksum || '', version: artifact.version || '',
-          port: cfg.port, heap_size: cfg.heapSize, install_dir: cfg.installDir.trim(),
+          port: cfg.port, heap_size: cfg.heapSize, heap_xms: cfg.heapMin, heap_xmx: cfg.heapSize, install_dir: cfg.installDir.trim(),
           config_dir: cfg.configDir.trim(), log_dir: cfg.logDir.trim(), working_dir: cfg.workingDir.trim(),
           ...(role === 'schema_registry' ? { compatibility_level: schema.compatibility }
             : { group_id: connect.groupId, plugin_dir: connect.pluginDir.trim() }),

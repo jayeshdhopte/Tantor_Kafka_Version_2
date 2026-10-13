@@ -42,6 +42,23 @@ class DataServiceDeploymentTest {
     }
 
     @Test
+    void passesSchemaHeapRangeToTheAgentPayload() {
+        var addon = new ClusterController.SchemaRegistryAddonReq();
+        addon.setHost_id("host-1");
+        addon.setArtifact_id("schema-artifact");
+        addon.setArtifact_url("https://artifacts.example/schema.tar.gz");
+        addon.setHeap_size("2G");
+        addon.setHeap_xms("512M");
+        addon.setHeap_xmx("2G");
+        Map<String, Object> payload = ReflectionTestUtils.invokeMethod(controller, "schemaAddonPayload",
+                addon, UUID.randomUUID(), "broker:9092", "/opt/kafka", 1);
+        assertThat(payload).containsEntry("heap_xms", "512M").containsEntry("heap_xmx", "2G");
+        addon.setHeap_xms("3G");
+        assertThatThrownBy(() -> ReflectionTestUtils.invokeMethod(controller, "validateSchemaAddon", addon, List.of(node())))
+                .hasMessageContaining("Min Heap cannot exceed Max Heap");
+    }
+
+    @Test
     void preparesMultipleInstancesWithSharedIdentityAndHostSpecificSteps() throws Exception {
         var first = connect();
         first.setArtifact_url("https://artifacts.example/connect.tar.gz");
@@ -181,8 +198,13 @@ class DataServiceDeploymentTest {
         addon.setWorking_dir("/var/lib/connect-custom");
         addon.setHeap_size("0G");
         assertThatThrownBy(() -> ReflectionTestUtils.invokeMethod(controller, "validateConnectAddon", addon, List.of(node())))
-                .hasMessageContaining("heap size");
+                .hasMessageContaining("Heap size");
         addon.setHeap_size("2G");
+        addon.setHeap_xms("3G");
+        addon.setHeap_xmx("2G");
+        assertThatThrownBy(() -> ReflectionTestUtils.invokeMethod(controller, "validateConnectAddon", addon, List.of(node())))
+                .hasMessageContaining("Min Heap cannot exceed Max Heap");
+        addon.setHeap_xms("512M");
         assertThatCode(() -> ReflectionTestUtils.invokeMethod(controller, "validateConnectAddon", addon, List.of(node())))
                 .doesNotThrowAnyException();
     }
@@ -199,12 +221,16 @@ class DataServiceDeploymentTest {
         addon.setWorking_dir("/data/connect");
         addon.setPlugin_dir("/opt/plugins");
         addon.setHeap_size("2G");
+        addon.setHeap_xms("512M");
+        addon.setHeap_xmx("2G");
         Map<String, Object> payload = ReflectionTestUtils.invokeMethod(controller, "connectAddonPayload",
                 addon, UUID.randomUUID(), "PLAINTEXT://broker:9092", "/opt/kafka", 2);
         assertThat(payload).containsEntry("rest_port", 18083)
                 .containsEntry("working_dir", "/data/connect")
                 .containsEntry("plugin_dir", "/opt/plugins")
                 .containsEntry("heap_size", "2G")
+                .containsEntry("heap_xms", "512M")
+                .containsEntry("heap_xmx", "2G")
                 .containsEntry("bootstrap_servers", "broker:9092")
                 .containsEntry("replication_factor", 2)
                 .containsEntry("min_free_disk_mb", 5120);

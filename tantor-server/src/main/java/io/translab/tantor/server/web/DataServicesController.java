@@ -259,11 +259,18 @@ public class DataServicesController {
             @RequestParam(required = false) String protocol,
             @RequestParam(required = false) String ip,
             @RequestParam(required = false) Integer port,
-            @RequestParam(required = false) UUID connectionId) {
+            @RequestParam(required = false) UUID connectionId,
+            @RequestParam(defaultValue = "false") boolean includeDeleted) {
         Cluster cluster = getCluster(clusterId);
         String baseUrl = customBaseUrl(protocol, ip, port, cluster, ServiceKind.SCHEMA_REGISTRY, connectionId);
-        JsonNode subjectsNode = requestJson(baseUrl, "GET", "/subjects", null,
+        JsonNode activeSubjects = requestJson(baseUrl, "GET", "/subjects", null,
                 encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
+        JsonNode subjectsNode = includeDeleted
+                ? requestJson(baseUrl, "GET", "/subjects?deleted=true", null,
+                        encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId)
+                : activeSubjects;
+        Set<String> activeNames = new java.util.HashSet<>();
+        activeSubjects.forEach(subject -> activeNames.add(subject.asText()));
 
         List<Map<String, Object>> subjects = new ArrayList<>();
         for (JsonNode subjectNode : subjectsNode) {
@@ -271,9 +278,20 @@ public class DataServicesController {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("subject", subject);
             row.put("type", subjectType(subject));
+            boolean deleted = !activeNames.contains(subject);
+            row.put("deleted", deleted);
             try {
-                JsonNode latest = requestJson(baseUrl, "GET",
-                        "/subjects/" + pathSeg(subject) + "/versions/latest",
+                String versionPath = "/subjects/" + pathSeg(subject) + "/versions/";
+                if (deleted) {
+                    JsonNode versions = requestJson(baseUrl, "GET", "/subjects/" + pathSeg(subject) + "/versions?deleted=true",
+                            null, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
+                    int latestVersion = 0;
+                    for (JsonNode version : versions) latestVersion = Math.max(latestVersion, version.asInt());
+                    versionPath += latestVersion + "?deleted=true";
+                } else {
+                    versionPath += "latest";
+                }
+                JsonNode latest = requestJson(baseUrl, "GET", versionPath,
                         null, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
                 row.put("version", latest.path("version").asInt(0));
                 row.put("id", latest.path("id").asInt(0));
@@ -333,28 +351,52 @@ public class DataServicesController {
             @RequestParam(required = false) String protocol,
             @RequestParam(required = false) String ip,
             @RequestParam(required = false) Integer port,
-            @RequestParam(required = false) UUID connectionId) {
+            @RequestParam(required = false) UUID connectionId,
+            @RequestParam(defaultValue = "false") boolean includeDeleted) {
         String baseUrl = customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.SCHEMA_REGISTRY, connectionId);
         String seg = pathSeg(subject);
 
-        JsonNode latest = requestJson(baseUrl, "GET", "/subjects/" + seg + "/versions/latest",
+        String versionsPath = "/subjects/" + seg + "/versions";
+        JsonNode versionsNode = requestJson(baseUrl, "GET", versionsPath + (includeDeleted ? "?deleted=true" : ""),
                 null, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
-        JsonNode versionsNode = requestJson(baseUrl, "GET", "/subjects/" + seg + "/versions",
-                null, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
+        Set<Integer> activeVersions = new java.util.HashSet<>();
+        if (includeDeleted) {
+            try {
+                requestJson(baseUrl, "GET", versionsPath, null,
+                        encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId)
+                        .forEach(version -> activeVersions.add(version.asInt()));
+            } catch (DataServiceException ex) {
+                if (ex.statusCode() != 404) throw ex;
+            }
+        } else {
+            versionsNode.forEach(version -> activeVersions.add(version.asInt()));
+        }
 
         List<Map<String, Object>> versions = new ArrayList<>();
+        Map<String, Object> latest = null;
+        int latestActiveVersion = 0;
+        int latestAnyVersion = 0;
         for (JsonNode vNode : versionsNode) {
             int v = vNode.asInt();
             try {
-                JsonNode vDetail = requestJson(baseUrl, "GET", "/subjects/" + seg + "/versions/" + v,
+                JsonNode vDetail = requestJson(baseUrl, "GET", versionsPath + "/" + v
+                                + (includeDeleted ? "?deleted=true" : ""),
                         null, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
-                versions.add(Map.of(
+                Map<String, Object> version = Map.of(
                         "version", vDetail.path("version").asInt(v),
                         "id", vDetail.path("id").asInt(0),
                         "schemaType", vDetail.path("schemaType").asText("AVRO"),
-                        "schema", vDetail.path("schema").asText("")));
+                        "schema", vDetail.path("schema").asText(""),
+                        "deleted", !activeVersions.contains(v));
+                versions.add(version);
+                if (activeVersions.contains(v) ? v > latestActiveVersion : latestActiveVersion == 0 && v > latestAnyVersion) {
+                    latest = version;
+                    if (activeVersions.contains(v)) latestActiveVersion = v;
+                    else latestAnyVersion = v;
+                }
             } catch (RuntimeException ignored) {}
         }
+        if (latest == null) latest = Map.of("version", 0, "id", 0, "schemaType", "UNKNOWN", "schema", "", "deleted", true);
 
         String compatibility = null;
         try {
@@ -377,11 +419,7 @@ public class DataServicesController {
 
         return ResponseEntity.ok(Map.of(
                 "subject", subject,
-                "latest", Map.of(
-                        "version", latest.path("version").asInt(0),
-                        "id", latest.path("id").asInt(0),
-                        "schemaType", latest.path("schemaType").asText("AVRO"),
-                        "schema", latest.path("schema").asText("")),
+                "latest", latest,
                 "versions", versions,
                 "compatibility", compatibility));
     }
@@ -416,12 +454,16 @@ public class DataServicesController {
             @RequestParam(required = false) String protocol,
             @RequestParam(required = false) String ip,
             @RequestParam(required = false) Integer port,
-            @RequestParam(required = false) UUID connectionId) {
+            @RequestParam(required = false) UUID connectionId,
+            @RequestParam(defaultValue = "false") boolean permanent) {
         if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.SCHEMA_REGISTRY_CHANGE)) {
             return unauthorized();
         }
+        if (permanent && !roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.SCHEMA_REGISTRY_PERMANENT_DELETE)) {
+            return unauthorized();
+        }
         return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.SCHEMA_REGISTRY, connectionId),
-                "DELETE", "/subjects/" + pathSeg(subject),
+                "DELETE", "/subjects/" + pathSeg(subject) + (permanent ? "?permanent=true" : ""),
                 null, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
     }
 
@@ -436,12 +478,20 @@ public class DataServicesController {
             @RequestParam(required = false) String protocol,
             @RequestParam(required = false) String ip,
             @RequestParam(required = false) Integer port,
-            @RequestParam(required = false) UUID connectionId) {
+            @RequestParam(required = false) UUID connectionId,
+            @RequestParam(defaultValue = "false") boolean permanent) {
         if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.SCHEMA_REGISTRY_CHANGE)) {
             return unauthorized();
         }
+        if (permanent && !roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.SCHEMA_REGISTRY_PERMANENT_DELETE)) {
+            return unauthorized();
+        }
+        if (!version.matches("[1-9][0-9]*")) {
+            throw new IllegalArgumentException("A numbered schema version is required for deletion.");
+        }
         return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.SCHEMA_REGISTRY, connectionId),
-                "DELETE", "/subjects/" + pathSeg(subject) + "/versions/" + version,
+                "DELETE", "/subjects/" + pathSeg(subject) + "/versions/" + version
+                        + (permanent ? "?permanent=true" : ""),
                 null, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
     }
 
@@ -705,7 +755,11 @@ public class DataServicesController {
             HttpClient client = getHttpClientForCluster(encodedCert, clusterId, serviceType, connectionId);
             HttpResponse<String> response = client.send(builder.build(), HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw new DataServiceException(response.statusCode(), response.body());
+                boolean schemaSubmission = "SCHEMA_REGISTRY".equals(serviceType) && "POST".equals(method)
+                        && path.startsWith("/subjects/") && path.endsWith("/versions");
+                throw new DataServiceException(response.statusCode(),
+                        schemaSubmission && (response.statusCode() == 409 || response.statusCode() == 422)
+                                ? schemaValidationDetails(response.body()) : Map.of());
             }
             String responseBody = response.body();
             if (responseBody == null || responseBody.isBlank()) return objectMapper.createObjectNode();
@@ -722,8 +776,12 @@ public class DataServicesController {
 
     @ExceptionHandler(DataServiceException.class)
     public ResponseEntity<Map<String, Object>> handleDataServiceException(DataServiceException ex) {
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("message", ex.message());
+        response.put("backendStatus", ex.statusCode());
+        response.putAll(ex.validationDetails());
         return ResponseEntity.status(HttpStatusCode.valueOf(Math.min(Math.max(ex.statusCode(), 400), 599)))
-                .body(Map.of("message", ex.message(), "backendStatus", ex.statusCode()));
+                .body(response);
     }
 
     @ExceptionHandler(DataServiceConfigurationException.class)
@@ -1019,18 +1077,72 @@ public class DataServicesController {
         DataServiceConfigurationException(String message) { super(message); }
     }
 
+    static Map<String, String> schemaValidationDetails(String body) {
+        if (body == null || body.isBlank() || body.length() > 16_384) return Map.of();
+        try {
+            JsonNode root = new ObjectMapper().readTree(body);
+            if (!root.isObject()) return Map.of();
+            JsonNode detail = root.path("details").isArray() && !root.path("details").isEmpty()
+                    ? root.path("details").get(0) : root;
+            String reason = safeValidationText(detail.path("description").asText(null));
+            if (reason == null) reason = safeValidationText(detail.path("reason").asText(null));
+            if (reason == null) reason = safeValidationText(root.path("reason").asText(null));
+            if (reason == null) reason = safeValidationText(root.path("message").asText(null));
+            if (reason == null && root.path("messages").isArray() && !root.path("messages").isEmpty()) {
+                reason = safeValidationText(root.path("messages").get(0).asText(null));
+            }
+            String field = safeValidationField(detail.path("field").asText(null));
+            if (field == null) field = safeValidationField(detail.path("affectedField").asText(null));
+            if (field == null) field = safeValidationField(detail.path("fieldName").asText(null));
+            if (field == null) field = safeValidationField(detail.path("fieldPath").asText(null));
+            if (field == null) field = safeValidationField(detail.path("path").asText(null));
+            if (field == null) field = safeValidationField(root.path("field").asText(null));
+            if (field == null) field = safeValidationField(root.path("affectedField").asText(null));
+            if (field == null) field = safeValidationField(root.path("path").asText(null));
+            if (field == null && reason != null) {
+                var match = java.util.regex.Pattern.compile("(?i)\\bfield\\s+['\"]?([a-z_][a-z0-9_.-]*)")
+                        .matcher(reason);
+                if (match.find()) field = safeValidationField(match.group(1));
+            }
+            Map<String, String> result = new LinkedHashMap<>();
+            if (reason != null) result.put("validationReason", reason);
+            if (field != null) result.put("affectedField", field);
+            return result;
+        } catch (IOException ignored) {
+            return Map.of();
+        }
+    }
+
+    private static String safeValidationText(String value) {
+        if (value == null) return null;
+        String text = value.trim();
+        if (text.isEmpty() || text.length() > 300 || text.matches("(?s).*[{}<>\\r\\n].*")) return null;
+        if (text.matches("(?i).*\\b(password|secret|token|authorization|credential|jaas|api[_ -]?key)\\b.*")
+                || text.contains("://") || text.contains("=")) return null;
+        return text;
+    }
+
+    private static String safeValidationField(String value) {
+        if (value == null) return null;
+        String field = value.trim();
+        return field.matches("[#/]?[A-Za-z0-9_./~-]{1,120}") ? field : null;
+    }
+
     private static class DataServiceException extends RuntimeException {
         private final int statusCode;
+        private final Map<String, String> validationDetails;
 
-        DataServiceException(int statusCode, String body) {
+        DataServiceException(int statusCode, Map<String, String> validationDetails) {
             // Upstream REST responses can contain connector passwords, tokens,
             // JAAS configuration, or other secrets. Keep the raw response out
             // of exception messages, API responses, and application logs.
             super("The native REST API returned HTTP " + statusCode + ".");
             this.statusCode = statusCode;
+            this.validationDetails = validationDetails;
         }
 
         int statusCode() { return statusCode; }
+        Map<String, String> validationDetails() { return validationDetails; }
         String message() {
             return getMessage();
         }

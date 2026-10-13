@@ -87,6 +87,36 @@ func TestCustomConfigurationsAreRenderedWithoutKafkaServiceActions(t *testing.T)
 	}
 }
 
+func TestServiceHeapRangeIsRenderedAndValidated(t *testing.T) {
+	for _, kind := range []string{Schema, Connect} {
+		task := taskFor()
+		if kind == Schema {
+			task.Parameters["install_dir"] = "/opt/tantor/schema-registry"
+		}
+		task.Parameters["heap_size"] = "2G"
+		task.Parameters["heap_xms"] = "512M"
+		task.Parameters["heap_xmx"] = "2G"
+		s, err := Parse(kind, task)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files := ConfigFiles(s, "/usr/lib/jvm/java-17")
+		if !strings.Contains(files[2].Content, "-Xms512M -Xmx2G") {
+			t.Fatalf("%s did not render the selected heap range: %s", kind, files[2].Content)
+		}
+		task.Parameters["heap_xms"] = "3G"
+		if _, err := Parse(kind, task); err == nil {
+			t.Fatalf("%s accepted a minimum heap larger than maximum", kind)
+		}
+		delete(task.Parameters, "heap_xms")
+		delete(task.Parameters, "heap_xmx")
+		s, err = Parse(kind, task)
+		if err != nil || s.HeapMin != "2G" || s.HeapMax != "2G" {
+			t.Fatalf("%s legacy heap_size fallback failed: %+v %v", kind, s, err)
+		}
+	}
+}
+
 type fakeExec struct {
 	fail     bool
 	resolved string

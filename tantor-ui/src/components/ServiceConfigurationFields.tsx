@@ -7,7 +7,8 @@ export function SchemaRegistryFields({ cfg, artifacts, onChange, unifiedDefault 
                   <div className="cd-grid-2">
                     <label className="cd-field"><span>Artifact</span><select value={cfg.artifactId} onChange={e => onChange({ artifactId: e.target.value })}><option value="">Select uploaded artifact</option>{artifacts.map(a => <option key={a.id} value={a.id}>{a.version || a.id}</option>)}</select></label>
                     <label className="cd-field"><span>REST API port</span><input type="number" min={1} max={65535} value={cfg.port} onChange={e => onChange({ port: Number(e.target.value) })} /></label>
-                    <label className="cd-field"><span>Heap size</span><input value={cfg.heapSize} onChange={e => onChange({ heapSize: e.target.value })} /></label>
+                    <label className="cd-field"><span>Min Heap</span><input value={cfg.heapMin} onChange={e => onChange({ heapMin: e.target.value })} placeholder="1G" /></label>
+                    <label className="cd-field"><span>Max Heap</span><input value={cfg.heapSize} onChange={e => onChange({ heapSize: e.target.value })} placeholder="1G" /></label>
                     <label className="cd-field"><span>Compatibility level</span><select value={cfg.compatibility} onChange={e => onChange({ compatibility: e.target.value })}>{['BACKWARD', 'BACKWARD_TRANSITIVE', 'FORWARD', 'FORWARD_TRANSITIVE', 'FULL', 'FULL_TRANSITIVE', 'NONE'].map(level => <option value={level} key={level}>{level}</option>)}</select></label>
                     <label className="cd-field"><span>Install directory</span><input placeholder="Kafka installation" value={cfg.installDir} onChange={e => onChange({ installDir: e.target.value })} /></label>
                     <label className="cd-field"><span>Config directory</span><input placeholder="Kafka installation/etc/schema-registry" value={cfg.configDir} onChange={e => onChange({ configDir: e.target.value })} /></label>
@@ -23,7 +24,8 @@ export function KafkaConnectFields({ cfg, artifacts, onChange, unifiedDefault = 
                   <div className="cd-grid-2">
                     <label className="cd-field"><span>Artifact</span><select value={cfg.artifactId} onChange={e => onChange({ artifactId: e.target.value })}><option value="">Select uploaded artifact</option>{artifacts.map(a => <option key={a.id} value={a.id}>{a.version || a.id}</option>)}</select></label>
                     <label className="cd-field"><span>REST port</span><input type="number" min={1} max={65535} value={cfg.port} onChange={e => onChange({ port: Number(e.target.value) })} /></label>
-                    <label className="cd-field"><span>Heap size</span><input value={cfg.heapSize} onChange={e => onChange({ heapSize: e.target.value })} /></label>
+                    <label className="cd-field"><span>Min Heap</span><input value={cfg.heapMin} onChange={e => onChange({ heapMin: e.target.value })} placeholder="1G" /></label>
+                    <label className="cd-field"><span>Max Heap</span><input value={cfg.heapSize} onChange={e => onChange({ heapSize: e.target.value })} placeholder="1G" /></label>
                     <label className="cd-field"><span>Worker group ID</span><input value={cfg.groupId} onChange={e => onChange({ groupId: e.target.value })} /></label>
                     <label className="cd-field"><span>Install directory</span><input placeholder="Existing Kafka installation" value={cfg.installDir} onChange={e => onChange({ installDir: e.target.value })} /></label>
                     <label className="cd-field"><span>Config directory</span><input placeholder="Kafka installation/config" value={cfg.configDir} onChange={e => onChange({ configDir: e.target.value })} /></label>

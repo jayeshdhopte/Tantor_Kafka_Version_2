@@ -1416,7 +1416,7 @@ public class ClusterController {
         if (addon.getArtifact_id() == null || addon.getArtifact_id().isBlank()) {
             throw new IllegalArgumentException("Schema Registry artifact is required.");
         }
-        validateAddonHeap(addon.getHeap_size(), "Schema Registry");
+        validateAddonHeap(addon.getHeap_size(), addon.getHeap_xms(), addon.getHeap_xmx(), "Schema Registry");
         validateDataServiceAgent(addon.getHost_id());
         int port = addon.getPort() == null ? 8081 : addon.getPort();
         if (port < 1 || port > 65535) {
@@ -1457,7 +1457,7 @@ public class ClusterController {
         if (addon.getArtifact_id() == null || addon.getArtifact_id().isBlank()) {
             throw new IllegalArgumentException("Kafka Connect artifact is required.");
         }
-        validateAddonHeap(addon.getHeap_size(), "Kafka Connect");
+        validateAddonHeap(addon.getHeap_size(), addon.getHeap_xms(), addon.getHeap_xmx(), "Kafka Connect");
         validateDataServiceAgent(addon.getHost_id());
         if (addon.getInstall_dir() == null || addon.getInstall_dir().isBlank()) {
             hostRepository.findById(addon.getHost_id()).ifPresent(host -> {
@@ -1489,10 +1489,9 @@ public class ClusterController {
         }
     }
 
-    private void validateAddonHeap(String heap, String service) {
-        if (heap == null || !heap.matches("[1-9][0-9]*[mMgG]")) {
-            throw new IllegalArgumentException(service + " heap size must be a positive size such as 512M or 1G.");
-        }
+    private void validateAddonHeap(String heap, String min, String max, String service) {
+        String error = heapRangeError(heap, min, max);
+        if (error != null) throw new IllegalArgumentException(service + " " + error);
     }
 
     private void validateDataServiceAgent(String hostId) {
@@ -1529,6 +1528,8 @@ public class ClusterController {
         payload.put("working_dir", addon.getWorking_dir() == null || addon.getWorking_dir().isBlank() ? "/var/lib/tantor/schema-registry" : addon.getWorking_dir().trim());
         payload.put("kafka_install_dir", kafkaInstallDir);
         payload.put("heap_size", addon.getHeap_size());
+        payload.put("heap_xms", firstNonBlank(addon.getHeap_xms(), addon.getHeap_size()));
+        payload.put("heap_xmx", firstNonBlank(addon.getHeap_xmx(), addon.getHeap_size()));
         payload.put("compatibility_level", String.valueOf(addon.getCompatibility_level()).toUpperCase(Locale.ROOT));
         payload.put("bootstrap_servers", schemaBootstrapServers(bootstrapServers));
         payload.put("kafkastore_topic", "_schemas");
@@ -1567,6 +1568,8 @@ public class ClusterController {
         payload.put("plugin_dir", addon.getPlugin_dir() == null || addon.getPlugin_dir().isBlank() ? install + (unified ? "/connect-plugins" : "/plugins") : addon.getPlugin_dir().trim());
         payload.put("kafka_install_dir", kafkaInstallDir);
         payload.put("heap_size", addon.getHeap_size());
+        payload.put("heap_xms", firstNonBlank(addon.getHeap_xms(), addon.getHeap_size()));
+        payload.put("heap_xmx", firstNonBlank(addon.getHeap_xmx(), addon.getHeap_size()));
         payload.put("bootstrap_servers", kafkaClientBootstrapServers(bootstrapServers));
         payload.put("group_id", addon.getGroup_id() + "-" + clusterId);
         payload.put("offset_topic", "connect-offsets");
@@ -1690,6 +1693,8 @@ public class ClusterController {
         private String log_dir = "/var/log/tantor/schema-registry";
         private String working_dir = "/var/lib/tantor/schema-registry";
         private String heap_size = "1G";
+        private String heap_xms;
+        private String heap_xmx;
         private String compatibility_level = "BACKWARD";
     }
 
@@ -1708,6 +1713,8 @@ public class ClusterController {
         private String working_dir = "";
         private String plugin_dir = "";
         private String heap_size = "1G";
+        private String heap_xms;
+        private String heap_xmx;
         private String group_id = "tantor-connect";
     }
 

@@ -86,7 +86,7 @@ class DataServicesControllerDiscoveryTest {
         Fixture fixture = fixture(null);
 
         assertThatThrownBy(() -> fixture.controller().schemaRegistrySummary(
-                fixture.cluster().getId(), null, null, null, null, null))
+                fixture.cluster().getId(), null, null, null, null, null, false))
                 .hasMessageContaining("No verified Schema Registry connection is configured");
     }
 

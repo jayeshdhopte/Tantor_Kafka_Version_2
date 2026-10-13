@@ -99,11 +99,21 @@ public class ExternalDataServiceManager {
   for(String path:paths(p)) if(!path.matches("/[a-zA-Z0-9_./-]+")||path.contains("//")||path.endsWith("/")||Arrays.asList(path.split("/")).contains("..")||Arrays.asList(path.split("/")).contains(".")) throw new IllegalArgumentException("Use clean absolute service paths without spaces or traversal.");
   int port=Integer.parseInt(value(in,"port",role.equals("schema_registry")?"8081":"8083"));
   if(port<1||port>65535) throw new IllegalArgumentException("Invalid REST port."); p.put("rest_port",String.valueOf(port));
-  String heap=value(in,"heap_size","1G"); if(!heap.matches("[1-9][0-9]*[mMgG]")) throw new IllegalArgumentException("Invalid heap size."); p.put("heap_size",heap);
+  String heap=value(in,"heap_size","1G");
+  String heapMin=value(in,"heap_xms",heap), heapMax=value(in,"heap_xmx",heap);
+  long minMiB=heapMiB(heapMin), maxMiB=heapMiB(heapMax);
+  if(heapMiB(heap)<0 || minMiB<0 || maxMiB<0) throw new IllegalArgumentException("Min Heap and Max Heap must be positive sizes such as 512M or 1G.");
+  if(minMiB>maxMiB) throw new IllegalArgumentException("Min Heap cannot exceed Max Heap.");
+  p.put("heap_size",heap); p.put("heap_xms",heapMin); p.put("heap_xmx",heapMax);
   String group=value(in,"group_id","tantor-"+kind); if(!group.matches("[a-zA-Z0-9._-]{1,200}")||Set.of(".","..").contains(group)) throw new IllegalArgumentException("Invalid service group ID."); p.put("group_id",group);
   String compatibility=value(in,"compatibility_level","BACKWARD").toUpperCase(Locale.ROOT);
   if(!Set.of("BACKWARD","BACKWARD_TRANSITIVE","FORWARD","FORWARD_TRANSITIVE","FULL","FULL_TRANSITIVE","NONE").contains(compatibility)) throw new IllegalArgumentException("Invalid schema compatibility.");
   p.put("compatibility_level",compatibility); p.put("service_user","root"); p.put("service_group","root"); return p;
+ }
+ static long heapMiB(String value) {
+  if(value==null || !value.matches("[1-9][0-9]*[mMgG]")) return -1;
+  try { return Math.multiplyExact(Long.parseLong(value.substring(0,value.length()-1)), Character.toUpperCase(value.charAt(value.length()-1))=='G'?1024L:1L); }
+  catch(ArithmeticException | NumberFormatException ex) { return -1; }
  }
  public Map<String,String> read(String data) { try { return mapper.readValue(data,new TypeReference<>(){}); } catch(Exception e) { throw new IllegalStateException("Invalid persisted configuration",e); } }
  public String json(Object data) { try { return mapper.writeValueAsString(data); } catch(Exception e) { throw new IllegalStateException(e); } }
