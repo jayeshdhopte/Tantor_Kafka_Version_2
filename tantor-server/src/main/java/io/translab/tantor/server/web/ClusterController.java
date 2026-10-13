@@ -3179,7 +3179,7 @@ public class ClusterController {
     }
 
     private ResponseEntity<Void> deletionResponse(HttpStatus status, UUID jobId) {
-        return ResponseEntity.status(status).header("X-Job-Id", jobId.toString()).header("Location", "/api/v1/jobs/" + jobId).build();
+        return ResponseEntity.status(status).header("X-Job-Id", jobId.toString()).header("Location", "/api/v1/ui/jobs/" + jobId).build();
     }
 
     private void hardDeleteCluster(Cluster cluster, String action, boolean cleanupScheduled) {

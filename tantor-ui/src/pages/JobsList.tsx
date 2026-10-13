@@ -78,7 +78,7 @@ export function JobsList() {
       <header className="page-header-jobs">
         <div className="header-titles">
           <h2>Job History</h2>
-          <p>Track all asynchronous operations in the cluster.</p>
+          <p>Track cluster operations and their execution history.</p>
         </div>
         <button className="refresh-btn" onClick={() => fetchJobs(true)} disabled={loading || refreshing} title="Refresh">
           <RefreshCw size={14} className={refreshing ? 'spin' : ''} />
