@@ -23,6 +23,7 @@ public class JobService {
     private final JobStepRepository jobStepRepository;
     private final ObjectMapper objectMapper;
     private final io.translab.tantor.server.repository.ClusterRepository clusterRepository;
+    private final io.translab.tantor.server.repository.ExternalClusterRepository externalClusterRepository;
 
     @Transactional
     public Job createJob(Job job, List<JobStep> steps) {
@@ -57,14 +58,22 @@ public class JobService {
     private void lockAndCheck(String resource, JobType incoming, UUID excluded) {
         if (resource == null || !resource.startsWith("cluster:")) return;
         UUID clusterId = UUID.fromString(resource.substring("cluster:".length()));
-        clusterRepository.findForServiceUpdate(clusterId);
-        var active = jobRepository.findByResourceKeyAndStatusIn(resource,
-                List.of(JobStatus.PENDING, JobStatus.IN_PROGRESS, JobStatus.ROLLBACK_PENDING, JobStatus.ROLLING_BACK));
+        if (clusterRepository.findForServiceUpdate(clusterId).isEmpty())
+            externalClusterRepository.findForServiceUpdate(clusterId);
+        var active = new java.util.ArrayList<>(jobRepository.findByResourceKeyAndStatusIn(resource,
+                List.of(JobStatus.PENDING, JobStatus.IN_PROGRESS, JobStatus.ROLLBACK_PENDING, JobStatus.ROLLING_BACK)));
+        // Older external service jobs used a separate key; keep them in the same operation lock.
+        active.addAll(jobRepository.findByResourceKeyAndStatusIn("external-services:" + clusterId,
+                List.of(JobStatus.PENDING, JobStatus.IN_PROGRESS, JobStatus.ROLLBACK_PENDING, JobStatus.ROLLING_BACK)));
         var outstanding = jobRepository.findWithUnfinishedRestartTasks().stream()
                 .filter(job -> resource.equals(job.getResourceKey()) && !Objects.equals(job.getId(), excluded)).findFirst();
         if (outstanding.isPresent()) throw new ClusterOperationConflictException("An agent task is still pending or running for job " + outstanding.get().getId() + ". Resume that job before another cluster operation.");
         for (Job other : active) {
-            if (!other.getId().equals(excluded) && (incoming == JobType.ROLLING_RESTART || other.getType() == JobType.ROLLING_RESTART || incoming == JobType.CLUSTER_DELETION || other.getType() == JobType.CLUSTER_DELETION))
+            if (!other.getId().equals(excluded) && (incoming == JobType.ROLLING_RESTART || incoming == JobType.EXTERNAL_ROLLING_RESTART
+                    || incoming == JobType.EXTERNAL_SERVICES || incoming == JobType.ROLLING_CONFIG_UPDATE
+                    || other.getType() == JobType.ROLLING_RESTART || other.getType() == JobType.EXTERNAL_ROLLING_RESTART
+                    || other.getType() == JobType.EXTERNAL_SERVICES || other.getType() == JobType.ROLLING_CONFIG_UPDATE
+                    || incoming == JobType.CLUSTER_DELETION || other.getType() == JobType.CLUSTER_DELETION))
                 throw new ClusterOperationConflictException("Another operation is active on this cluster. Wait for job " + other.getId() + " to finish.");
         }
     }
@@ -83,11 +92,22 @@ public class JobService {
         java.util.stream.Stream.of(JobStatus.PENDING, JobStatus.IN_PROGRESS, JobStatus.ROLLBACK_PENDING, JobStatus.ROLLING_BACK)
                 .flatMap(status -> jobRepository.findByStatus(status).stream()).forEach(job -> active.put(job.getId(), job));
         jobRepository.findWithUnfinishedRestartTasks().forEach(job -> active.putIfAbsent(job.getId(), job));
-        return active.values().stream().filter(job -> job.getResourceKey() != null && job.getResourceKey().startsWith("cluster:"))
-                .map(job -> Map.of("id", job.getId().toString(), "clusterId", job.getResourceKey().substring(8),
+        return active.values().stream().filter(job -> job.getResourceKey() != null &&
+                        (job.getResourceKey().startsWith("cluster:") || job.getResourceKey().startsWith("external-services:")))
+                .map(job -> Map.of("id", job.getId().toString(),
+                        "clusterId", job.getResourceKey().substring(job.getResourceKey().indexOf(':') + 1),
                         "type", job.getType().name(), "status", isTerminal(job.getStatus()) ? "WAITING_AGENT" : job.getStatus().name(),
+                        "operation", job.getType() == JobType.DEPLOYMENT && isServiceAddition(job) ? "ADD_SERVICE" : job.getType().name(),
                         "progress", isTerminal(job.getStatus()) ? "{\"message\":\"Waiting for the previous agent task to finish.\"}"
                                 : job.getProgress() == null ? "{}" : job.getProgress())).toList();
+    }
+
+    private boolean isServiceAddition(Job job) {
+        try {
+            return objectMapper.readTree(job.getPayload()).path("servicesOnly").asBoolean(false);
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     public List<JobStep> getSteps(UUID jobId) {
@@ -174,6 +194,21 @@ public class JobService {
     }
 
     @Transactional
+    public void recordExternalDiscoveryTask(UUID stepId, UUID taskId) {
+        JobStep step = getStep(stepId);
+        try {
+            Map<String, Object> payload = step.getPayload() == null || step.getPayload().isBlank()
+                    ? new java.util.LinkedHashMap<>()
+                    : new java.util.LinkedHashMap<>(objectMapper.readValue(step.getPayload(), new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {}));
+            payload.put("externalDiscoveryTaskId", taskId.toString());
+            step.setPayload(objectMapper.writeValueAsString(payload));
+            jobStepRepository.save(step);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new IllegalStateException("Cannot record external discovery task", e);
+        }
+    }
+
+    @Transactional
     public void attachExternalServiceTask(UUID stepId, UUID taskId) {
         JobStep step = getStep(stepId);
         step.setExternalServiceTaskId(taskId);
@@ -240,7 +275,7 @@ public class JobService {
             for (JobStep step : getSteps(id)) {
                 if (step.getStatus() != JobStepStatus.SUCCESS) {
                     step.setStatus(JobStepStatus.PENDING);
-                    if (job.getType() != JobType.ROLLING_RESTART && job.getType() != JobType.CLUSTER_DELETION) step.setAgentTaskId(null);
+                    if (job.getType() != JobType.ROLLING_RESTART && job.getType() != JobType.EXTERNAL_ROLLING_RESTART && job.getType() != JobType.CLUSTER_DELETION) step.setAgentTaskId(null);
                     step.setExternalServiceTaskId(null);
                     step.setStartTime(null);
                     step.setEndTime(null);
