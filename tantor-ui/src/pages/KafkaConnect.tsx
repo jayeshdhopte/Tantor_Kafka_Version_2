@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams } from 'react-router-dom';
-import { CheckCircle, MoreVertical, Pause, Play, Plus, RefreshCw, RotateCw, Settings, Trash2, Upload, X, FileDown, ChevronDown } from 'lucide-react';
+import { CheckCircle, MoreVertical, Pause, Play, Plus, RefreshCw, RotateCw, Settings, Search, Trash2, Upload, X, FileDown, ChevronDown } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { confirmAction } from '../components/confirmUtils';
 import { AnchoredMenu } from '../components/AnchoredMenu';
@@ -144,6 +144,7 @@ export function KafkaConnect() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'clusters' | 'connectors' | 'plugins'>('clusters');
+  const [connectorSearch, setConnectorSearch] = useState({ context: '', value: '' });
   const [selectedConnectorName, setSelectedConnectorName] = useState<string | null>(null);
   const [connectorDetailTab, setConnectorDetailTab] = useState<'tasks' | 'config'>('tasks');
   const [showCreate, setShowCreate] = useState(false);
@@ -157,6 +158,13 @@ export function KafkaConnect() {
   const [clusterTruststore, setClusterTruststore] = useState<ClusterTruststoreInfo | null>(null);
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(initialSession?.selectedConnectionId ?? null);
   const loadRequestId = useRef(0);
+  const connectorSearchContext = `${id}:${selectedConnectionId}`;
+  const connectorQuery = connectorSearch.context === connectorSearchContext ? connectorSearch.value : '';
+  const normalizedConnectorQuery = connectorQuery.trim().toLowerCase();
+  const visibleConnectors = (summary?.connectors || []).filter(connector => !normalizedConnectorQuery
+    || connector.name.toLowerCase().includes(normalizedConnectorQuery)
+    || (connector.class || '').toLowerCase().includes(normalizedConnectorQuery));
+
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ Connection form state Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const [formConnectionName, setFormConnectionName] = useState('');
@@ -910,7 +918,16 @@ export function KafkaConnect() {
           </table>
         )}
 
-        {activeTab === 'connectors' && (
+        {activeTab === 'connectors' && (<>
+          <div className="ds-subject-filters" role="search" aria-label="Search Kafka Connect connectors">
+            <label className="ds-subject-search"><Search size={18} />
+              <input type="search" aria-label="Search connectors by name or class" placeholder="Search by connector name or class"
+                value={connectorQuery} onChange={event => setConnectorSearch({ context: connectorSearchContext, value: event.target.value })} />
+            </label>
+            {connectorQuery && <button type="button" className="ds-subject-filter-reset"
+              onClick={() => setConnectorSearch({ context: connectorSearchContext, value: '' })}>Clear search</button>}
+            <span className="ds-subject-results" role="status">{visibleConnectors.length} of {summary?.connectors.length ?? 0} connectors</span>
+          </div>
           <table className="ds-table ds-kc-table ds-kc-connectors-table">
             <thead>
               <tr><th>Name</th><th>Class</th><th>Status</th><th>Tasks</th>{canManage && <th>Actions</th>}</tr>
@@ -918,8 +935,8 @@ export function KafkaConnect() {
             <tbody>
               {loading && !summary ? (
                 <tr><td colSpan={canManage ? 5 : 4} className="ds-empty">Loading connectors...</td></tr>
-              ) : summary && summary.connectors.length > 0 ? (
-                summary.connectors.map(connector => (
+              ) : visibleConnectors.length > 0 ? (
+                visibleConnectors.map(connector => (
                   <tr key={connector.name}>
                     <td><button type="button" className="ds-connector-link" onClick={() => { setSelectedConnectorName(connector.name); setConnectorDetailTab('tasks'); }}>{connector.name}</button></td>
                     <td>{connector.class || '-'}</td>
@@ -946,11 +963,11 @@ export function KafkaConnect() {
                   </tr>
                 ))
               ) : (
-                <tr><td colSpan={canManage ? 5 : 4} className="ds-empty">No connectors found.</td></tr>
+                <tr><td colSpan={canManage ? 5 : 4} className="ds-empty">{normalizedConnectorQuery ? 'No connectors match your search.' : 'No connectors found.'}</td></tr>
               )}
             </tbody>
           </table>
-        )}
+        </>)}
 
         {activeTab === 'plugins' && (
           <table className="ds-table ds-kc-table">
