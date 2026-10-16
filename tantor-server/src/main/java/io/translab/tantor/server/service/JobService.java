@@ -69,10 +69,10 @@ public class JobService {
                 .filter(job -> resource.equals(job.getResourceKey()) && !Objects.equals(job.getId(), excluded)).findFirst();
         if (outstanding.isPresent()) throw new ClusterOperationConflictException("An agent task is still pending or running for job " + outstanding.get().getId() + ". Resume that job before another cluster operation.");
         for (Job other : active) {
-            if (!other.getId().equals(excluded) && (incoming == JobType.ROLLING_RESTART || incoming == JobType.EXTERNAL_ROLLING_RESTART
+            if (!other.getId().equals(excluded) && (incoming == JobType.ROLLING_RESTART
                     || incoming == JobType.EXTERNAL_SERVICES || incoming == JobType.ROLLING_CONFIG_UPDATE
                     || incoming == JobType.CONFIG_CHANGE || incoming == JobType.TARGETED_CONFIG_CHANGE
-                    || other.getType() == JobType.ROLLING_RESTART || other.getType() == JobType.EXTERNAL_ROLLING_RESTART
+                    || other.getType() == JobType.ROLLING_RESTART
                     || other.getType() == JobType.EXTERNAL_SERVICES || other.getType() == JobType.ROLLING_CONFIG_UPDATE
                     || other.getType() == JobType.CONFIG_CHANGE || other.getType() == JobType.TARGETED_CONFIG_CHANGE
                     || incoming == JobType.CLUSTER_DELETION || other.getType() == JobType.CLUSTER_DELETION))
@@ -277,7 +277,7 @@ public class JobService {
             for (JobStep step : getSteps(id)) {
                 if (step.getStatus() != JobStepStatus.SUCCESS) {
                     step.setStatus(JobStepStatus.PENDING);
-                    if (job.getType() != JobType.ROLLING_RESTART && job.getType() != JobType.EXTERNAL_ROLLING_RESTART && job.getType() != JobType.CLUSTER_DELETION) step.setAgentTaskId(null);
+                    if (job.getType() != JobType.ROLLING_RESTART && job.getType() != JobType.CLUSTER_DELETION) step.setAgentTaskId(null);
                     step.setExternalServiceTaskId(null);
                     step.setStartTime(null);
                     step.setEndTime(null);
