@@ -423,6 +423,7 @@ export function SchemaRegistry() {
   const switchDeletedSubjects = (show: boolean) => {
     if (show === showDeletedSubjects) return;
     setShowDeletedSubjects(show);
+    setSummary(null);
     void load(selectedConnectionId, undefined, show);
   };
 
@@ -972,8 +973,15 @@ export function SchemaRegistry() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || `Failed to ${permanent ? 'permanently delete' : 'soft-delete'} ${version ? 'version' : 'subject'}.`);
       setPendingDelete(null);
-      backToList();
-      await load();
+      if (version && selected?.subject === subject) {
+        await openSubject(selected);
+        setShowDeletedVersions(true);
+        await load(selectedConnectionId, undefined, true);
+      } else {
+        backToList();
+        if (!permanent) setShowDeletedSubjects(true);
+        await load(selectedConnectionId, undefined, !permanent || showDeletedSubjects);
+      }
     } catch (e: unknown) {
       setError(errorMessage(e, 'Failed to delete schema.'));
     } finally {

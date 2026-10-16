@@ -5,7 +5,7 @@ import { useParams, NavLink, Outlet, useLocation, useNavigate } from 'react-rout
 import { useCluster } from '../contexts/useCluster';
 import { clusterStatusTone } from '../utils/clusterStatusTone';
 import { AnchoredMenu } from '../components/AnchoredMenu';
-import { useActiveClusterJobs, currentJobNode } from '../hooks/useActiveClusterJobs';
+import { useActiveClusterJobs, locksClusterView } from '../hooks/useActiveClusterJobs';
 import './ClusterDetails.css';
 
 interface ClusterInfo {
@@ -37,6 +37,11 @@ export function ClusterDetails() {
   const [cluster, setCluster] = useState<ClusterInfo | null>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [dropdownAnchor, setDropdownAnchor] = useState<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const blockingJob = activeJobs.find(job => job.clusterId === id && locksClusterView(job));
+    if (blockingJob) navigate(`/jobs/${blockingJob.id}`, { replace: true });
+  }, [activeJobs, id, navigate]);
 
   const { setActiveClusterId } = useCluster();
 
@@ -216,9 +221,6 @@ export function ClusterDetails() {
         </header>
 
         <div className="cluster-content cluster-logs-content" style={{ marginTop: '16px' }}>
-          {activeJobs.filter(job => job.clusterId === id && job.type === 'ROLLING_RESTART').map(job => <div role="status" key={job.id} style={{ padding: '12px 20px', background: '#fff6df', borderRadius: 8 }}>
-        Rolling restart {job.status === 'PENDING' ? 'queued' : job.status === 'WAITING_AGENT' ? 'waiting for agent' : 'in progress'}. Cluster views remain available. {currentJobNode(job)} <button onClick={() => navigate(`/jobs/${job.id}`)}>View current node and progress</button>
-      </div>)}
       <Outlet />
         </div>
       </div>
@@ -237,7 +239,7 @@ export function ClusterDetails() {
     { to: `/clusters/${id}/schema-registry`, icon: FileJson, label: 'Schema Registry', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
     { to: `/clusters/${id}/kafka-connect`, icon: Plug, label: 'Kafka Connect', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
     { to: `/clusters/${id}/security`, icon: Shield, label: 'ACLs', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
-    { to: `/clusters/${id}/config`, icon: Settings, label: 'Configuration', disabled: cluster.status !== 'SUCCESS' || cluster.mode === 'EXTERNAL' },
+    { to: `/clusters/${id}/config`, icon: Settings, label: 'Configuration', disabled: cluster.status !== 'SUCCESS' },
   ];
 
   if (cluster.mode === 'EXTERNAL') {

@@ -12,7 +12,7 @@ import static org.mockito.Mockito.*;
 class RollingRestartJobSafetyTest {
     @Test void retryPreservesCompletedStepsAndRestartEvidenceAndRejectsRollback() {
         var jobs = mock(JobRepository.class); var steps = mock(JobStepRepository.class); var clusters = mock(ClusterRepository.class);
-        var service = new JobService(jobs, steps, new ObjectMapper(), clusters);
+        var service = new JobService(jobs, steps, new ObjectMapper(), clusters, mock(ExternalClusterRepository.class));
         Job job = new Job(); job.setId(UUID.randomUUID()); job.setType(JobType.ROLLING_RESTART); job.setStatus(JobStatus.PARTIAL_SUCCESS);
         job.setResourceKey("cluster:" + UUID.randomUUID()); job.setRollbackSupported(true);
         JobStep done = new JobStep(); done.setStatus(JobStepStatus.SUCCESS);
@@ -32,7 +32,7 @@ class RollingRestartJobSafetyTest {
     @Test void agentBaselineIsStoredInPayloadWithoutUsingExternalTaskForeignKey() throws Exception {
         var jobs = mock(JobRepository.class); var steps = mock(JobStepRepository.class);
         ObjectMapper mapper = new ObjectMapper();
-        var service = new JobService(jobs, steps, mapper, mock(ClusterRepository.class));
+        var service = new JobService(jobs, steps, mapper, mock(ClusterRepository.class), mock(ExternalClusterRepository.class));
         Job job = new Job(); job.setType(JobType.ROLLING_RESTART);
         JobStep step = new JobStep(); step.setId(UUID.randomUUID()); step.setJob(job);
         step.setPayload(mapper.writeValueAsString(Map.of("hostId", "one", "role", "broker", "nodeId", 1)));
@@ -49,13 +49,45 @@ class RollingRestartJobSafetyTest {
         verify(steps).save(step);
     }
 
+    @Test void externalDiscoveryTaskIsStoredWithoutInternalTaskForeignKey() throws Exception {
+        var steps = mock(JobStepRepository.class);
+        var mapper = new ObjectMapper();
+        var service = new JobService(mock(JobRepository.class), steps, mapper,
+                mock(ClusterRepository.class), mock(ExternalClusterRepository.class));
+        JobStep step = new JobStep(); step.setId(UUID.randomUUID());
+        when(steps.findById(step.getId())).thenReturn(Optional.of(step));
+        UUID taskId = UUID.randomUUID();
+        service.recordExternalDiscoveryTask(step.getId(), taskId);
+        assertThat(mapper.readTree(step.getPayload()).get("externalDiscoveryTaskId").asText()).isEqualTo(taskId.toString());
+        assertThat(step.getAgentTaskId()).isNull();
+        assertThat(step.getExternalServiceTaskId()).isNull();
+        verify(steps).save(step);
+    }
+
     @Test void queuedRestartLocksSameClusterButNotAnotherCluster() {
         var jobs = mock(JobRepository.class); var clusters = mock(ClusterRepository.class);
-        var service = new JobService(jobs, mock(JobStepRepository.class), new ObjectMapper(), clusters);
+        var service = new JobService(jobs, mock(JobStepRepository.class), new ObjectMapper(), clusters, mock(ExternalClusterRepository.class));
         UUID cluster = UUID.randomUUID(); Job active = new Job(); active.setId(UUID.randomUUID()); active.setType(JobType.ROLLING_RESTART);
         when(jobs.findByResourceKeyAndStatusIn(eq("cluster:" + cluster), anyList())).thenReturn(List.of(active));
         assertThatThrownBy(() -> service.assertClusterMutable(cluster)).isInstanceOf(ClusterOperationConflictException.class);
         service.assertClusterMutable(UUID.randomUUID());
+    }
+    @Test void configurationJobsLockClusterFromFirstPendingStepThroughRestart() {
+        for (JobType type : List.of(JobType.CONFIG_CHANGE, JobType.TARGETED_CONFIG_CHANGE,
+                JobType.ROLLING_CONFIG_UPDATE)) {
+            var jobs = mock(JobRepository.class);
+            var service = new JobService(jobs, mock(JobStepRepository.class), new ObjectMapper(),
+                    mock(ClusterRepository.class), mock(ExternalClusterRepository.class));
+            UUID clusterId = UUID.randomUUID();
+            Job active = new Job(); active.setId(UUID.randomUUID()); active.setType(type);
+            when(jobs.findByResourceKeyAndStatusIn(eq("cluster:" + clusterId), anyList())).thenReturn(List.of(active));
+            assertThatThrownBy(() -> service.assertClusterMutable(clusterId))
+                    .isInstanceOf(ClusterOperationConflictException.class);
+            Job next = new Job(); next.setId(UUID.randomUUID()); next.setType(JobType.TARGETED_CONFIG_CHANGE);
+            next.setResourceKey("cluster:" + clusterId);
+            assertThatThrownBy(() -> service.createJob(next))
+                    .isInstanceOf(ClusterOperationConflictException.class);
+        }
     }
     @Test void resumeSuccessfulRestartOnlyChecksHealthAndDoesNotMarkClusterFailed() throws Exception {
         var jobs = mock(JobService.class); var deploy = mock(DeploymentService.class); var awaiter = mock(AgentTaskAwaiter.class);
