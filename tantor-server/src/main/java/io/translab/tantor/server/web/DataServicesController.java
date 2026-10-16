@@ -612,27 +612,13 @@ public class DataServicesController {
 
         for (JsonNode connNode : connectorsNode) {
             String name = connNode.asText();
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("name", name);
-            JsonNode config = requestJson(baseUrl, "GET", "/connectors/" + pathSeg(name) + "/config",
-                    null, encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
-            JsonNode status = requestJson(baseUrl, "GET", "/connectors/" + pathSeg(name) + "/status",
-                    null, encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
-            String state = status.path("connector").path("state").asText("UNKNOWN");
+            Map<String, Object> row = readConnectorDetails(baseUrl, name, encodedCert, clusterId, connectionId, pluginsNode);
+            String state = row.get("state").toString();
             if ("RUNNING".equalsIgnoreCase(state)) runningConnectors++;
             else if ("PAUSED".equalsIgnoreCase(state)) pausedConnectors++;
-            else failedConnectors++;
-
-            int cRunning = 0, cTotal = 0;
-            for (JsonNode task : status.path("tasks")) {
-                cTotal++;
-                if ("RUNNING".equalsIgnoreCase(task.path("state").asText())) cRunning++;
-            }
-            runningTasks += cRunning; totalTasks += cTotal;
-
-            row.put("class", config.path("connector.class").asText(""));
-            row.put("state", state); row.put("tasks", cTotal); row.put("runningTasks", cRunning);
-            row.put("config", config); row.put("status", status);
+            else if ("FAILED".equalsIgnoreCase(state)) failedConnectors++;
+            runningTasks += (Integer) row.get("runningTasks");
+            totalTasks += (Integer) row.get("tasks");
             connectors.add(row);
         }
 
@@ -651,6 +637,88 @@ public class DataServicesController {
         result.put("pausedConnectors", pausedConnectors);
         result.put("failedConnectors", failedConnectors);
         return ResponseEntity.ok(result);
+    }
+
+    private Map<String, Object> readConnectorDetails(String baseUrl, String name, String encodedCert,
+            UUID clusterId, UUID connectionId, JsonNode plugins) {
+        String path = "/connectors/" + pathSeg(name);
+        JsonNode config = requestJson(baseUrl, "GET", path + "/config", null, encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
+        JsonNode status = requestJson(baseUrl, "GET", path + "/status", null, encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
+        String type = status.path("type").asText("").toUpperCase(java.util.Locale.ROOT);
+        if (!Set.of("SOURCE", "SINK").contains(type)) {
+            if (plugins == null) {
+                try { plugins = requestJson(baseUrl, "GET", "/connector-plugins", null, encodedCert, clusterId, "KAFKA_CONNECT", connectionId); }
+                catch (RuntimeException ignored) { /* Type remains unknown when plugin metadata is unavailable. */ }
+            }
+            type = "UNKNOWN";
+            if (plugins != null) for (JsonNode plugin : plugins) {
+                if (plugin.path("class").asText().equals(config.path("connector.class").asText())) {
+                    String candidate = plugin.path("type").asText("").toUpperCase(java.util.Locale.ROOT);
+                    if (Set.of("SOURCE", "SINK").contains(candidate)) type = candidate;
+                }
+            }
+        }
+        int running = 0, failed = 0, total = 0;
+        for (JsonNode task : status.path("tasks")) {
+            total++;
+            if ("RUNNING".equalsIgnoreCase(task.path("state").asText())) running++;
+            if ("FAILED".equalsIgnoreCase(task.path("state").asText())) failed++;
+        }
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("name", name); row.put("type", type);
+        row.put("class", config.path("connector.class").asText(""));
+        row.put("state", status.path("connector").path("state").asText("UNKNOWN"));
+        row.put("worker", status.path("connector").path("worker_id").asText(""));
+        row.put("tasks", total); row.put("runningTasks", running); row.put("failedTasks", failed);
+        row.put("config", config); row.put("status", status);
+        row.put("consumerGroup", "SINK".equals(type) ? config.path("consumer.override.group.id").asText("connect-" + name) : "");
+        row.put("consumerGroupSource", "SINK".equals(type) ? (config.has("consumer.override.group.id") ? "configured" : "default") : "");
+        try {
+            JsonNode topicResponse = requestJson(baseUrl, "GET", path + "/topics", null, encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
+            JsonNode topics = topicResponse.path(name).path("topics");
+            if (!topics.isArray()) throw new IllegalStateException("Connect topic tracking response is unavailable.");
+            row.put("topics", objectMapper.convertValue(topics, new TypeReference<List<String>>() {}));
+            row.put("topicsAvailable", true);
+        } catch (RuntimeException ex) {
+            row.put("topics", List.of()); row.put("topicsAvailable", false);
+            row.put("topicsError", "Unable to read tracked topics. Topic tracking may be disabled or unsupported by this Kafka Connect worker.");
+        }
+        return row;
+    }
+
+    @GetMapping("/kafka-connect/connectors/{name}/details")
+    public ResponseEntity<?> getConnectorDetails(@PathVariable UUID clusterId, @PathVariable String name,
+            @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
+            @RequestParam(required = false) String protocol, @RequestParam(required = false) String ip,
+            @RequestParam(required = false) Integer port, @RequestParam(required = false) UUID connectionId) {
+        String baseUrl = customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.KAFKA_CONNECT, connectionId);
+        return ResponseEntity.ok(readConnectorDetails(baseUrl, name, encodedCert, clusterId, connectionId, null));
+    }
+
+    @PostMapping("/kafka-connect/connectors/{name}/restart")
+    public ResponseEntity<?> restartConnectorInstances(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable UUID clusterId, @PathVariable String name,
+            @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
+            @RequestParam(required = false) String protocol, @RequestParam(required = false) String ip,
+            @RequestParam(required = false) Integer port, @RequestParam(required = false) UUID connectionId,
+            @RequestParam(defaultValue = "false") boolean includeTasks, @RequestParam(defaultValue = "false") boolean onlyFailed) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.KAFKA_CONNECT_CHANGE)) return unauthorized();
+        return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.KAFKA_CONNECT, connectionId),
+                "POST", "/connectors/" + pathSeg(name) + "/restart?includeTasks=" + includeTasks + "&onlyFailed=" + onlyFailed,
+                null, encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
+    }
+
+    @PutMapping("/kafka-connect/connectors/{name}/stop")
+    public ResponseEntity<?> stopConnector(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable UUID clusterId, @PathVariable String name,
+            @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
+            @RequestParam(required = false) String protocol, @RequestParam(required = false) String ip,
+            @RequestParam(required = false) Integer port, @RequestParam(required = false) UUID connectionId) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.KAFKA_CONNECT_CHANGE)) return unauthorized();
+        return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.KAFKA_CONNECT, connectionId),
+                "PUT", "/connectors/" + pathSeg(name) + "/stop", null, encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
     }
 
     /** Get connector plugins list. */
@@ -773,6 +841,11 @@ public class DataServicesController {
             @RequestParam(required = false) UUID connectionId) {
         if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.KAFKA_CONNECT_CHANGE)) {
             return unauthorized();
+        }
+        try {
+            if (!taskId.matches("[0-9]+") || Integer.parseInt(taskId) < 0) throw new NumberFormatException();
+        } catch (NumberFormatException ex) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Task ID must be a non-negative integer."));
         }
         return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.KAFKA_CONNECT, connectionId),
                 "POST", "/connectors/" + pathSeg(name) + "/tasks/" + taskId + "/restart",

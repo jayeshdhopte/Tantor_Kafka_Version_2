@@ -2852,3 +2852,33 @@
 @media (max-width: 600px) { .ds-subject-search { max-width: none; flex-basis: 100%; } .ds-subject-results { margin-left: 0; } }
 
 .ds-subject-deleted-tag { display: inline-block; margin-left: 8px; padding: 2px 6px; border-radius: 4px; background: #f2f4f7; color: #667085; font-size: 12px; }
+
+/* Kafka Connect inventory and full connector detail pages. */
+.ds-kc-list-scroll { overflow-x: auto; }
+.ds-kc-expanded-table { min-width: 1100px; }
+.ds-kc-expanded-table td { overflow-wrap: anywhere; max-width: 260px; }
+.ds-kc-sort { display: inline-flex; gap: 6px; align-items: center; border: 0; background: transparent; padding: 0; font: inherit; color: inherit; font-weight: 600; cursor: pointer; }
+.ds-kc-details-page { display: flex; flex-direction: column; gap: 20px; width: 100%; }
+.ds-kc-detail-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+.ds-kc-detail-header h2 { margin: 10px 0 0; font-size: 24px; color: var(--text-primary); overflow-wrap: anywhere; }
+.ds-kc-detail-header .ds-connector-link { display: inline-flex; align-items: center; gap: 6px; }
+.ds-kc-action-select { height: 40px; border: 1px solid var(--button-primary); border-radius: 8px; padding: 0 12px; background: var(--bg-surface); color: var(--button-primary); font: inherit; max-width: 100%; }
+.ds-kc-detail-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: 10px; overflow: hidden; }
+.ds-kc-detail-summary > div { padding: 18px; display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid var(--border-default); }
+.ds-kc-detail-summary span { color: var(--text-secondary); font-size: 13px; }
+.ds-kc-detail-summary strong { font-size: 15px; color: var(--text-primary); overflow-wrap: anywhere; }
+.ds-kc-detail-summary .ds-status { color: #166534; }
+.ds-kc-detail-panel { border: 1px solid var(--border-default); border-radius: 8px; overflow-x: auto; background: var(--bg-surface); }
+.ds-kc-config-toolbar { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 16px; }
+.ds-kc-json { margin: 0; padding: 16px 0; font-size: 13px; line-height: 1.8; overflow: auto; background: #f8f6fc; color: #3e1363; }
+.ds-kc-json > div { display: flex; min-width: max-content; }
+.ds-kc-json > div > span { display: inline-block; width: 46px; flex: none; text-align: right; padding-right: 12px; margin-right: 12px; color: #818181; border-right: 1px solid #ddd; user-select: none; }
+.ds-kc-json code { white-space: pre; padding-right: 16px; }
+.ds-kc-config-value { white-space: pre-wrap; overflow-wrap: anywhere; }
+.ds-kc-connector-trace pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 800px) { .ds-kc-detail-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .ds-kc-detail-summary { grid-template-columns: 1fr; } }
+
+.ds-subject-filter-option > span { min-width: 0; overflow-wrap: anywhere; flex: 1; }
+.ds-kc-detail-summary .ds-status.warn { color: #854d0e; }
+.ds-kc-detail-summary .ds-status.error { color: #b42318; }

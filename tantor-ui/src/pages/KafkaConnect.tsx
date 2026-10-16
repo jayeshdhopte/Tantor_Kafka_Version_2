@@ -1,25 +1,15 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams } from 'react-router-dom';
-import { CheckCircle, MoreVertical, Pause, Play, Plus, RefreshCw, RotateCw, Settings, Search, Trash2, Upload, X, FileDown, ChevronDown } from 'lucide-react';
+import { CheckCircle, MoreVertical, Plus, RefreshCw, Settings, Trash2, Upload, X, FileDown, ChevronDown } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { confirmAction } from '../components/confirmUtils';
 import { AnchoredMenu } from '../components/AnchoredMenu';
 import { readDataServiceSession, writeDataServiceSession } from '../utils/dataServiceSessionCache';
+import { KafkaConnectorDetails } from '../components/KafkaConnectorDetails';
+import { KafkaConnectorsTable } from '../components/KafkaConnectorsTable';
+import { type ConnectorRow } from '../utils/kafkaConnect';
 import './DataServiceTabs.css';
-
-interface ConnectorRow {
-  name: string;
-  class: string;
-  state: string;
-  tasks: number;
-  runningTasks: number;
-  config: Record<string, string>;
-  status: {
-    connector?: { state?: string; worker_id?: string; trace?: string };
-    tasks?: { id: number; state: string; worker_id?: string; trace?: string }[];
-  };
-}
 
 interface ConnectorPlugin {
   class: string;
@@ -144,9 +134,7 @@ export function KafkaConnect() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'clusters' | 'connectors' | 'plugins'>('clusters');
-  const [connectorSearch, setConnectorSearch] = useState({ context: '', value: '' });
-  const [selectedConnectorName, setSelectedConnectorName] = useState<string | null>(null);
-  const [connectorDetailTab, setConnectorDetailTab] = useState<'tasks' | 'config'>('tasks');
+  const [connectorSelection, setConnectorSelection] = useState<{ context: string; name: string } | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [showConnection, setShowConnection] = useState(false);
   const [connectorJson, setConnectorJson] = useState(connectorTemplate);
@@ -158,13 +146,9 @@ export function KafkaConnect() {
   const [clusterTruststore, setClusterTruststore] = useState<ClusterTruststoreInfo | null>(null);
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(initialSession?.selectedConnectionId ?? null);
   const loadRequestId = useRef(0);
-  const connectorSearchContext = `${id}:${selectedConnectionId}`;
-  const connectorQuery = connectorSearch.context === connectorSearchContext ? connectorSearch.value : '';
-  const normalizedConnectorQuery = connectorQuery.trim().toLowerCase();
-  const visibleConnectors = (summary?.connectors || []).filter(connector => !normalizedConnectorQuery
-    || connector.name.toLowerCase().includes(normalizedConnectorQuery)
-    || (connector.class || '').toLowerCase().includes(normalizedConnectorQuery));
-
+  const connectorContext = `${id}:${selectedConnectionId}`;
+  const selectedConnectorName = connectorSelection?.context === connectorContext ? connectorSelection.name : null;
+  const setSelectedConnectorName = (name: string | null) => setConnectorSelection(name ? { context: connectorContext, name } : null);
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ Connection form state Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const [formConnectionName, setFormConnectionName] = useState('');
@@ -496,7 +480,6 @@ export function KafkaConnect() {
     connectors: summary?.connectorCount ?? 0,
     runningTasks: summary?.runningTasks ?? 0
   }], [summary, selectedConn]);
-  const selectedConnector = summary?.connectors.find(connector => connector.name === selectedConnectorName) ?? null;
 
   const connectorPayloads = (): Record<string, unknown>[] => {
     const parsed = JSON.parse(connectorJson);
@@ -562,17 +545,17 @@ export function KafkaConnect() {
     }
   };
 
-  const statusClass = (state: string) => {
-    if (state === 'RUNNING') return 'ds-status';
-    if (state === 'PAUSED') return 'ds-status warn';
-    return 'ds-status error';
-  };
-
   const connStatusColor = (s: string) =>
     s === 'ONLINE' ? '#80e8a2' : (s === 'OFFLINE' || s === 'ERROR') ? '#e88080' : '#a8c5c0';
 
   return (
     <div className="data-services-page animate-fade-in" style={{ width: '100%' }}>
+      {selectedConnectorName && id && <KafkaConnectorDetails key={`${connectorContext}:${selectedConnectorName}`}
+        clusterId={id} connectionId={selectedConnectionId} name={selectedConnectorName}
+        initial={summary?.connectors.find(connector => connector.name === selectedConnectorName)} canManage={canManage}
+        onBack={() => { setSelectedConnectorName(null); setActiveTab('connectors'); }} onChanged={() => void load()}
+        onDeleted={() => { setSelectedConnectorName(null); setActiveTab('connectors'); setSuccessMessage('Connector deleted.'); }} />}
+      <div hidden={Boolean(selectedConnectorName)}>
       <div className="ds-header ds-sr-header" style={{ width: '100%' }}>
         <div className="ds-actions" style={{ width: '100%', display: 'flex', justifyContent: hasFetched ? 'space-between' : 'flex-end', alignItems: 'flex-end', marginBottom: hasFetched ? '0' : '24px' }}>
           
@@ -918,56 +901,10 @@ export function KafkaConnect() {
           </table>
         )}
 
-        {activeTab === 'connectors' && (<>
-          <div className="ds-subject-filters" role="search" aria-label="Search Kafka Connect connectors">
-            <label className="ds-subject-search"><Search size={18} />
-              <input type="search" aria-label="Search connectors by name or class" placeholder="Search by connector name or class"
-                value={connectorQuery} onChange={event => setConnectorSearch({ context: connectorSearchContext, value: event.target.value })} />
-            </label>
-            {connectorQuery && <button type="button" className="ds-subject-filter-reset"
-              onClick={() => setConnectorSearch({ context: connectorSearchContext, value: '' })}>Clear search</button>}
-            <span className="ds-subject-results" role="status">{visibleConnectors.length} of {summary?.connectors.length ?? 0} connectors</span>
-          </div>
-          <table className="ds-table ds-kc-table ds-kc-connectors-table">
-            <thead>
-              <tr><th>Name</th><th>Class</th><th>Status</th><th>Tasks</th>{canManage && <th>Actions</th>}</tr>
-            </thead>
-            <tbody>
-              {loading && !summary ? (
-                <tr><td colSpan={canManage ? 5 : 4} className="ds-empty">Loading connectors...</td></tr>
-              ) : visibleConnectors.length > 0 ? (
-                visibleConnectors.map(connector => (
-                  <tr key={connector.name}>
-                    <td><button type="button" className="ds-connector-link" onClick={() => { setSelectedConnectorName(connector.name); setConnectorDetailTab('tasks'); }}>{connector.name}</button></td>
-                    <td>{connector.class || '-'}</td>
-                    <td><span className={statusClass(connector.state)}>{connector.state.charAt(0) + connector.state.slice(1).toLowerCase()}</span></td>
-                    <td>{connector.runningTasks} / {connector.tasks}</td>
-                    {canManage && (
-                      <td>
-                        <div className="ds-inline-actions">
-                          <button className="ds-button" onClick={() => connectorAction(connector.name, 'pause')} disabled={saving} title="Pause">
-                            <Pause size={15} />
-                          </button>
-                          <button className="ds-button" onClick={() => connectorAction(connector.name, 'resume')} disabled={saving} title="Resume">
-                            <Play size={15} />
-                          </button>
-                          <button className="ds-button" onClick={() => connectorAction(connector.name, 'restart')} disabled={saving} title="Restart">
-                            <RotateCw size={15} />
-                          </button>
-                          <button className="ds-button danger" onClick={() => connectorAction(connector.name, 'delete')} disabled={saving} title="Delete">
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
-                      </td>
-                    )}
-                  </tr>
-                ))
-              ) : (
-                <tr><td colSpan={canManage ? 5 : 4} className="ds-empty">{normalizedConnectorQuery ? 'No connectors match your search.' : 'No connectors found.'}</td></tr>
-              )}
-            </tbody>
-          </table>
-        </>)}
+        <div hidden={activeTab !== 'connectors'}>
+          <KafkaConnectorsTable key={connectorContext} rows={summary?.connectors || []} instance={selectedConn?.connectionName || 'default-connect'}
+            loading={loading} saving={saving} canManage={canManage} onOpen={setSelectedConnectorName} onAction={(name, action) => void connectorAction(name, action)} />
+        </div>
 
         {activeTab === 'plugins' && (
           <table className="ds-table ds-kc-table">
@@ -992,47 +929,7 @@ export function KafkaConnect() {
       </div>
       </>}
 
-      {selectedConnector && createPortal(
-        <div className="ds-modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setSelectedConnectorName(null); }}>
-          <div className="ds-modal ds-connector-details" role="dialog" aria-modal="true" aria-label={`Connector ${selectedConnector.name}`}>
-            <div className="ds-modal-header">
-              <div>
-                <h3>{selectedConnector.name}</h3>
-                <span className={statusClass(selectedConnector.state)}>{selectedConnector.state}</span>
-              </div>
-              <button type="button" className="ds-close-btn" onClick={() => setSelectedConnectorName(null)} aria-label="Close connector details"><X size={20} /></button>
-            </div>
-            <div className="ds-connector-detail-tabs" role="tablist" aria-label="Connector details">
-              <button type="button" role="tab" aria-selected={connectorDetailTab === 'tasks'} className={connectorDetailTab === 'tasks' ? 'active' : ''} onClick={() => setConnectorDetailTab('tasks')}>Tasks</button>
-              <button type="button" role="tab" aria-selected={connectorDetailTab === 'config'} className={connectorDetailTab === 'config' ? 'active' : ''} onClick={() => setConnectorDetailTab('config')}>Config</button>
-            </div>
-            <div className="ds-connector-detail-body" role="tabpanel">
-              {connectorDetailTab === 'tasks' ? (
-                selectedConnector.status?.tasks?.length ? (
-                  <table className="ds-table ds-kc-table">
-                    <thead><tr><th>Task ID</th><th>Status</th><th>Worker</th></tr></thead>
-                    <tbody>{selectedConnector.status.tasks.map(task => (
-                      <tr key={task.id}>
-                        <td>{task.id}</td>
-                        <td><span className={statusClass(task.state)}>{task.state}</span>{task.trace && <pre className="ds-connector-task-trace">{task.trace}</pre>}</td>
-                        <td>{task.worker_id || '-'}</td>
-                      </tr>
-                    ))}</tbody>
-                  </table>
-                ) : <p className="ds-connector-detail-empty">No tasks reported for this connector.</p>
-              ) : Object.keys(selectedConnector.config ?? {}).length ? (
-                <table className="ds-table ds-kc-table ds-connector-config-table">
-                  <thead><tr><th>Property</th><th>Value</th></tr></thead>
-                  <tbody>{Object.entries(selectedConnector.config ?? {}).sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => (
-                    <tr key={key}><td>{key}</td><td>{value == null ? '' : String(value)}</td></tr>
-                  ))}</tbody>
-                </table>
-              ) : <p className="ds-connector-detail-empty">No configuration reported for this connector.</p>
-              }
-            </div>
-          </div>
-        </div>, document.body
-      )}
+      </div>
 
       {/* Ã¢â€â‚¬Ã¢â€â‚¬ Connection modal Ã¢â€â‚¬Ã¢â€â‚¬ */}
       {canManage && showConnection && createPortal(
