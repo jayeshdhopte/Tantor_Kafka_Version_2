@@ -300,6 +300,18 @@ public class DataServicesController {
             } catch (RuntimeException ignored) {
                 row.put("version", 0); row.put("id", 0); row.put("schemaType", "UNKNOWN"); row.put("schema", "");
             }
+            // A missing subject override means DEFAULT; other failures must not
+            // be presented as inherited configuration.
+            try {
+                JsonNode config = requestJson(baseUrl, "GET", "/config/" + pathSeg(subject), null,
+                        encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
+                row.put("compatibility", config.path("compatibilityLevel")
+                        .asText(config.path("compatibility").asText("UNKNOWN")));
+            } catch (DataServiceException ex) {
+                row.put("compatibility", ex.statusCode() == 404 ? "DEFAULT" : "UNKNOWN");
+            } catch (RuntimeException ignored) {
+                row.put("compatibility", "UNKNOWN");
+            }
             subjects.add(row);
         }
 

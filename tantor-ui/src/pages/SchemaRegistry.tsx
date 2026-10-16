@@ -1,13 +1,15 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams } from 'react-router-dom';
-import { AlertOctagon, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardPaste, Copy, Edit3, FileDown, FileText, GitCompare, MoreVertical, Paperclip, Plus, RefreshCw, Save, Settings, Trash2, X } from 'lucide-react';
+import { AlertOctagon, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardPaste, Copy, Edit3, FileDown, FileText, GitCompare, MoreVertical, Paperclip, Plus, RefreshCw, Save, Search, Settings, Trash2, X } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import orangeBanner from '../assets/orange.png';
 import { AnchoredMenu } from '../components/AnchoredMenu';
 import { readDataServiceSession, writeDataServiceSession } from '../utils/dataServiceSessionCache';
 import { compareSchemaFields } from '../utils/schemaFieldDiff';
 import { schemaSubmissionError } from '../utils/schemaSubmissionError';
+import { SchemaSubjectFilter } from '../components/SchemaSubjectFilter';
+import { filterSchemaSubjects, schemaTypes, schemaCompatibilityLevels, subjectCompatibilityLevel } from '../utils/schemaSubjectFilters';
 import { SchemaRegistrySettingModal } from '../components/SchemaRegistrySettingModal';
 import './DataServiceTabs.css';
 
@@ -19,6 +21,7 @@ interface SchemaSubject {
   schemaType: string;
   schema: string;
   deleted?: boolean;
+  compatibility?: string;
 }
 
 interface SchemaVersion {
@@ -324,6 +327,7 @@ export function SchemaRegistry() {
   const [pendingDelete, setPendingDelete] = useState<PendingSchemaDelete | null>(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
   const [showDeletedSubjects, setShowDeletedSubjects] = useState(false);
+  const [subjectFilters, setSubjectFilters] = useState({ context: '', search: '', types: [] as string[], compatibility: [] as string[] });
   const [showDeletedVersions, setShowDeletedVersions] = useState(false);
   const [selected, setSelected] = useState<SchemaSubject | null>(null);
   const [details, setDetails] = useState<SubjectDetails | null>(null);
@@ -417,7 +421,21 @@ export function SchemaRegistry() {
       .filter(version => Number.isFinite(version.version))
       .sort((a, b) => b.version - a.version);
   }, [details]);
-  const visibleSubjects = (summary?.subjects || []).filter(subject => Boolean(subject.deleted) === showDeletedSubjects);
+  const filters = subjectFilters.context === modeContext ? subjectFilters : { search: '', types: [], compatibility: [] };
+  const updateSubjectFilters = (patch: Partial<typeof filters>) => setSubjectFilters({ ...filters, ...patch, context: modeContext });
+  const scopeSubjects = (summary?.subjects || []).filter(subject => showDeletedSubjects || !subject.deleted);
+  const visibleSubjects = filterSchemaSubjects(scopeSubjects, filters.search, filters.types, filters.compatibility);
+  const typeCounts: Record<string, number> = {};
+  const compatibilityCounts: Record<string, number> = {};
+  for (const subject of filterSchemaSubjects(scopeSubjects, filters.search, [], filters.compatibility)) {
+    const type = subject.schemaType.toUpperCase(); typeCounts[type] = (typeCounts[type] || 0) + 1;
+  }
+  for (const subject of filterSchemaSubjects(scopeSubjects, filters.search, filters.types, [])) {
+    const level = subjectCompatibilityLevel(subject); compatibilityCounts[level] = (compatibilityCounts[level] || 0) + 1;
+  }
+  const availableTypes = Array.from(new Set([...schemaTypes, ...scopeSubjects.map(subject => subject.schemaType.toUpperCase())]));
+  const availableCompatibility = Array.from(new Set([...schemaCompatibilityLevels, ...scopeSubjects.map(subjectCompatibilityLevel)]));
+  const filtersActive = Boolean(filters.search || filters.types.length || filters.compatibility.length);
   const visibleVersions = (details?.versions || []).filter(version => showDeletedVersions || !version.deleted);
 
   const switchDeletedSubjects = (show: boolean) => {
@@ -1009,6 +1027,8 @@ export function SchemaRegistry() {
       } else if (change.subject) {
         setSubjectCompatibility(change.value);
         setDetails(previous => previous ? { ...previous, compatibility: change.value } : previous);
+        setSummary(previous => previous ? { ...previous, subjects: previous.subjects.map(subject =>
+          subject.subject === change.subject ? { ...subject, compatibility: change.value } : subject) } : previous);
       } else { setGlobalCompatibility(change.value); setAppliedGlobalCompatibility(change.value); }
       setSuccess(`${change.subject ? `Subject ${change.subject}` : 'Global'}: ${change.kind} changed from ${change.oldValue} to ${change.value}.`);
       setPendingSetting(null);
@@ -1182,9 +1202,9 @@ export function SchemaRegistry() {
             </div>
           ) : <>
             <div className="ds-metrics ds-sr-metrics">
-              <div className="ds-metric-card"><span>{showDeletedSubjects ? 'Deleted Subjects' : 'Total Subjects'}</span><strong>{visibleSubjects.length}</strong></div>
-              <div className="ds-metric-card"><span>Value Subjects</span><strong>{visibleSubjects.filter(subject => subject.type === 'VALUE').length}</strong></div>
-              <div className="ds-metric-card"><span>Key Subjects</span><strong>{visibleSubjects.filter(subject => subject.type === 'KEY').length}</strong></div>
+              <div className="ds-metric-card"><span>Total Subjects</span><strong>{scopeSubjects.length}</strong></div>
+              <div className="ds-metric-card"><span>Value Subjects</span><strong>{scopeSubjects.filter(subject => subject.type === 'VALUE').length}</strong></div>
+              <div className="ds-metric-card"><span>Key Subjects</span><strong>{scopeSubjects.filter(subject => subject.type === 'KEY').length}</strong></div>
               <div className="ds-metric-card">
                 <span>REST Endpoint</span>
                 <strong className="ds-sr-endpoint-value">
@@ -1205,25 +1225,33 @@ export function SchemaRegistry() {
             </div>
 
             <div className="ds-panel ds-sr-subjects-panel">
-              <div className="ds-schema-delete-toolbar" role="group" aria-label="Subject visibility">
-                <button type="button" className={`ds-button ${!showDeletedSubjects ? 'primary' : 'outlined'}`} onClick={() => switchDeletedSubjects(false)}>Active subjects</button>
-                <button type="button" className={`ds-button ${showDeletedSubjects ? 'primary' : 'outlined'}`} onClick={() => switchDeletedSubjects(true)}>Deleted subjects</button>
+              <div className="ds-subject-filters" role="group" aria-label="Filter schema subjects">
+                <label className="ds-subject-search"><Search size={18} /><input type="search" aria-label="Search subjects by name or schema ID"
+                  placeholder="Filter by subject name or schema ID" value={filters.search} onChange={event => updateSubjectFilters({ search: event.target.value })} /></label>
+                <SchemaSubjectFilter label="Type" options={availableTypes.map(value => ({ value, label: ({ AVRO: 'Avro', PROTOBUF: 'Protobuf', JSON: 'JSON' } as Record<string, string>)[value] || value }))}
+                  selected={filters.types} counts={typeCounts} onChange={types => updateSubjectFilters({ types })} />
+                <SchemaSubjectFilter label="Compatibility" options={availableCompatibility.map(value => ({ value, label: value === 'UNKNOWN' ? 'Unavailable' : value }))}
+                  selected={filters.compatibility} counts={compatibilityCounts} onChange={compatibility => updateSubjectFilters({ compatibility })} />
+                <label className="ds-subject-deleted"><input type="checkbox" checked={showDeletedSubjects} onChange={event => switchDeletedSubjects(event.target.checked)} /> Show soft-deleted</label>
+                {filtersActive && <button type="button" className="ds-subject-filter-reset" onClick={() => updateSubjectFilters({ search: '', types: [], compatibility: [] })}>Clear filters</button>}
+                <span className="ds-subject-results" role="status">{visibleSubjects.length} of {scopeSubjects.length} subjects</span>
               </div>
               <table className="ds-table ds-sr-subjects-table">
                 <thead>
-                  <tr><th>Subject</th><th>Type</th><th>Latest Version</th><th>Schema ID</th><th>Schema Type</th>{canManage && <th>Actions</th>}</tr>
+                  <tr><th>Subject</th><th>Type</th><th>Latest Version</th><th>Schema ID</th><th>Schema Type</th><th>Compatibility</th>{canManage && <th>Actions</th>}</tr>
                 </thead>
                 <tbody>
                   {loading && !summary ? (
-                    <tr><td colSpan={canManage ? 6 : 5} className="ds-empty">Loading schemas...</td></tr>
+                    <tr><td colSpan={canManage ? 7 : 6} className="ds-empty">Loading schemas...</td></tr>
                   ) : visibleSubjects.length > 0 ? (
                     visibleSubjects.map(item => (
                       <tr key={item.subject} className="ds-hoverable-row" onClick={() => openSubject(item)} style={{ cursor: 'pointer' }}>
-                        <td><span className="ds-link-button">{item.subject}</span></td>
+                        <td><span className="ds-link-button">{item.subject}</span>{item.deleted && <span className="ds-subject-deleted-tag">Soft-deleted</span>}</td>
                         <td><span className="ds-status">{item.type}</span></td>
                         <td>{item.version || '-'}</td>
                         <td>{item.id || '-'}</td>
                         <td>{item.schemaType}</td>
+                        <td title={item.compatibility === 'DEFAULT' ? `Inherits global compatibility (${appliedGlobalCompatibility})` : undefined}>{subjectCompatibilityLevel(item) === 'UNKNOWN' ? 'Unavailable' : subjectCompatibilityLevel(item)}</td>
                         {canManage && (
                           <td>
                             <div className="ds-inline-actions" onClick={e => e.stopPropagation()}>
@@ -1236,7 +1264,7 @@ export function SchemaRegistry() {
                       </tr>
                     ))
                   ) : (
-                    <tr><td colSpan={canManage ? 6 : 5} className="ds-empty">{showDeletedSubjects ? 'No deleted subjects found.' : 'No active schemas found in this registry.'}</td></tr>
+                    <tr><td colSpan={canManage ? 7 : 6} className="ds-empty">{filtersActive ? 'No subjects match your search and filters.' : 'No schemas found in this registry.'}</td></tr>
                   )}
                 </tbody>
               </table>

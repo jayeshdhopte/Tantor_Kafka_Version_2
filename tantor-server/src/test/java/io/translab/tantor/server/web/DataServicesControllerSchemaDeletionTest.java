@@ -27,6 +27,7 @@ import static org.mockito.Mockito.when;
 
 class DataServicesControllerSchemaDeletionTest {
     private HttpServer server;
+    private boolean rejectSubjectConfig;
     private final CopyOnWriteArrayList<String> requests = new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<String> bodies = new CopyOnWriteArrayList<>();
 
@@ -137,6 +138,32 @@ class DataServicesControllerSchemaDeletionTest {
                         .value(org.hamcrest.Matchers.containsString("mode.mutability=true")));
     }
 
+    @Test
+    void includesSubjectCompatibilityAndDistinguishesInheritedFromUnavailable() throws Exception {
+        startServer();
+        var f = fixture(true);
+        var response = f.controller.schemaRegistrySummary(f.clusterId, null, "http", "127.0.0.1",
+                server.getAddress().getPort(), null, true);
+        JsonAssertions.assertCompatibility(response.getBody(), "active-value", "BACKWARD");
+        JsonAssertions.assertCompatibility(response.getBody(), "old-value", "DEFAULT");
+        rejectSubjectConfig = true;
+        response = f.controller.schemaRegistrySummary(f.clusterId, null, "http", "127.0.0.1",
+                server.getAddress().getPort(), null, false);
+        JsonAssertions.assertCompatibility(response.getBody(), "active-value", "UNKNOWN");
+    }
+
+    private static class JsonAssertions {
+        static void assertCompatibility(Object body, String subject, String compatibility) {
+            var json = new ObjectMapper().valueToTree(body);
+            for (var row : json.path("subjects")) {
+                if (subject.equals(row.path("subject").asText())) {
+                    assertThat(row.path("compatibility").asText()).isEqualTo(compatibility); return;
+                }
+            }
+            org.junit.jupiter.api.Assertions.fail("Subject missing: " + subject);
+        }
+    }
+
     private Fixture fixture(boolean permanentAllowed) {
         ClusterRepository clusters = mock(ClusterRepository.class);
         DataServiceConnectionService connections = mock(DataServiceConnectionService.class);
@@ -161,6 +188,11 @@ class DataServicesControllerSchemaDeletionTest {
             if (target.equals("/mode/locked") && exchange.getRequestMethod().equals("PUT")) {
                 byte[] failure = "{\"error_code\":42205,\"message\":\"Mode changes are not allowed\"}".getBytes(StandardCharsets.UTF_8);
                 exchange.sendResponseHeaders(422, failure.length);
+                exchange.getResponseBody().write(failure); exchange.close(); return;
+            }
+            if (target.equals("/config/old-value") || (target.equals("/config/active-value") && rejectSubjectConfig)) {
+                byte[] failure = "{\"message\":\"Configuration unavailable\"}".getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(target.equals("/config/old-value") ? 404 : 503, failure.length);
                 exchange.getResponseBody().write(failure); exchange.close(); return;
             }
             String response = switch (target) {
