@@ -342,6 +342,45 @@ public class DataServicesController {
                 "PUT", "/config", body, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
     }
 
+    /** Read the effective global or subject Schema Registry mode. */
+    @GetMapping({"/schema-registry/mode", "/schema-registry/subjects/{subject}/mode"})
+    public ResponseEntity<?> getSchemaRegistryMode(
+            @PathVariable UUID clusterId,
+            @PathVariable(required = false) String subject,
+            @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
+            @RequestParam(required = false) String protocol,
+            @RequestParam(required = false) String ip,
+            @RequestParam(required = false) Integer port,
+            @RequestParam(required = false) UUID connectionId) {
+        String path = subject == null ? "/mode" : "/mode/" + pathSeg(subject) + "?defaultToGlobal=true";
+        return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.SCHEMA_REGISTRY, connectionId),
+                "GET", path, null, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
+    }
+
+    /** Change mode only through the existing Schema Registry change permission. */
+    @PutMapping({"/schema-registry/mode", "/schema-registry/subjects/{subject}/mode"})
+    public ResponseEntity<?> updateSchemaRegistryMode(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable UUID clusterId,
+            @PathVariable(required = false) String subject,
+            @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
+            @RequestParam(required = false) String protocol,
+            @RequestParam(required = false) String ip,
+            @RequestParam(required = false) Integer port,
+            @RequestParam(required = false) UUID connectionId,
+            @RequestBody JsonNode body) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.SCHEMA_REGISTRY_CHANGE)) {
+            return unauthorized();
+        }
+        String mode = body.path("mode").asText("");
+        if (!"READONLY".equals(mode) && !"READWRITE".equals(mode)) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Mode must be READONLY or READWRITE."));
+        }
+        return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.SCHEMA_REGISTRY, connectionId),
+                "PUT", subject == null ? "/mode" : "/mode/" + pathSeg(subject),
+                objectMapper.createObjectNode().put("mode", mode), encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
+    }
+
     /** Get all versions for a subject, latest, and compatibility. */
     @GetMapping("/schema-registry/subjects/{subject}/details")
     public ResponseEntity<?> getSubjectDetails(
@@ -757,9 +796,17 @@ public class DataServicesController {
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 boolean schemaSubmission = "SCHEMA_REGISTRY".equals(serviceType) && "POST".equals(method)
                         && path.startsWith("/subjects/") && path.endsWith("/versions");
-                throw new DataServiceException(response.statusCode(),
-                        schemaSubmission && (response.statusCode() == 409 || response.statusCode() == 422)
-                                ? schemaValidationDetails(response.body()) : Map.of());
+                Map<String, String> details = schemaSubmission && (response.statusCode() == 409 || response.statusCode() == 422)
+                        ? schemaValidationDetails(response.body()) : Map.of();
+                if ("SCHEMA_REGISTRY".equals(serviceType) && "PUT".equals(method) && path.startsWith("/mode")) {
+                    JsonNode errorBody;
+                    try { errorBody = objectMapper.readTree(response.body()); }
+                    catch (Exception ignored) { errorBody = objectMapper.createObjectNode(); }
+                    if (errorBody != null && errorBody.path("error_code").asInt() == 42205) {
+                        details = Map.of("message", "Schema Registry mode changes are disabled. Enable mode.mutability=true in the registry configuration before changing mode.");
+                    }
+                }
+                throw new DataServiceException(response.statusCode(), details);
             }
             String responseBody = response.body();
             if (responseBody == null || responseBody.isBlank()) return objectMapper.createObjectNode();

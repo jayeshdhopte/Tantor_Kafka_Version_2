@@ -8,6 +8,7 @@ import { AnchoredMenu } from '../components/AnchoredMenu';
 import { readDataServiceSession, writeDataServiceSession } from '../utils/dataServiceSessionCache';
 import { compareSchemaFields } from '../utils/schemaFieldDiff';
 import { schemaSubmissionError } from '../utils/schemaSubmissionError';
+import { SchemaRegistrySettingModal } from '../components/SchemaRegistrySettingModal';
 import './DataServiceTabs.css';
 
 interface SchemaSubject {
@@ -96,7 +97,8 @@ const compatibilityOptions = [
   'FORWARD',
   'FORWARD_TRANSITIVE',
   'FULL',
-  'FULL_TRANSITIVE'
+  'FULL_TRANSITIVE',
+  'NONE'
 ];
 
 const errorMessage = (error: unknown, fallback: string): string =>
@@ -296,6 +298,11 @@ function CustomSelect({ value, onChange, options, placeholder, disabled, classNa
 }
 
 type View = 'list' | 'detail' | 'edit';
+interface PendingSetting {
+  kind: 'compatibility' | 'mode' | 'edit-compatibility';
+  subject?: string; oldValue: string; value: string; connectionId: string | null;
+}
+const modeOptions = [{ value: 'READONLY', label: 'Read only' }, { value: 'READWRITE', label: 'Read / Write' }];
 
 export function SchemaRegistry() {
   const { id } = useParams<{ id: string }>();
@@ -307,6 +314,11 @@ export function SchemaRegistry() {
   const [hasFetched, setHasFetched] = useState(initialSession?.hasFetched ?? false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [pendingSetting, setPendingSetting] = useState<PendingSetting | null>(null);
+  const [settingError, setSettingError] = useState<string | null>(null);
+  const [globalModeState, setGlobalModeState] = useState<{ context: string; value: string | null; error: string | null }>({ context: '', value: null, error: null });
+  const [subjectModeState, setSubjectModeState] = useState<{ context: string; value: string | null; error: string | null }>({ context: '', value: null, error: null });
   const [showConnection, setShowConnection] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<PendingSchemaDelete | null>(null);
@@ -348,6 +360,14 @@ export function SchemaRegistry() {
   const [clusterTruststore, setClusterTruststore] = useState<ClusterTruststoreInfo | null>(null);
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(initialSession?.selectedConnectionId ?? null);
   const loadRequestId = useRef(0);
+  const modeContext = `${id}:${selectedConnectionId}`;
+  const selectedSubject = selected?.subject;
+  const subjectModeContext = `${modeContext}:${selectedSubject}`;
+  const globalMode = globalModeState.context === modeContext ? globalModeState.value : null;
+  const subjectMode = subjectModeState.context === subjectModeContext ? subjectModeState.value : null;
+  const modeError = globalModeState.context === modeContext ? globalModeState.error : null;
+  const subjectModeError = subjectModeState.context === subjectModeContext ? subjectModeState.error : null;
+
 
   // Connection form state
   const [formConnectionName, setFormConnectionName] = useState('');
@@ -365,6 +385,7 @@ export function SchemaRegistry() {
   const [editingConnectionId, setEditingConnectionId] = useState<string | null>(null);
   const [globalCompatibility, setGlobalCompatibility] = useState(initialSession?.metadata?.globalCompatibility ?? 'BACKWARD');
   const [subjectCompatibility, setSubjectCompatibility] = useState('BACKWARD');
+  const [appliedGlobalCompatibility, setAppliedGlobalCompatibility] = useState(initialSession?.metadata?.globalCompatibility ?? 'BACKWARD');
   const [connectSaving, setConnectSaving] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
 
@@ -572,7 +593,7 @@ export function SchemaRegistry() {
       const compatibility = res.ok
         ? data.compatibilityLevel || data.compatibility || 'BACKWARD'
         : 'BACKWARD';
-      if (requestId === loadRequestId.current) setGlobalCompatibility(compatibility);
+      if (requestId === loadRequestId.current) { setGlobalCompatibility(compatibility); setAppliedGlobalCompatibility(compatibility); }
       return compatibility;
     } catch {
       if (requestId === loadRequestId.current) setGlobalCompatibility('BACKWARD');
@@ -632,6 +653,7 @@ export function SchemaRegistry() {
     if (!connectionId || connectionId === selectedConnectionId) return;
     loadRequestId.current += 1;
     setSelectedConnectionId(connectionId);
+    setPendingSetting(null); setSuccess(null); setSelected(null); setView('list');
     setSummary(null);
     setError(null);
     setHasFetched(true);
@@ -737,6 +759,42 @@ export function SchemaRegistry() {
       metadata: { globalCompatibility }
     });
   }, [globalCompatibility, hasFetched, id, selectedConnectionId, summary]);
+
+  useEffect(() => {
+    const abort = new AbortController();
+    if (!summary) return () => abort.abort();
+    const readMode = async (subject?: string) => {
+      try {
+        const path = subject ? `/subjects/${encodeURIComponent(subject)}/mode` : '/mode';
+        const query = selectedConnectionId ? `?${new URLSearchParams({ connectionId: selectedConnectionId })}` : '';
+        const response = await fetch(`/api/v1/clusters/${id}/data-services/schema-registry${path}${query}`, { signal: abort.signal });
+        const data = await response.json();
+        if (!response.ok || !data.mode) throw new Error(data.message || 'Unable to read Schema Registry mode.');
+        if (!abort.signal.aborted) {
+          if (subject) setSubjectModeState({ context: subjectModeContext, value: data.mode, error: null });
+          else setGlobalModeState({ context: modeContext, value: data.mode, error: null });
+        }
+      } catch (reason) {
+        if (!abort.signal.aborted) {
+          const message = errorMessage(reason, 'Unable to read Schema Registry mode.');
+          if (subject) setSubjectModeState({ context: subjectModeContext, value: null, error: message });
+          else setGlobalModeState({ context: modeContext, value: null, error: message });
+        }
+      }
+    };
+    void readMode();
+    if (selectedSubject) void readMode(selectedSubject);
+    return () => abort.abort();
+  }, [id, selectedConnectionId, selectedSubject, summary, modeContext, subjectModeContext]);
+
+  const requestSetting = (kind: PendingSetting['kind'], value: string, subject?: string) => {
+    if (!canManage || saving) return;
+    const oldValue = kind === 'mode' ? (subject ? subjectMode : globalMode)
+      : subject ? details?.compatibility : appliedGlobalCompatibility;
+    if (!oldValue || oldValue === value) return;
+    setSettingError(null); setSuccess(null);
+    setPendingSetting({ kind, value, subject, oldValue, connectionId: selectedConnectionId });
+  };
 
   const openSubject = async (item: SchemaSubject) => {
     setSelected(item);
@@ -850,10 +908,13 @@ export function SchemaRegistry() {
     }
   };
 
-  const submitEditSchema = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const submitEditSchema = async (e?: React.FormEvent, confirmed = false) => {
+    e?.preventDefault();
     if (!canManage) return;
     if (!selected || !newSchema.trim()) return;
+    if (!confirmed && editCompatibility !== (details?.compatibility ?? subjectCompatibility)) {
+      requestSetting('edit-compatibility', editCompatibility, selected.subject); return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -864,19 +925,24 @@ export function SchemaRegistry() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(schemaSubmissionError(data, 'Failed to update schema.'));
       // Also save compatibility if changed
-      if (editCompatibility !== subjectCompatibility) {
-        await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(selected.subject)}/config`), {
+      if (editCompatibility !== (details?.compatibility ?? subjectCompatibility)) {
+        const compatibilityResponse = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(selected.subject)}/config`), {
           method: 'PUT', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ compatibility: editCompatibility })
         });
+        const compatibilityData = await compatibilityResponse.json().catch(() => ({}));
+        if (!compatibilityResponse.ok) throw new Error(compatibilityData.message || 'Schema was saved, but compatibility could not be updated.');
         setSubjectCompatibility(editCompatibility);
+        setSuccess(`Subject ${selected.subject}: compatibility changed from ${details?.compatibility ?? subjectCompatibility} to ${editCompatibility}.`);
       }
       await load();
       // Reload detail
       const refreshed = summary?.subjects.find(s => s.subject === selected.subject) || selected;
       await openSubject(refreshed);
+      setPendingSetting(null);
     } catch (e: unknown) {
-      setError(errorMessage(e, 'Failed to update schema.'));
+      const message = errorMessage(e, 'Failed to update schema.');
+      setError(message); if (confirmed) setSettingError(message);
     } finally {
       setSaving(false);
     }
@@ -915,37 +981,31 @@ export function SchemaRegistry() {
     }
   };
 
-  const saveGlobalCompatibility = async (val: string) => {
-    setGlobalCompatibility(val);
-    if (!canManage) return;
-    setSaving(true); setError(null);
+  const confirmSetting = async () => {
+    const change = pendingSetting;
+    if (!change || !canManage || saving) return;
+    if (change.kind === 'edit-compatibility') { await submitEditSchema(undefined, true); return; }
+    setSaving(true); setSettingError(null); setError(null);
     try {
-      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/config`), {
+      const scopePath = change.subject ? `/subjects/${encodeURIComponent(change.subject)}` : '';
+      const path = scopePath + (change.kind === 'mode' ? '/mode' : '/config');
+      const response = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry${path}`, change.connectionId), {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ compatibility: val })
+        body: JSON.stringify({ [change.kind]: change.value })
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.message || 'Failed to update global compatibility.');
-    } catch (e: unknown) {
-      setError(errorMessage(e, 'Failed to update global compatibility.'));
-    } finally { setSaving(false); }
-  };
-
-  const saveSubjectCompatibility = async () => {
-    if (!canManage) return;
-    if (!selected) return;
-    setSaving(true); setError(null);
-    try {
-      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(selected.subject)}/config`), {
-        method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ compatibility: subjectCompatibility })
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.message || 'Failed to update subject compatibility.');
-      setDetails(prev => prev ? { ...prev, compatibility: subjectCompatibility } : prev);
-    } catch (e: unknown) {
-      setError(errorMessage(e, 'Failed to update subject compatibility.'));
-    } finally { setSaving(false); }
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || `Failed to update ${change.kind}.`);
+      if (change.kind === 'mode') {
+        if (change.subject) setSubjectModeState({ context: subjectModeContext, value: change.value, error: null });
+        else setGlobalModeState({ context: modeContext, value: change.value, error: null });
+      } else if (change.subject) {
+        setSubjectCompatibility(change.value);
+        setDetails(previous => previous ? { ...previous, compatibility: change.value } : previous);
+      } else { setGlobalCompatibility(change.value); setAppliedGlobalCompatibility(change.value); }
+      setSuccess(`${change.subject ? `Subject ${change.subject}` : 'Global'}: ${change.kind} changed from ${change.oldValue} to ${change.value}.`);
+      setPendingSetting(null);
+    } catch (reason) { setSettingError(errorMessage(reason, 'Unable to save Schema Registry setting.')); }
+    finally { setSaving(false); }
   };
 
   const connStatusColor = (s: string) =>
@@ -954,6 +1014,16 @@ export function SchemaRegistry() {
   // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Render ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
   return (
     <div className="data-services-page animate-fade-in">
+      {success && <div className="ds-settings-success" role="status">{success}<button aria-label="Dismiss notification" onClick={() => setSuccess(null)}><X size={16} /></button></div>}
+      {pendingSetting && <SchemaRegistrySettingModal
+        title={`Change ${pendingSetting.kind === 'mode' ? 'mode' : 'compatibility'}?`}
+        description={pendingSetting.kind === 'mode'
+          ? pendingSetting.value === 'READONLY' ? 'Read only mode prevents schema registration and deletion in this scope.' : 'Read / Write mode allows schema registration and deletion in this scope.'
+          : 'Change schema compatibility rules for future registrations? Existing schemas are retained.'}
+        detail={`${pendingSetting.subject ? `Subject: ${pendingSetting.subject}` : 'Global setting'} · ${pendingSetting.oldValue} → ${pendingSetting.value}${pendingSetting.kind === 'edit-compatibility' ? ' · The new schema version will also be submitted.' : ''}`}
+        saving={saving} error={settingError} onClose={() => { setPendingSetting(null); setSettingError(null); }}
+        onConfirm={() => void confirmSetting()} />}
+
 
       {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ LIST VIEW ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
       {view === 'list' && (
@@ -989,8 +1059,8 @@ export function SchemaRegistry() {
                   <CustomSelect
                     className="ds-compat-select"
                     value={globalCompatibility}
-                    onChange={saveGlobalCompatibility}
-                    disabled={!canManage}
+                    onChange={setGlobalCompatibility}
+                    disabled={!canManage || saving}
                     options={compatibilityOptions.map(o => ({
                       value: o,
                       label: o.charAt(0) + o.slice(1).toLowerCase().replace('_', ' ')
@@ -999,12 +1069,18 @@ export function SchemaRegistry() {
                 </div>
               </div>
 
+              <div className="ds-compat-control ds-mode-control">
+                <span>Global mode</span>
+                <CustomSelect value={globalMode ?? ''} placeholder="Mode unavailable" options={modeOptions}
+                  disabled={!canManage || saving || !globalMode || !summary} onChange={value => requestSetting('mode', value)} />
+                {modeError && <span className="ds-settings-error" role="alert">{modeError}</span>}
+              </div>
               <div className="ds-buttons-group">
                 {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Buttons ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
                 {canManage && (
                   <button
                     className="ds-sr-save-button"
-                    onClick={() => saveGlobalCompatibility(globalCompatibility)}
+                    onClick={() => requestSetting('compatibility', globalCompatibility)}
                     disabled={saving}
                     style={{
                       boxSizing: 'border-box',
@@ -1233,15 +1309,22 @@ export function SchemaRegistry() {
                     <CustomSelect
                       value={subjectCompatibility}
                       onChange={setSubjectCompatibility}
-                      disabled={!canManage || Boolean(selected.deleted)}
+                      disabled={!canManage || saving || Boolean(selected.deleted)}
                       options={compatibilityOptions.map(o => ({ value: o, label: o }))}
                     />
                     {canManage && !selected.deleted && (
-                      <button className="ds-icon-button ds-compat-save-btn" onClick={saveSubjectCompatibility} disabled={saving} title="Save">
+                      <button className="ds-icon-button ds-compat-save-btn" onClick={() => requestSetting('compatibility', subjectCompatibility, selected.subject)} disabled={saving} title="Save">
                         <FileDown size={16} />
                       </button>
                     )}
                   </div>
+                </div>
+                <div className="ds-meta-row ds-compat-row-block">
+                  <span>Subject mode</span>
+                  <CustomSelect value={subjectMode ?? ''} placeholder="Mode unavailable" options={modeOptions}
+                    disabled={!canManage || saving || !subjectMode || Boolean(selected.deleted)}
+                    onChange={value => requestSetting('mode', value, selected.subject)} />
+                  {subjectModeError && <span className="ds-settings-error" role="alert">{subjectModeError}</span>}
                 </div>
               </div>
             </div>

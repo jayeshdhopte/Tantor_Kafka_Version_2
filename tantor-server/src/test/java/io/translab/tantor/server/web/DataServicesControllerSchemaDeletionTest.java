@@ -28,6 +28,7 @@ import static org.mockito.Mockito.when;
 class DataServicesControllerSchemaDeletionTest {
     private HttpServer server;
     private final CopyOnWriteArrayList<String> requests = new CopyOnWriteArrayList<>();
+    private final CopyOnWriteArrayList<String> bodies = new CopyOnWriteArrayList<>();
 
     @AfterEach
     void stopServer() { if (server != null) server.stop(0); }
@@ -73,6 +74,69 @@ class DataServicesControllerSchemaDeletionTest {
         assertThat(requests).contains("DELETE /subjects/active-value/versions/2");
     }
 
+    @Test
+    void readsEffectiveModesAndForwardsScopedModeUpdates() throws Exception {
+        startServer();
+        var f = fixture(true);
+        int port = server.getAddress().getPort();
+        f.controller.getSchemaRegistryMode(f.clusterId, null, null, "http", "127.0.0.1", port, null);
+        f.controller.getSchemaRegistryMode(f.clusterId, "active-value", null, "http", "127.0.0.1", port, null);
+        var body = new ObjectMapper().readTree("{\"mode\":\"READONLY\"}");
+        assertThat(f.controller.updateSchemaRegistryMode(null, f.clusterId, null, null, "http", "127.0.0.1", port, null, body)
+                .getStatusCode().is2xxSuccessful()).isTrue();
+        f.controller.updateSchemaRegistryMode(null, f.clusterId, "active-value", null, "http", "127.0.0.1", port, null, body);
+        assertThat(requests).contains("GET /mode", "GET /mode/active-value?defaultToGlobal=true",
+                "PUT /mode", "PUT /mode/active-value");
+        assertThat(bodies).contains("{\"mode\":\"READONLY\"}");
+    }
+
+    @Test
+    void rejectsUnsupportedModesAndUnauthorizedWritesWithoutCallingRegistry() throws Exception {
+        startServer();
+        var f = fixture(true);
+        var body = new ObjectMapper().readTree("{\"mode\":\"IMPORT\"}");
+        assertThat(f.controller.updateSchemaRegistryMode(null, f.clusterId, null, null, "http", "127.0.0.1",
+                server.getAddress().getPort(), null, body).getStatusCode().value()).isEqualTo(400);
+        assertThat(requests).isEmpty();
+        var roles = mock(RoleAuthenticationUtil.class);
+        var denied = new DataServicesController(mock(ClusterRepository.class), mock(ExternalClusterRepository.class),
+                mock(HostRepository.class), new ObjectMapper(), mock(DataServiceConnectionService.class),
+                mock(EncryptionService.class), roles);
+        body = new ObjectMapper().readTree("{\"mode\":\"READWRITE\"}");
+        assertThat(denied.updateSchemaRegistryMode(null, f.clusterId, null, null, "http", "127.0.0.1",
+                server.getAddress().getPort(), null, body).getStatusCode().is2xxSuccessful()).isFalse();
+        assertThat(requests).isEmpty();
+    }
+
+    @Test
+    void forwardsNoneCompatibilityForGlobalAndSubjectSettings() throws Exception {
+        startServer();
+        var f = fixture(true);
+        var body = new ObjectMapper().readTree("{\"compatibility\":\"NONE\"}");
+        f.controller.updateGlobalCompatibility(null, f.clusterId, null, "http", "127.0.0.1", server.getAddress().getPort(), null, body);
+        f.controller.updateSubjectCompatibility(null, f.clusterId, "active-value", null, "http", "127.0.0.1", server.getAddress().getPort(), null, body);
+        assertThat(requests).contains("PUT /config", "PUT /config/active-value");
+        assertThat(bodies).contains("{\"compatibility\":\"NONE\"}");
+    }
+
+    @Test
+    void routesModeRequestsAndExplainsWhenRegistryDisallowsChanges() throws Exception {
+        startServer();
+        var f = fixture(true);
+        var mvc = org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(f.controller).build();
+        String base = "/api/v1/clusters/" + f.clusterId + "/data-services/schema-registry";
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(base + "/mode")
+                .param("protocol", "http").param("ip", "127.0.0.1").param("port", "" + server.getAddress().getPort()))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.mode").value("READWRITE"));
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put(base + "/subjects/locked/mode")
+                .param("protocol", "http").param("ip", "127.0.0.1").param("port", "" + server.getAddress().getPort())
+                .contentType("application/json").content("{\"mode\":\"READONLY\"}"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isUnprocessableEntity())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.message")
+                        .value(org.hamcrest.Matchers.containsString("mode.mutability=true")));
+    }
+
     private Fixture fixture(boolean permanentAllowed) {
         ClusterRepository clusters = mock(ClusterRepository.class);
         DataServiceConnectionService connections = mock(DataServiceConnectionService.class);
@@ -93,7 +157,14 @@ class DataServicesControllerSchemaDeletionTest {
         server.createContext("/", exchange -> {
             String target = exchange.getRequestURI().toString();
             requests.add(exchange.getRequestMethod() + " " + target);
+            bodies.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            if (target.equals("/mode/locked") && exchange.getRequestMethod().equals("PUT")) {
+                byte[] failure = "{\"error_code\":42205,\"message\":\"Mode changes are not allowed\"}".getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(422, failure.length);
+                exchange.getResponseBody().write(failure); exchange.close(); return;
+            }
             String response = switch (target) {
+                case "/mode", "/mode/active-value", "/mode/active-value?defaultToGlobal=true" -> "{\"mode\":\"READWRITE\"}";
                 case "/subjects" -> "[\"active-value\"]";
                 case "/subjects?deleted=true" -> "[\"active-value\",\"old-value\"]";
                 case "/subjects/active-value/versions/latest", "/subjects/active-value/versions/2?deleted=true" -> schema(2);
