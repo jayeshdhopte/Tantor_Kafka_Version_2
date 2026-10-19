@@ -36,6 +36,7 @@ interface TopicDetail {
   messageCount: number;
   storedBytes: number;
   segmentCount: number | null;
+  segmentCountUnavailableReason?: string | null;
   cleanupPolicy: string;
   partitions: PartitionDetail[];
 }
@@ -620,10 +621,10 @@ function OverviewTab({ detail }: { detail: TopicDetail }) {
     ['Replication factor', detail.replicationFactor.toLocaleString()],
     ['Under-replicated', detail.underReplicated.toLocaleString()],
     ['In-sync replicas', detail.inSyncReplicas + ' of ' + detail.totalReplicas],
-    ['Stored data', formatBytes(detail.storedBytes)],
+    ['Segment Size', formatBytes(detail.storedBytes)],
     ['Messages', detail.messageCount.toLocaleString()],
     ['Cleanup policy', detail.cleanupPolicy.toUpperCase()],
-    ['Segment count', detail.segmentCount === null ? 'Not exposed' : detail.segmentCount.toLocaleString()]
+    ['Segment Count', detail.segmentCount == null ? 'Unavailable' : detail.segmentCount.toLocaleString()]
   ];
   return (
     <div className="overview-tab">
@@ -639,8 +640,9 @@ function OverviewTab({ detail }: { detail: TopicDetail }) {
       </div>
       <div className="overview-note">
         <Gauge size={16} />
-        <span>Stored data is calculated from broker replica log sizes. Kafka does not expose physical segment count through the Admin API.</span>
+        <span>Segment Size shows topic log data excluding replica copies. Segment Count totals the segments on each partition's leader.</span>
       </div>
+      {detail.segmentCount == null && <div className="overview-note" role="status"><Gauge size={16} /><span>{detail.segmentCountUnavailableReason || 'Segment Count is unavailable. Check broker segment metrics.'}</span></div>}
       <div className="detail-table-wrap">
         <table className="detail-table">
           <thead>

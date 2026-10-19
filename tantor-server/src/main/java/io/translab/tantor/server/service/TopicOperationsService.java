@@ -33,6 +33,7 @@ public class TopicOperationsService {
     private static final int MAX_MESSAGES = 10_000;
     private final KafkaAdminService kafkaAdminService;
     private final AuditService auditService;
+    private final TopicSegmentMetricsService topicSegmentMetricsService;
 
     public Map<String, Object> getTopicDetails(UUID clusterId, String topicName) {
         AdminClient admin = kafkaAdminService.getAdminClient(clusterId);
@@ -87,7 +88,9 @@ public class TopicOperationsService {
             result.put("totalReplicas", description.partitions().stream().mapToInt(p -> p.replicas().size()).sum());
             result.put("messageCount", messageCount);
             result.put("storedBytes", storedBytes);
-            result.put("segmentCount", null);
+            var segments = topicSegmentMetricsService.segmentCount(clusterId, description);
+            result.put("segmentCount", segments.count());
+            result.put("segmentCountUnavailableReason", segments.unavailableReason());
             result.put("cleanupPolicy", configValue(config, "cleanup.policy", "delete"));
             result.put("partitions", partitions);
             return result;

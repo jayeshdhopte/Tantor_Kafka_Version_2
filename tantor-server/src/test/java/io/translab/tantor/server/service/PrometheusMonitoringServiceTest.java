@@ -52,6 +52,7 @@ class PrometheusMonitoringServiceTest {
         ClusterRepository clusters = mock(ClusterRepository.class);
         HostRepository hosts = mock(HostRepository.class);
         when(clusters.findByStatusNot("DELETED")).thenReturn(List.of(cluster));
+        when(clusters.findWithServicesById(cluster.getId())).thenReturn(Optional.of(cluster));
         when(hosts.findById("host-1")).thenReturn(Optional.of(host));
 
         PrometheusMonitoringService service = new PrometheusMonitoringService(
@@ -59,6 +60,9 @@ class PrometheusMonitoringServiceTest {
                 hosts, mock(EncryptionService.class), new ObjectMapper(),
                 mock(MonitoringRestTemplate.class), monitoringProperties());
         ReflectionTestUtils.setField(service, "kafkaExporterPortBase", 9308);
+
+        assertThat(service.brokerJmxTargets(cluster.getId()))
+                .containsExactlyEntriesOf(java.util.Map.of(1, "192.168.10.11:17071"));
 
         assertThat(service.prometheusTargets())
                 .extracting(

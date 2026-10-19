@@ -359,6 +359,29 @@ public class PrometheusMonitoringService {
         }
     }
 
+    /** Cluster-scoped broker exporter addresses, using the same topology as monitoring. */
+    @Transactional(readOnly = true)
+    public Map<Integer, String> brokerJmxTargets(UUID clusterId) {
+        List<SdTargetGroup> targets = new ArrayList<>();
+        var cluster = clusterRepository.findWithServicesById(clusterId);
+        if (cluster.isPresent()) {
+            if (isExternal(cluster.get())) addExternalJmxTargets(targets, cluster.get());
+            else addInternalTargets(targets, cluster.get());
+        } else {
+            externalClusterRepository.findById(clusterId).ifPresent(external -> addExternalJmxTargets(targets, external));
+        }
+        Map<Integer, String> brokers = new LinkedHashMap<>();
+        for (SdTargetGroup group : targets) {
+            Map<String, String> labels = group.getLabels();
+            if (!"kafka_jmx".equals(labels.get("job")) || !isBrokerRole(labels.get("role"))) continue;
+            try {
+                if (group.getTargets() != null && !group.getTargets().isEmpty())
+                    brokers.put(Integer.parseInt(labels.get("node_id")), group.getTargets().get(0));
+            } catch (NumberFormatException ignored) { /* No broker identity: cannot safely attribute metrics. */ }
+        }
+        return brokers;
+    }
+
     private void addJmxTarget(List<SdTargetGroup> targets, Cluster cluster, String hostIp, int port, String role, String nodeId) {
         if (port <= 0) {
             return;
