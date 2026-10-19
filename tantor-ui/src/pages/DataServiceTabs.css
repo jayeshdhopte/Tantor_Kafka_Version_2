@@ -2933,7 +2933,7 @@
 .ds-subject-search { flex: 1 1 300px; max-width: 440px; min-height: 42px; padding: 0 12px; border: 1px solid var(--border-default); border-radius: 8px; }
 .ds-subject-search input, .ds-subject-filter-search input { min-width: 0; width: 100%; border: 0; outline: none; background: transparent; color: var(--text-primary); font: inherit; padding: 10px 0; }
 .ds-subject-search:focus-within, .ds-subject-filter-search:focus-within { outline: 2px solid var(--button-primary); outline-offset: 2px; }
-.ds-subject-filter-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; padding: 8px 14px; border: 1px dashed var(--button-primary); border-radius: 8px; background: var(--bg-surface); color: var(--button-primary); font: inherit; font-weight: 600; cursor: pointer; }
+.ds-subject-filter-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; padding: 8px 14px; border: 1px solid var(--button-primary); border-radius: 8px; background: var(--bg-surface); color: var(--button-primary); font: inherit; font-weight: 600; cursor: pointer; }
 .ds-subject-filter-button.selected { background: #f4ecfc; border-style: solid; }
 .ds-subject-filter-badge { padding: 1px 6px; border-radius: 12px; background: var(--button-primary); color: #fff; font-size: 12px; }
 .ds-subject-filter-menu { width: min(320px, calc(100vw - 16px)); border: 1px solid var(--border-default); border-radius: 8px; background: var(--bg-surface, #fff); box-shadow: 0 6px 18px #0002; color: var(--text-primary); }
