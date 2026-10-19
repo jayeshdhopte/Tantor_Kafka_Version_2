@@ -28,6 +28,8 @@ class DataServicesControllerConnectorManagementTest {
     private final ObjectMapper mapper = new ObjectMapper();
     private final CopyOnWriteArrayList<String> requests = new CopyOnWriteArrayList<>();
     private boolean rejectRestart;
+    private String savedSourceConfig = "{\"connector.class\":\"SourcePlugin\"}";
+    private boolean rejectConfig;
     @AfterEach void close() { if (server != null) server.stop(0); }
 
     @Test void summaryIncludesNativeTypeWorkerTopicsAndActualTaskCounts() throws Exception {
@@ -81,6 +83,35 @@ class DataServicesControllerConnectorManagementTest {
                 .andExpect(jsonPath("$.backendStatus").value(409));
     }
 
+    @Test void configReadBeforeSaveAndReadBackUseTheNativeConfigApi() throws Exception {
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(controller(true)).build();
+        mvc.perform(target(get(base() + "/source/config"))).andExpect(status().isOk())
+                .andExpect(jsonPath("$['connector.class']").value("SourcePlugin"));
+        String updated = "{\"connector.class\":\"SourcePlugin\",\"tasks.max\":\"2\",\"topic\":\"orders-new\"}";
+        mvc.perform(target(put(base() + "/source/config")).contentType("application/json").content(updated))
+                .andExpect(status().isOk());
+        mvc.perform(target(get(base() + "/source/config"))).andExpect(status().isOk())
+                .andExpect(jsonPath("$['tasks.max']").value("2"))
+                .andExpect(jsonPath("$.topic").value("orders-new"));
+        assertThat(mapper.readTree(savedSourceConfig)).isEqualTo(mapper.readTree(updated));
+        assertThat(requests).containsExactly("GET /connectors/source/config", "PUT /connectors/source/config", "GET /connectors/source/config");
+    }
+
+    @Test void configValidationErrorsAreReturnedWithoutChangingStoredConfiguration() throws Exception {
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(controller(true)).build();
+        rejectConfig = true;
+        mvc.perform(target(put(base() + "/source/config")).contentType("application/json").content("{\"tasks.max\":\"invalid\"}"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.backendStatus").value(400));
+        assertThat(savedSourceConfig).isEqualTo("{\"connector.class\":\"SourcePlugin\"}");
+    }
+
+    @Test void configUpdatesStillRequireManagementPermission() throws Exception {
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(controller(false)).build();
+        mvc.perform(target(put(base() + "/source/config")).contentType("application/json").content("{}"))
+                .andExpect(status().is4xxClientError());
+        assertThat(requests).isEmpty();
+    }
+
     private String base() { return "/api/v1/clusters/" + id + "/data-services/kafka-connect/connectors"; }
     private MockHttpServletRequestBuilder target(MockHttpServletRequestBuilder request) {
         return request.param("protocol", "http").param("ip", "127.0.0.1").param("port", String.valueOf(server.getAddress().getPort()));
@@ -95,8 +126,13 @@ class DataServicesControllerConnectorManagementTest {
             if (path.equals("/")) body = "{\"version\":\"4.3.0\"}";
             else if (path.equals("/connectors")) body = "[\"source\",\"sink\",\"stopped\"]";
             else if (path.equals("/connector-plugins")) body = "[{\"class\":\"SinkPlugin\",\"type\":\"sink\"}]";
-            else if (path.endsWith("/config")) body = path.contains("/sink/")
-                    ? "{\"connector.class\":\"SinkPlugin\",\"consumer.override.group.id\":\"warehouse-readers\"}" : "{\"connector.class\":\"SourcePlugin\"}";
+            else if (path.endsWith("/config")) {
+                if (exchange.getRequestMethod().equals("PUT")) {
+                    if (rejectConfig) { status = 400; body = "{\"message\":\"Invalid configuration\"}"; }
+                    else { savedSourceConfig = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8); body = savedSourceConfig; }
+                } else body = path.contains("/sink/")
+                        ? "{\"connector.class\":\"SinkPlugin\",\"consumer.override.group.id\":\"warehouse-readers\"}" : savedSourceConfig;
+            }
             else if (path.endsWith("/status")) body = path.contains("/source/")
                     ? "{\"type\":\"source\",\"connector\":{\"state\":\"RUNNING\",\"worker_id\":\"worker1:8083\"},\"tasks\":[{\"id\":0,\"state\":\"RUNNING\"},{\"id\":1,\"state\":\"FAILED\",\"trace\":\"error trace\"}]}"
                     : path.contains("/sink/") ? "{\"connector\":{\"state\":\"RUNNING\"},\"tasks\":[{\"id\":0,\"state\":\"RUNNING\"}]}"

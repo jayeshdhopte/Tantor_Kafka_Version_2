@@ -752,6 +752,18 @@ public class DataServicesController {
                 "POST", "/connectors", body, encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
     }
 
+    /** Read the current config before editing or checking for concurrent changes. */
+    @GetMapping("/kafka-connect/connectors/{name}/config")
+    public ResponseEntity<?> getConnectorConfig(
+            @PathVariable UUID clusterId, @PathVariable String name,
+            @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
+            @RequestParam(required = false) String protocol, @RequestParam(required = false) String ip,
+            @RequestParam(required = false) Integer port, @RequestParam(required = false) UUID connectionId) {
+        return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.KAFKA_CONNECT, connectionId),
+                "GET", "/connectors/" + pathSeg(name) + "/config",
+                null, encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
+    }
+
     /** Update connector config. */
     @PutMapping("/kafka-connect/connectors/{name}/config")
     public ResponseEntity<?> updateConnectorConfig(
