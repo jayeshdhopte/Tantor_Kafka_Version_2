@@ -108,7 +108,7 @@ class DataServicesControllerDiscoveryTest {
         when(clusters.findById(cluster.getId())).thenReturn(Optional.of(cluster));
 
         return new Fixture(new DataServicesController(clusters, externalClusters, hosts,
-                new ObjectMapper(), connections, encryption, roles), cluster);
+                new ObjectMapper(), connections, encryption, roles, mock(io.translab.tantor.server.audit.AuditService.class)), cluster);
     }
 
     private HttpServer serverReturning(String path, String body) throws Exception {

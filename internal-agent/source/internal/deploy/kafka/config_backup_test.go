@@ -32,9 +32,11 @@ func TestBackupConfigUsesConfigFilenameAndTimestamp(t *testing.T) {
 	}
 	exec := &recordingExecutor{}
 	deployer := &Deployer{exec: exec}
+	configPath := filepath.Join(t.TempDir(), "config", "broker.properties")
+	os.MkdirAll(filepath.Join(filepath.Dir(configPath), "config-backup", "broker.properties"), 0700)
 	task := &api.Task{Parameters: map[string]string{"config_version": "7"}}
 
-	backupPath, err := deployer.backupConfig(context.Background(), task, "/opt/kafka/config/kraft/broker.properties")
+	backupPath, err := deployer.backupConfig(context.Background(), task, configPath)
 	if err != nil {
 		t.Fatalf("backupConfig returned error: %v", err)
 	}
@@ -52,7 +54,7 @@ func TestBackupConfigUsesConfigFilenameAndTimestamp(t *testing.T) {
 	if !strings.Contains(strings.Join(exec.commands, "\n"), "config-backup-index") {
 		t.Fatalf("seven-day retention was not registered: %v", exec.commands)
 	}
-	if !strings.Contains(strings.Join(exec.commands, "\n"), "cp -p /opt/kafka/config/kraft/broker.properties ") {
+	if !strings.Contains(strings.Join(exec.commands, "\n"), "cp -p "+configPath+" ") {
 		t.Fatalf("config backup copy was not recorded: %v", exec.commands)
 	}
 }

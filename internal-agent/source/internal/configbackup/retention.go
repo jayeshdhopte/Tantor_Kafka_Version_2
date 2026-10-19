@@ -16,11 +16,43 @@ import (
 
 const Registry = "/var/lib/tantor-agent/config-backup-index"
 const Retention = 7 * 24 * time.Hour
-const Timestamp = "20060102T150405.000000000Z"
+const Timestamp = "20060102T150405"
+const LegacyTimestamp = "20060102T150405.000000000Z"
 
-// Filename keeps the original config name and a UTC creation timestamp.
+var IST = time.FixedZone("IST", 5*60*60+30*60)
+
+// Filename keeps the original config name and an IST timestamp to the second.
 func Filename(configPath string, created time.Time) string {
-	return filepath.Base(configPath) + ".bak." + created.UTC().Format(Timestamp)
+	return filepath.Base(configPath) + ".bak." + created.In(IST).Format(Timestamp)
+}
+
+// ReservePath atomically prevents same-second backups from overwriting each other.
+func ReservePath(directory, configPath string, created time.Time) (string, error) {
+	base := filepath.Join(directory, Filename(configPath, created))
+	for n := 0; n < 10000; n++ {
+		path := base
+		if n > 0 {
+			path = fmt.Sprintf("%s.%d", base, n)
+		}
+		if _, err := os.Lstat(path + ".dynamic.json"); err == nil {
+			continue
+		} else if !os.IsNotExist(err) {
+			return "", err
+		}
+		file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if os.IsExist(err) {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		if err = file.Close(); err != nil {
+			os.Remove(path)
+			return "", err
+		}
+		return path, nil
+	}
+	return "", fmt.Errorf("too many configuration backups in the same second")
 }
 
 var legacyBackupName = regexp.MustCompile(`^v[A-Za-z0-9._-]+-([0-9]{8}T[0-9]{6}\.[0-9]{9}Z)\.(bak|dynamic\.json)$`)
@@ -79,7 +111,7 @@ func Sweep(registry string, now time.Time) error {
 			failures = append(failures, err.Error())
 			continue
 		}
-		backupName := regexp.MustCompile(`^` + regexp.QuoteMeta(filepath.Base(dir)) + `\.bak\.([0-9]{8}T[0-9]{6}\.[0-9]{9}Z)(?:\.dynamic\.json)?$`)
+		backupName := regexp.MustCompile(`^` + regexp.QuoteMeta(filepath.Base(dir)) + `\.bak\.([0-9]{8}T[0-9]{6}(?:\.[0-9]{9}(?:Z|[+-][0-9]{4}))?)(?:\.[1-9][0-9]*)?(?:\.dynamic\.json)?$`)
 		for _, file := range files {
 			if !file.Type().IsRegular() {
 				continue
@@ -91,8 +123,16 @@ func Sweep(registry string, now time.Time) error {
 			if match == nil {
 				continue
 			}
-			created, err := time.Parse(Timestamp, match[1])
-			if err != nil || !created.Before(now.Add(-Retention)) {
+			created, err := time.ParseInLocation(Timestamp, match[1], IST)
+			cutoff := now.Add(-Retention).Truncate(time.Second)
+			if strings.Contains(match[1], ".") {
+				created, err = time.Parse(LegacyTimestamp, match[1])
+				if err != nil {
+					created, err = time.Parse("20060102T150405.000000000-0700", match[1])
+				}
+				cutoff = now.Add(-Retention)
+			}
+			if err != nil || !created.Before(cutoff) {
 				continue
 			}
 			if err := os.Remove(filepath.Join(dir, file.Name())); err != nil {

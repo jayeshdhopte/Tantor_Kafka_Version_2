@@ -1790,15 +1790,18 @@ func (d *Deployer) backupConfig(ctx context.Context, t *api.Task, configPath str
 		return "", fmt.Errorf("active configuration file does not exist at %s; no changes were applied", configPath)
 	}
 	backupDir := filepath.Join(filepath.Dir(configPath), "config-backup", filepath.Base(configPath))
-	backupName := configbackup.Filename(configPath, time.Now())
-	backupPath := filepath.Join(backupDir, backupName)
 	if out, errOut, err := d.exec.RunSudo(ctx, "mkdir", "-p", "-m", "0700", "--", backupDir); err != nil {
 		return "", fmt.Errorf("failed to create config backup directory: %w (%s %s)", err, out, errOut)
 	}
 	if _, detail, err := d.exec.RunSudo(ctx, "chmod", "0700", "--", backupDir); err != nil {
 		return "", fmt.Errorf("secure backup directory: %w (%s)", err, detail)
 	}
+	backupPath, err := configbackup.ReservePath(backupDir, configPath, time.Now())
+	if err != nil {
+		return "", fmt.Errorf("reserve configuration backup: %w", err)
+	}
 	if out, errOut, err := d.exec.RunSudo(ctx, "cp", "-p", configPath, backupPath); err != nil {
+		os.Remove(backupPath)
 		return "", fmt.Errorf("failed to back up existing config: %w (%s %s)", err, out, errOut)
 	}
 	if err := configbackup.Register(ctx, d.exec, backupDir); err != nil {

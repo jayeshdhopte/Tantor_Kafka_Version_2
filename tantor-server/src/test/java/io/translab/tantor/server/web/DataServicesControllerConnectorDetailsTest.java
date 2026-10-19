@@ -46,7 +46,7 @@ class DataServicesControllerConnectorDetailsTest {
             DataServicesController controller = new DataServicesController(clusters,
                     mock(ExternalClusterRepository.class), mock(HostRepository.class), new ObjectMapper(),
                     mock(DataServiceConnectionService.class), mock(EncryptionService.class),
-                    mock(RoleAuthenticationUtil.class));
+                    mock(RoleAuthenticationUtil.class), mock(io.translab.tantor.server.audit.AuditService.class));
 
             Map<String, Object> summary = (Map<String, Object>) controller.kafkaConnectSummary(clusterId,
                     null, "http", "127.0.0.1", server.getAddress().getPort(), null).getBody();

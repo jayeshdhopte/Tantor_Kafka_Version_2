@@ -17,6 +17,9 @@ import io.translab.tantor.server.dto.SaveConnectionRequest;
 import io.translab.tantor.server.util.RoleAuthenticationUtil;
 import io.translab.tantor.server.util.SslUtils;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import io.translab.tantor.server.audit.AuditService;
+import java.util.function.Supplier;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
@@ -43,6 +46,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/clusters/{clusterId}/data-services")
 @RequiredArgsConstructor
+@Slf4j
 public class DataServicesController {
 
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(8);
@@ -54,6 +58,7 @@ public class DataServicesController {
     private final DataServiceConnectionService dataServiceConnectionService;
     private final EncryptionService encryptionService;
     private final RoleAuthenticationUtil roleAuthenticationUtil;
+    private final AuditService auditService;
     private final HttpClient defaultHttpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(3))
             .build();
@@ -507,15 +512,17 @@ public class DataServicesController {
             @RequestParam(required = false) Integer port,
             @RequestParam(required = false) UUID connectionId,
             @RequestParam(defaultValue = "false") boolean permanent) {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.SCHEMA_REGISTRY_CHANGE)) {
-            return unauthorized();
-        }
-        if (permanent && !roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.SCHEMA_REGISTRY_PERMANENT_DELETE)) {
-            return unauthorized();
-        }
-        return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.SCHEMA_REGISTRY, connectionId),
-                "DELETE", "/subjects/" + pathSeg(subject) + (permanent ? "?permanent=true" : ""),
-                null, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
+        return auditedDeletion("SCHEMA_REGISTRY_SUBJECT_DELETE", "SCHEMA_SUBJECT", clusterId, connectionId, subject, null, permanent, () -> {
+            if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.SCHEMA_REGISTRY_CHANGE)) {
+                return unauthorized();
+            }
+            if (permanent && !roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.SCHEMA_REGISTRY_PERMANENT_DELETE)) {
+                return unauthorized();
+            }
+            return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.SCHEMA_REGISTRY, connectionId),
+                    "DELETE", "/subjects/" + pathSeg(subject) + (permanent ? "?permanent=true" : ""),
+                    null, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
+        });
     }
 
     /** Delete a specific schema version. */
@@ -531,19 +538,21 @@ public class DataServicesController {
             @RequestParam(required = false) Integer port,
             @RequestParam(required = false) UUID connectionId,
             @RequestParam(defaultValue = "false") boolean permanent) {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.SCHEMA_REGISTRY_CHANGE)) {
-            return unauthorized();
-        }
-        if (permanent && !roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.SCHEMA_REGISTRY_PERMANENT_DELETE)) {
-            return unauthorized();
-        }
-        if (!version.matches("[1-9][0-9]*")) {
-            throw new IllegalArgumentException("A numbered schema version is required for deletion.");
-        }
-        return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.SCHEMA_REGISTRY, connectionId),
-                "DELETE", "/subjects/" + pathSeg(subject) + "/versions/" + version
-                        + (permanent ? "?permanent=true" : ""),
-                null, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
+        return auditedDeletion("SCHEMA_REGISTRY_VERSION_DELETE", "SCHEMA_VERSION", clusterId, connectionId, subject, version, permanent, () -> {
+            if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.SCHEMA_REGISTRY_CHANGE)) {
+                return unauthorized();
+            }
+            if (permanent && !roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.SCHEMA_REGISTRY_PERMANENT_DELETE)) {
+                return unauthorized();
+            }
+            if (!version.matches("[1-9][0-9]*")) {
+                throw new IllegalArgumentException("A numbered schema version is required for deletion.");
+            }
+            return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.SCHEMA_REGISTRY, connectionId),
+                    "DELETE", "/subjects/" + pathSeg(subject) + "/versions/" + version
+                            + (permanent ? "?permanent=true" : ""),
+                    null, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
+        });
     }
 
     /** Update subject-level compatibility. */
@@ -816,12 +825,14 @@ public class DataServicesController {
             @RequestParam(required = false) String ip,
             @RequestParam(required = false) Integer port,
             @RequestParam(required = false) UUID connectionId) {
-        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.KAFKA_CONNECT_CHANGE)) {
-            return unauthorized();
-        }
-        return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.KAFKA_CONNECT, connectionId),
-                "DELETE", "/connectors/" + pathSeg(name),
-                null, encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
+        return auditedDeletion("KAFKA_CONNECT_CONNECTOR_DELETE", "KAFKA_CONNECT_CONNECTOR", clusterId, connectionId, name, null, true, () -> {
+            if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.KAFKA_CONNECT_CHANGE)) {
+                return unauthorized();
+            }
+            return forwardJson(customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.KAFKA_CONNECT, connectionId),
+                    "DELETE", "/connectors/" + pathSeg(name),
+                    null, encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
+        });
     }
 
     /** Get tasks for a connector. */
@@ -865,6 +876,38 @@ public class DataServicesController {
     }
 
     // ── Forwarding / request helpers ─────────────────────────────────────────
+
+    private ResponseEntity<?> auditedDeletion(String action, String resourceType, UUID clusterId,
+            UUID connectionId, String name, String version, boolean permanent, Supplier<ResponseEntity<?>> operation) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("operation", "DELETE");
+        details.put("name", name);
+        details.put("deletionMode", permanent ? "PERMANENT" : "SOFT");
+        if (version != null) details.put("version", version);
+        if (connectionId != null) details.put("connectionId", connectionId.toString());
+        try {
+            ResponseEntity<?> response = operation.get();
+            details.put("httpStatus", response.getStatusCode().value());
+            recordDeletionAudit(action, resourceType, clusterId, name, response.getStatusCode().is2xxSuccessful() ? "SUCCESS" : "FAILED", details);
+            return response;
+        } catch (RuntimeException failure) {
+            details.put("errorType", failure.getClass().getSimpleName());
+            if (failure instanceof DataServiceException upstream) details.put("httpStatus", upstream.statusCode());
+            recordDeletionAudit(action, resourceType, clusterId, name, "FAILED", details);
+            throw failure;
+        }
+    }
+
+    private void recordDeletionAudit(String action, String resourceType, UUID clusterId,
+            String resource, String status, Map<String, Object> details) {
+        try {
+            auditService.record("CLUSTER_CHANGE", action, resourceType, resource, clusterId, status,
+                    null, null, null, details);
+        } catch (RuntimeException failure) {
+            // A completed deletion must not appear to fail because audit storage is unavailable.
+            log.error("Unable to persist data service deletion audit event ({})", failure.getClass().getSimpleName());
+        }
+    }
 
     private ResponseEntity<?> forwardJson(String baseUrl, String method, String path,
                                            JsonNode body, String encodedCert,

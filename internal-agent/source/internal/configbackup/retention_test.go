@@ -20,10 +20,10 @@ func TestRetentionUsesCheckpointAgeAndPreservesUnmanagedFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)
-	old := "v7-" + now.Add(-Retention-time.Second).Format(Timestamp) + ".bak"
-	snapshot := "v7-" + now.Add(-Retention-time.Second).Format(Timestamp) + ".dynamic.json"
-	boundary := "v7-" + now.Add(-Retention).Format(Timestamp) + ".bak"
-	fresh := "v7-" + now.Format(Timestamp) + ".bak"
+	old := "v7-" + now.Add(-Retention-time.Second).Format(LegacyTimestamp) + ".bak"
+	snapshot := "v7-" + now.Add(-Retention-time.Second).Format(LegacyTimestamp) + ".dynamic.json"
+	boundary := "v7-" + now.Add(-Retention).Format(LegacyTimestamp) + ".bak"
+	fresh := "v7-" + now.Format(LegacyTimestamp) + ".bak"
 	for _, name := range []string{old, snapshot, boundary, fresh, "operator-backup.bak"} {
 		p := filepath.Join(dir, name)
 		if err := os.WriteFile(p, []byte("config"), 0600); err != nil {
@@ -56,7 +56,7 @@ func TestRetentionRejectsRedirectedDirectoryAndSkipsFileLinks(t *testing.T) {
 		os.MkdirAll(p, 0700)
 	}
 	now := time.Now().UTC()
-	name := "v1-" + now.Add(-8*24*time.Hour).Format(Timestamp) + ".bak"
+	name := "v1-" + now.Add(-8*24*time.Hour).Format(LegacyTimestamp) + ".bak"
 	file := filepath.Join(target, name)
 	os.WriteFile(file, []byte("keep"), 0600)
 	if err := os.Symlink(file, filepath.Join(dir, name)); err != nil {
@@ -91,7 +91,7 @@ func TestRetentionIncludesLegacyHiddenBackups(t *testing.T) {
 		}
 	}
 	now := time.Now().UTC()
-	old := filepath.Join(dir, "v1-"+now.Add(-8*24*time.Hour).Format(Timestamp)+".bak")
+	old := filepath.Join(dir, "v1-"+now.Add(-8*24*time.Hour).Format(LegacyTimestamp)+".bak")
 	if err := os.WriteFile(old, []byte("preserved"), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -119,9 +119,9 @@ func TestTimestampNamedBackupsAndSnapshotsExpireAlongsideLegacyFiles(t *testing.
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
-	oldStamp := now.Add(-Retention - time.Second).Format(Timestamp)
+	oldStamp := now.Add(-Retention - time.Second).Format(LegacyTimestamp)
 	expired := []string{"broker.properties.bak." + oldStamp, "broker.properties.bak." + oldStamp + ".dynamic.json", "vjob-uuid-" + oldStamp + ".bak"}
-	preserved := []string{"broker.properties.bak." + now.Add(-Retention).Format(Timestamp), "broker.properties.bak." + now.Format(Timestamp), "controller.properties.bak." + oldStamp, "operator-backup.bak"}
+	preserved := []string{"broker.properties.bak." + now.Add(-Retention).Format(LegacyTimestamp), "broker.properties.bak." + now.Format(LegacyTimestamp), "controller.properties.bak." + oldStamp, "operator-backup.bak"}
 	for _, name := range append(expired, preserved...) {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("config"), 0600); err != nil {
 			t.Fatal(err)
@@ -142,15 +142,60 @@ func TestTimestampNamedBackupsAndSnapshotsExpireAlongsideLegacyFiles(t *testing.
 	}
 }
 
-func TestFilenameUsesOriginalConfigNameAndUTCNanosecondTimestamp(t *testing.T) {
-	created := time.Date(2026, 10, 12, 18, 0, 45, 123456789, time.FixedZone("IST", 19800))
+func TestFilenameUsesOriginalConfigNameAndISTSeconds(t *testing.T) {
+	created := time.Date(2026, 10, 13, 13, 53, 2, 123456789, time.UTC)
 	for _, name := range []string{"broker.properties", "controller.properties", "server.properties"} {
-		want := name + ".bak.20261012T123045.123456789Z"
+		want := name + ".bak.20261013T192302"
 		if actual := Filename(filepath.Join("config", name), created); actual != want {
 			t.Fatalf("got %s want %s", actual, want)
 		}
-		if Filename(name, created) == Filename(name, created.Add(time.Nanosecond)) {
-			t.Fatal("successive timestamps collided")
+	}
+}
+
+func TestISTBackupsCollisionsAndRetention(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "config-backup", "broker.properties")
+	registry := filepath.Join(root, "index")
+	for _, p := range []string{dir, registry} {
+		if err := os.MkdirAll(p, 0700); err != nil {
+			t.Fatal(err)
 		}
+	}
+	os.WriteFile(filepath.Join(registry, "test.path"), []byte(dir), 0600)
+	now := time.Date(2026, 10, 14, 12, 0, 0, 500000000, time.UTC)
+	old := now.Add(-Retention - time.Second)
+	first, err := ReservePath(dir, "broker.properties", old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(first, []byte("first"), 0600)
+	second, err := ReservePath(dir, "broker.properties", old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second != first+".1" {
+		t.Fatalf("collision path %s", second)
+	}
+	data, _ := os.ReadFile(first)
+	if string(data) != "first" {
+		t.Fatal("backup overwritten")
+	}
+	os.WriteFile(second+".dynamic.json", []byte("snapshot"), 0600)
+	boundary, err := ReservePath(dir, "broker.properties", now.Add(-Retention))
+	if err != nil {
+		t.Fatal(err)
+	}
+	offset := filepath.Join(dir, "broker.properties.bak."+old.In(IST).Format("20060102T150405.000000000-0700"))
+	os.WriteFile(offset, []byte("legacy offset backup"), 0600)
+	if err := Sweep(registry, now); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{first, second, second + ".dynamic.json", offset} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("expired file remains: %s", path)
+		}
+	}
+	if _, err := os.Stat(boundary); err != nil {
+		t.Fatal("retention boundary removed", err)
 	}
 }

@@ -150,6 +150,6 @@ class DataServicesControllerConnectorManagementTest {
         ClusterRepository clusters = mock(ClusterRepository.class); when(clusters.findById(id)).thenReturn(Optional.of(cluster));
         RoleAuthenticationUtil roles = mock(RoleAuthenticationUtil.class); when(roles.canAccess(null, RoleAuthenticationUtil.KAFKA_CONNECT_CHANGE)).thenReturn(admin);
         return new DataServicesController(clusters, mock(ExternalClusterRepository.class), mock(HostRepository.class), mapper,
-                mock(DataServiceConnectionService.class), mock(EncryptionService.class), roles);
+                mock(DataServiceConnectionService.class), mock(EncryptionService.class), roles, mock(io.translab.tantor.server.audit.AuditService.class));
     }
 }

@@ -2846,7 +2846,10 @@
 .ds-subject-filter-option input, .ds-subject-deleted input { width: 17px; height: 17px; accent-color: var(--button-primary); flex: none; }
 .ds-subject-filter-option small { margin-left: auto; color: var(--text-secondary); }
 .ds-subject-deleted { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 14px; cursor: pointer; }
-.ds-subject-filter-reset { border: 0; background: transparent; padding: 8px 12px; color: var(--button-primary); font: inherit; font-size: 13px; cursor: pointer; text-decoration: underline; }
+.ds-subject-filter-reset { display: inline-flex; align-items: center; justify-content: center; min-height: 36px; border: 1px solid var(--button-primary); border-radius: 8px; background: var(--bg-surface); padding: 8px 12px; color: var(--button-primary); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
+.ds-subject-filter-reset:hover { background: #f4ecfc; }
+.ds-subject-filter-reset:focus-visible { outline: 2px solid var(--button-primary); outline-offset: 2px; }
+.ds-subject-filter-footer { display: flex; justify-content: flex-end; padding: 10px 12px; border-top: 1px solid var(--border-default); }
 .ds-subject-filter-empty { margin: 8px; font-size: 13px; color: var(--text-secondary); }
 .ds-subject-results { margin-left: auto; color: var(--text-secondary); font-size: 13px; }
 @media (max-width: 600px) { .ds-subject-search { max-width: none; flex-basis: 100%; } .ds-subject-results { margin-left: 0; } }

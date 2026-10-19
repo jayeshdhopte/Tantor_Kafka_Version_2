@@ -33,7 +33,7 @@ export function SchemaSubjectFilter({ label, options, selected, counts, onChange
           </label>)}
           {!matches.length && <p className="ds-subject-filter-empty">No matching options.</p>}
         </div>
-        {selected.length > 0 && <button type="button" className="ds-subject-filter-reset" onClick={() => onChange([])}>Clear {label.toLowerCase()}</button>}
+        {selected.length > 0 && <div className="ds-subject-filter-footer"><button type="button" className="ds-subject-filter-reset" onClick={() => onChange([])}>Clear {label.toLowerCase()}</button></div>}
       </div>
     </AnchoredMenu>}
   </>;

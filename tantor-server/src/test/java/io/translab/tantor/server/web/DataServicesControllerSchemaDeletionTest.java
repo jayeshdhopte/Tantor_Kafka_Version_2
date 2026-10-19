@@ -102,7 +102,7 @@ class DataServicesControllerSchemaDeletionTest {
         var roles = mock(RoleAuthenticationUtil.class);
         var denied = new DataServicesController(mock(ClusterRepository.class), mock(ExternalClusterRepository.class),
                 mock(HostRepository.class), new ObjectMapper(), mock(DataServiceConnectionService.class),
-                mock(EncryptionService.class), roles);
+                mock(EncryptionService.class), roles, mock(io.translab.tantor.server.audit.AuditService.class));
         body = new ObjectMapper().readTree("{\"mode\":\"READWRITE\"}");
         assertThat(denied.updateSchemaRegistryMode(null, f.clusterId, null, null, "http", "127.0.0.1",
                 server.getAddress().getPort(), null, body).getStatusCode().is2xxSuccessful()).isFalse();
@@ -176,7 +176,7 @@ class DataServicesControllerSchemaDeletionTest {
         when(roles.canAccess(null, RoleAuthenticationUtil.SCHEMA_REGISTRY_CHANGE)).thenReturn(true);
         when(roles.canAccess(null, RoleAuthenticationUtil.SCHEMA_REGISTRY_PERMANENT_DELETE)).thenReturn(permanentAllowed);
         return new Fixture(new DataServicesController(clusters, mock(ExternalClusterRepository.class), mock(HostRepository.class),
-                new ObjectMapper(), connections, mock(EncryptionService.class), roles), clusterId);
+                new ObjectMapper(), connections, mock(EncryptionService.class), roles, mock(io.translab.tantor.server.audit.AuditService.class)), clusterId);
     }
 
     private void startServer() throws Exception {
