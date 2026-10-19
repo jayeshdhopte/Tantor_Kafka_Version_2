@@ -1,0 +1,25 @@
+.service-directories { min-width: 0; margin-top: 20px; }
+.service-directories-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-left: 3px solid #3E1363; border-radius: 6px; background: #EEF0F3; }
+.service-directories-heading h3 { min-width: 0; margin: 0; color: #3E1363; font-size: 16px; font-weight: 600; line-height: 24px; overflow-wrap: anywhere; }
+.service-directories-heading button { display: grid; place-items: center; flex: 0 0 32px; width: 32px; height: 32px; padding: 0; border: 1px solid #D2D2D7; border-radius: 6px; background: #FFFFFF; color: #3E1363; cursor: pointer; }
+.service-directories-heading button:disabled { opacity: .5; cursor: not-allowed; }
+.service-directories-heading button:hover:not(:disabled) { background: #F5EFFA; }
+.service-directories-heading button:focus-visible { outline: 2px solid #3E1363; outline-offset: 2px; }
+.service-directories-heading:has(.service-directories-toggle) h3 { flex: 1; }
+.service-directories-heading .service-directories-toggle { display: flex; align-items: center; justify-content: flex-start; gap: 10px; width: 100%; height: auto; min-height: 32px; border: 0; border-radius: 3px; background: transparent; color: inherit; font: inherit; text-align: left; }
+.service-directories-heading .service-directories-toggle:hover:not(:disabled) { background: transparent; }
+.service-directories-toggle svg { flex-shrink: 0; }
+.service-directories-toggle svg.expanded { transform: rotate(180deg); }
+.service-directories-content[hidden] { display: none; }
+.service-directories-content > p { margin: 16px 0; color: #667085; font-size: 13px; line-height: 20px; }
+.service-directories-content > .service-directories-error { color: #B42318; }
+.service-directory-instance { min-width: 0; padding: 16px 0; }
+.service-directory-instance + .service-directory-instance { border-top: 1px solid #E4E7EC; }
+.service-directory-instance h4 { margin: 0 0 4px; color: #332849; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.service-directory-instance > p { margin: 0 0 16px; color: #667085; font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
+.service-directory-instance dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 0; }
+.service-directory-instance dl > div { min-width: 0; }
+.service-directory-instance dt { margin-bottom: 6px; color: #596174; font-size: 12px; font-weight: 600; line-height: 18px; }
+.service-directory-instance dd { min-width: 0; margin: 0; }
+.service-directory-instance code { display: block; box-sizing: border-box; max-width: 100%; padding: 8px 10px; border-left: 2px solid #D6C5E7; border-radius: 4px; background: #FAFAFC; color: #3E1363; font-size: 13px; line-height: 20px; white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 640px) { .service-directory-instance dl { grid-template-columns: minmax(0, 1fr); } }

@@ -1,0 +1,155 @@
+/* Overview's heading and table treatment, limited to the sibling cluster tabs. */
+.cluster-details-page .cluster-nodes-page > .page-header,
+.cluster-details-page .brokers-dashboard > .brokers-list-header,
+.cluster-details-page .topics-page > .topics-title-row,
+.cluster-details-page .partitions-tab > .topics-header,
+.cluster-details-page .consumers-tab > .consumers-header,
+.cluster-details-page .data-services-page .ds-header,
+.cluster-details-page .deployment-log-view > .deployment-log-heading,
+.cluster-details-page .cluster-security-page .security-manager > div:first-child {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  background: #EEF0F3;
+  border-left: 3px solid var(--button-primary, #3E1363);
+  border-radius: 6px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.cluster-details-page .cluster-nodes-page .cluster-section-heading,
+.cluster-details-page .brokers-dashboard .brokers-list-title,
+.cluster-details-page .topics-page .topics-title-row h2,
+.cluster-details-page .partitions-tab .cluster-section-heading,
+.cluster-details-page .consumers-tab .cluster-section-heading,
+.cluster-details-page .deployment-log-view .deployment-log-heading h2 {
+  margin: 0;
+  min-width: 0;
+  color: #3E1363;
+  font-family: 'Satoshi', sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 22px;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+.cluster-details-page .topics-page .topics-title-row p {
+  margin: 4px 0 0;
+  color: #667085;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.cluster-details-page .brokers-dashboard .brokers-controls,
+.cluster-details-page .topics-page .topics-title-actions,
+.cluster-details-page .data-services-page .ds-header .ds-actions,
+.cluster-details-page .data-services-page .ds-header .ds-buttons-group {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.cluster-details-page .cluster-nodes-page .cluster-nodes-table th,
+.cluster-details-page .brokers-dashboard .brokers-table-container th,
+.cluster-details-page .topics-page .topics-table th,
+.cluster-details-page .consumers-tab .consumer-groups-table th,
+.cluster-details-page .data-services-page .ds-panel > .ds-table th {
+  background: #FFFFFF;
+  color: var(--button-primary, #3E1363);
+  font-family: 'Satoshi', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 22px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.cluster-details-page .consumers-tab .consumer-sort-button {
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.cluster-details-page .partitions-tab .figma-table-header {
+  background: #FFFFFF;
+}
+
+.cluster-details-page .cluster-security-page .security-manager > .table-container {
+  scrollbar-gutter: auto;
+}
+
+/* These two existing tables declare their heading typography inline. */
+.cluster-details-page .partitions-tab .figma-table-header > div,
+.cluster-details-page .cluster-security-page .security-manager > .table-container th {
+  background: #FFFFFF;
+  color: var(--button-primary, #3E1363) !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  line-height: 22px;
+  letter-spacing: 0;
+}
+
+.cluster-details-page .cluster-nodes-page .cluster-node-host,
+.cluster-details-page .topics-page .topic-name-cell > button,
+.cluster-details-page .consumers-tab .consumer-group-id,
+.cluster-details-page .data-services-page .ds-subject-link,
+.cluster-details-page .data-services-page .ds-connector-link {
+  color: #332849;
+  font-weight: 500;
+}
+
+.cluster-details-page .brokers-dashboard .figma-card .card-header {
+  padding: 8px 10px;
+  border-left: 2px solid #D6C5E7;
+  border-radius: 4px;
+  background: #EEF0F3;
+}
+
+.cluster-details-page .brokers-dashboard .figma-card .label,
+.cluster-details-page .data-services-page .ds-sr-metrics .ds-metric-card > span {
+  color: #667085;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 19px;
+}
+
+.cluster-details-page .data-services-page .ds-sr-metrics .ds-metric-card,
+.cluster-details-page .data-services-page .ds-kc-metrics .ds-kc-metric-card {
+  min-width: 0;
+  border: 1px solid #E1E7EC;
+  border-radius: 8px;
+  background: #FFFFFF;
+  box-shadow: 0 1px 2px rgba(40, 47, 73, 0.04);
+}
+
+.cluster-details-page .data-services-page .ds-kc-metric-card > span {
+  color: #667085 !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  line-height: 19px;
+}
+
+@media (max-width: 760px) {
+  .cluster-details-page .brokers-dashboard .brokers-overview-gradient {
+    grid-template-columns: 1fr;
+  }
+
+  .cluster-details-page .data-services-page .ds-kc-metrics {
+    flex-wrap: wrap;
+  }
+
+  .cluster-details-page .data-services-page .ds-kc-metrics .ds-kc-metric-card {
+    flex-basis: calc(50% - 12px) !important;
+  }
+
+  .cluster-details-page .cluster-security-page .security-manager > div:first-child > div {
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .cluster-details-page .brokers-dashboard .brokers-controls .search-input {
+    width: 100%;
+    max-width: 240px;
+  }
+}

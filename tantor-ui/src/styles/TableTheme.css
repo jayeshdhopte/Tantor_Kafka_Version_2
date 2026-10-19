@@ -1,0 +1,102 @@
+:root {
+  --table-heading-background: #EEF0F3;
+  --table-heading-color: #3E1363;
+  --table-heading-divider: #D2D2D7;
+}
+
+/* Layered important rules also override older page-specific important rules.
+   Cell dimensions, scrolling, row states and controls remain page-owned. */
+@layer tantor-table-headers {
+body table > thead,
+body table > thead > tr {
+  background: var(--table-heading-background) !important;
+}
+
+body table > thead > tr > :is(th, td),
+body .figma-table-header > div,
+body .parcel-host-row.header,
+body .service-selection-table > .table-header,
+body .cc-preview-table > div:first-child {
+  background: var(--table-heading-background) !important;
+  color: var(--table-heading-color) !important;
+  font-family: var(--font-sans) !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  line-height: 22px !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  border-bottom-color: var(--table-heading-divider) !important;
+}
+
+body table > thead > tr > :first-child {
+  box-shadow: inset 3px 0 0 var(--table-heading-color) !important;
+  border-radius: 6px 0 0 6px !important;
+}
+
+body table > thead > tr > :last-child {
+  border-radius: 0 6px 6px 0 !important;
+}
+
+body table > thead > tr > :only-child {
+  border-radius: 6px !important;
+}
+
+/* Grid-based tables use the same inset accent without shifting their columns. */
+body .figma-table-header,
+body .parcel-host-row.header,
+body .service-selection-table > .table-header,
+body .cc-preview-table > div:first-child {
+  background: var(--table-heading-background) !important;
+  box-shadow: inset 3px 0 0 var(--table-heading-color) !important;
+  border-radius: 6px !important;
+}
+
+body .figma-table-header > div {
+  background: transparent !important;
+}
+
+body table > thead > tr > th button,
+body .parcel-host-row.header > span,
+body .service-selection-table > .table-header > div,
+body .cc-preview-table > div:first-child > strong {
+  color: var(--table-heading-color) !important;
+  font-family: inherit !important;
+  font-size: inherit !important;
+  font-weight: inherit !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+}
+
+/* Monitoring presents metrics in sections rather than HTML tables. */
+body .monitoring-container .section-header-row,
+body .monitoring-container .monitoring-section-title-custom {
+  min-width: 0;
+  padding: 10px 12px;
+  background: var(--table-heading-background);
+  border-left: 3px solid var(--table-heading-color);
+  border-radius: 6px;
+  color: var(--table-heading-color);
+}
+
+body .monitoring-container .section-header-row {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+body .monitoring-container .section-header-row .performance-header-left,
+body .monitoring-container .section-header-row .monitoring-status-pills-row {
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+body .monitoring-container .section-header-row h3,
+body .monitoring-container .monitoring-section-title-custom {
+  color: var(--table-heading-color);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 22px;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
