@@ -28,3 +28,12 @@ test('does not mutate rows and returns an empty result for conflicting filters',
   assert.deepEqual(filterSchemaSubjects(subjects, 'orders', ['JSON'], ['NONE']), []);
   assert.deepEqual(subjects, snapshot);
 });
+
+test('deleted-only mode excludes active subjects and still intersects other filters', () => {
+  const rows = [...subjects, { subject: 'deleted-orders', id: 56, schemaType: 'AVRO', compatibility: 'NONE', deleted: true }];
+  assert.deepEqual(names(filterSchemaSubjects(rows, '', [], [], true)), ['deleted-orders']);
+  assert.deepEqual(names(filterSchemaSubjects(rows, '', [], [], false)), names(subjects));
+  assert.deepEqual(names(filterSchemaSubjects(rows, 'orders', ['AVRO'], ['NONE'], true)), ['deleted-orders']);
+  assert.deepEqual(filterSchemaSubjects(rows, '', ['JSON'], [], true), []);
+  assert.deepEqual(filterSchemaSubjects(subjects, '', [], [], true), []);
+});

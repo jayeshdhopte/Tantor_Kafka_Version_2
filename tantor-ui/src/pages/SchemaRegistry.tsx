@@ -423,7 +423,7 @@ export function SchemaRegistry() {
   }, [details]);
   const filters = subjectFilters.context === modeContext ? subjectFilters : { search: '', types: [], compatibility: [] };
   const updateSubjectFilters = (patch: Partial<typeof filters>) => setSubjectFilters({ ...filters, ...patch, context: modeContext });
-  const scopeSubjects = (summary?.subjects || []).filter(subject => showDeletedSubjects || !subject.deleted);
+  const scopeSubjects = filterSchemaSubjects(summary?.subjects || [], '', [], [], showDeletedSubjects);
   const visibleSubjects = filterSchemaSubjects(scopeSubjects, filters.search, filters.types, filters.compatibility);
   const typeCounts: Record<string, number> = {};
   const compatibilityCounts: Record<string, number> = {};
@@ -1225,14 +1225,14 @@ export function SchemaRegistry() {
             </div>
 
             <div className="ds-panel ds-sr-subjects-panel">
-              <div className="ds-subject-filters" role="group" aria-label="Filter schema subjects">
+              <div className="ds-subject-filters ds-schema-subject-filters" role="group" aria-label="Filter schema subjects">
                 <label className="ds-subject-search"><Search size={18} /><input type="search" aria-label="Search subjects by name or schema ID"
                   placeholder="Filter by subject name or schema ID" value={filters.search} onChange={event => updateSubjectFilters({ search: event.target.value })} /></label>
                 <SchemaSubjectFilter label="Type" options={availableTypes.map(value => ({ value, label: ({ AVRO: 'Avro', PROTOBUF: 'Protobuf', JSON: 'JSON' } as Record<string, string>)[value] || value }))}
                   selected={filters.types} counts={typeCounts} onChange={types => updateSubjectFilters({ types })} />
                 <SchemaSubjectFilter label="Compatibility" options={availableCompatibility.map(value => ({ value, label: value === 'UNKNOWN' ? 'Unavailable' : value }))}
                   selected={filters.compatibility} counts={compatibilityCounts} onChange={compatibility => updateSubjectFilters({ compatibility })} />
-                <label className="ds-subject-deleted"><input type="checkbox" checked={showDeletedSubjects} onChange={event => switchDeletedSubjects(event.target.checked)} /> Show soft-deleted</label>
+                <label className="ds-subject-deleted"><input type="checkbox" checked={showDeletedSubjects} onChange={event => switchDeletedSubjects(event.target.checked)} /> Show only soft-deleted</label>
                 {filtersActive && <button type="button" className="ds-subject-filter-reset" onClick={() => updateSubjectFilters({ search: '', types: [], compatibility: [] })}>Clear filters</button>}
                 <span className="ds-subject-results" role="status">{visibleSubjects.length} of {scopeSubjects.length} subjects</span>
               </div>

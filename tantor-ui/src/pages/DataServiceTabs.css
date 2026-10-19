@@ -2896,3 +2896,5 @@
 .ds-kc-code-editor .cm-editor.cm-focused { outline: 2px solid var(--button-primary); outline-offset: -2px; }
 @media (max-width: 800px) { .ds-kc-detail-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 480px) { .ds-kc-detail-summary { grid-template-columns: 1fr; } .ds-kc-detail-summary .ds-kc-task-counter { grid-column: auto; } }
+
+.ds-schema-subject-filters .ds-subject-filter-button { border-style: solid; }

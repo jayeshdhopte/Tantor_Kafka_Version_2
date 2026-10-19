@@ -13,10 +13,11 @@ export const subjectCompatibilityLevel = (subject: FilterableSchemaSubject): str
   subject.compatibility?.toUpperCase() || 'UNKNOWN';
 
 export function filterSchemaSubjects<T extends FilterableSchemaSubject>(subjects: T[], search: string,
-  types: string[], compatibility: string[]): T[] {
+  types: string[], compatibility: string[], deletedOnly?: boolean): T[] {
   const query = search.trim().toLowerCase();
   return subjects.filter(subject => (!query || subject.subject.toLowerCase().includes(query)
       || (subject.id != null && String(subject.id).includes(query)))
     && (!types.length || types.includes(subject.schemaType.toUpperCase()))
-    && (!compatibility.length || compatibility.includes(subjectCompatibilityLevel(subject))));
+    && (!compatibility.length || compatibility.includes(subjectCompatibilityLevel(subject)))
+    && (deletedOnly === undefined || Boolean(subject.deleted) === deletedOnly));
 }
