@@ -18,7 +18,7 @@ export function SchemaRegistryFields({ cfg, artifacts, onChange, unifiedDefault 
                 </div>;
 }
 
-export function KafkaConnectFields({ cfg, artifacts, onChange, unifiedDefault = true }: { cfg: KafkaConnectConfig; artifacts: ServiceArtifact[]; onChange: (patch: Partial<KafkaConnectConfig>) => void; unifiedDefault?: boolean }) {
+export function KafkaConnectFields({ cfg, artifacts, onChange, unifiedDefault = true, showPluginNote = true }: { cfg: KafkaConnectConfig; artifacts: ServiceArtifact[]; onChange: (patch: Partial<KafkaConnectConfig>) => void; unifiedDefault?: boolean; showPluginNote?: boolean }) {
   return <div className="cd-node-config-editor">
                   <div className="cd-node-config-top"><div><h3>Kafka Connect</h3><p>{unifiedDefault ? "Leave directories blank to use this host's existing unified Kafka installation and default Connect log/work paths. Enter a path to override it." : "Configure this host's distributed Connect worker and service directories."}</p></div></div>
                   <div className="cd-grid-2">
@@ -33,6 +33,6 @@ export function KafkaConnectFields({ cfg, artifacts, onChange, unifiedDefault = 
                     <label className="cd-field"><span>Working directory</span><input placeholder="/var/lib/tantor/kafka-connect" value={cfg.workingDir} onChange={e => onChange({ workingDir: e.target.value })} /></label>
                     <label className="cd-field"><span>Plugin directory</span><input placeholder="Kafka installation/connect-plugins" value={cfg.pluginDir} onChange={e => onChange({ pluginDir: e.target.value })} /></label>
                   </div>
-                  <div className="cd-template-summary"><strong>Air-gapped plugin requirement:</strong><span>Existing connector plugins are preserved. The default plugin directory must exist and be accessible. The working directory needs at least 5 GB free.</span></div>
+                  {showPluginNote && <div className="cd-template-summary"><strong>Air-gapped plugin requirement:</strong><span>Existing connector plugins are preserved. The default plugin directory must exist and be accessible. The working directory needs at least 5 GB free.</span></div>}
                 </div>;
 }

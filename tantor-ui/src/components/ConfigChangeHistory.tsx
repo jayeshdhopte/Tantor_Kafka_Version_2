@@ -7,6 +7,11 @@ interface Version { version: number; jobId: string; status: string; requestedBy:
 interface Result { items: Version[]; total: number; page: number; hasMore: boolean }
 const value = (text: string | null, deleted = false) => text === null ? deleted ? 'Removed; inherited / Kafka default' : 'Unset / inherited' : text === '' ? '(Empty)' : text;
 const status = (text: string) => text.replaceAll('_', ' ');
+const changeTags = (node: Node) => [
+  node.mode === 'STATIC' || node.mode === 'DELETE' ? 'Static' : node.mode === 'DYNAMIC' ? 'Dynamic' : 'Mode not recorded',
+  node.role?.toUpperCase() === 'BROKER' ? 'Broker' : node.role?.toUpperCase() === 'CONTROLLER' ? 'Controller' : node.role || 'Role not recorded',
+  ...(node.mode === 'DELETE' ? ['Deletion'] : []),
+];
 export function ConfigChangeHistory({ clusterId }: { clusterId: string }) {
   const [page, setPage] = useState(0);
   const [result, setResult] = useState<Result | null>(null);
@@ -38,9 +43,9 @@ export function ConfigChangeHistory({ clusterId }: { clusterId: string }) {
     {!result && loading && <p>Loading configuration history…</p>}
     {result && !items.length && <p>{needle ? 'No matching properties on this page.' : 'No configuration changes have been submitted yet.'}</p>}
     <div className="cc-history-list">{items.map((item, index) => <details key={item.jobId} open={index === 0} className="cc-history-version">
-      <summary><strong>v{item.version}</strong><span className={`cc-history-status ${item.status.toLowerCase()}`}>{status(item.status)}</span><span>{new Date(item.createdAt).toLocaleString()}</span><span>{item.nodes.length} nodes</span></summary>
+      <summary><strong>v{item.version}</strong><span className={`cc-history-status ${item.status.toLowerCase()}`}>{status(item.status)}</span><span>{new Date(item.createdAt).toLocaleString()}</span><span>{item.nodes.length} nodes</span><span className="cc-history-tags" aria-label="Change types and roles">{[...new Set(item.nodes.flatMap(changeTags))].map(tag => <span className="cc-history-tag" key={tag}>{tag}</span>)}</span></summary>
       <div className="cc-history-meta"><span>Requested by: {item.requestedBy || 'Not recorded'}</span><span>Completed: {item.completedAt ? new Date(item.completedAt).toLocaleString() : 'Not completed'}</span>{item.retryCount > 0 && <span>Retries: {item.retryCount}</span>}<Link to={`/jobs/${item.jobId}`}>View job and backup logs</Link></div>
-      {item.nodes.map((node, n) => <div key={`${node.nodeId}-${n}`} className="cc-history-node"><div className="cc-history-node-heading"><strong>{node.role || 'Node'} {node.nodeId} · {node.hostname || node.hostId || 'Host not recorded'} ({node.ipAddress || 'IP not reported'})</strong><span className={`cc-history-status ${node.status.toLowerCase()}`}>{status(node.status)}</span><span>{node.mode === 'DELETE' ? 'Deletion · rolling restart' : node.mode === 'STATIC' ? 'File update · rolling restart' : 'Dynamic update'}</span></div>{node.configPath && <p className="cc-history-path">{node.configPath}</p>}
+      {item.nodes.map((node, n) => <div key={`${node.nodeId}-${n}`} className="cc-history-node"><div className="cc-history-node-heading"><strong>Node {node.nodeId} · {node.hostname || node.hostId || 'Host not recorded'} ({node.ipAddress || 'IP not reported'})</strong><span className={`cc-history-status ${node.status.toLowerCase()}`}>{status(node.status)}</span><span className="cc-history-tags">{changeTags(node).map(tag => <span className="cc-history-tag" key={tag}>{tag}</span>)}</span><span>{node.mode === 'DELETE' ? 'Deletion · rolling restart' : node.mode === 'STATIC' ? 'File update · rolling restart' : node.mode === 'DYNAMIC' ? 'Dynamic update' : 'Operation not recorded'}</span></div>{node.configPath && <p className="cc-history-path">{node.configPath}</p>}
         <div className="cc-table-wrap"><table className="cc-history-table"><thead><tr><th>Property</th><th>Old value</th><th aria-label="Changes to">→</th><th>Requested new value</th></tr></thead><tbody>{node.changes.map(change => <tr key={change.key}><td><code>{change.key}</code>{change.previousSource && <small>Previous broker dynamic override</small>}</td><td><code>{value(change.oldValue)}</code></td><td>→</td><td><code>{value(change.newValue, node.mode === 'DELETE')}</code></td></tr>)}</tbody></table></div>
         {node.changes.length === 0 && <p>No editable property details were recorded for this step.</p>}
       </div>)}

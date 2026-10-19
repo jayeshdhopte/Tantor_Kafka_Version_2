@@ -219,7 +219,7 @@ const KRAFT_ROLE_OPTIONS: Array<{ id: RoleChoice; label: string; detail: string 
   },
   {
     id: 'separate',
-    label: 'Broker and Controller',
+    label: 'Broker + Controller (separate processes)',
     detail: 'Two JVMs on the same VM using broker.properties and controller.properties.',
   },
 ];
@@ -1836,6 +1836,18 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     }
   };
 
+  const artifactUploadButton = canManage && !isAddNodeMode ? (
+    <button type="button" className="cd-secondary-btn compact cd-artifact-upload-trigger" onClick={() => { setUploadArtifactError(''); setUploadArtifactNotice(''); setShowArtifactUpload(true); }}>
+      <Upload size={15} /> Upload Kafka artifact
+    </button>
+  ) : null;
+
+  const addNodeButton = (
+    <button type="button" className="cd-add-node-btn" onClick={() => setShowEnrollModal(true)}>
+      + Add Node
+    </button>
+  );
+
   const mainContent = (
     <div
       className={`cluster-deploy-page ${onClose ? 'modal-version' : ''} animate-fade-in`}
@@ -1885,8 +1897,14 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                 Preview
               </span>
             </div>
+            {stage === 'details' && artifactUploadButton}
+            {stage === 'details' && addNodeButton}
           </div>
         </header>
+      )}
+
+      {onClose && stage === 'details' && (
+        <div className="cd-modal-detail-actions">{artifactUploadButton}{addNodeButton}</div>
       )}
 
       {stage === 'details' ? (
@@ -1972,11 +1990,6 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                     <ChevronDown size={20} />
                   </div>
                 </div>
-                {canManage && !isAddNodeMode && (
-                  <button type="button" className="cd-secondary-btn compact cd-artifact-upload-trigger" onClick={() => { setUploadArtifactError(''); setUploadArtifactNotice(''); setShowArtifactUpload(true); }}>
-                    <Upload size={15} /> Upload Kafka artifact
-                  </button>
-                )}
                 {uploadArtifactNotice && <span className="cd-artifact-upload-notice" role="status">{uploadArtifactNotice}</span>}
               </div>
               <div className="cd-field">
@@ -2011,9 +2024,6 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
           <section className="cd-panel">
             <div className="cd-panel-title">
               <h2>Nodes & Roles</h2>
-              <button className="cd-add-node-btn" onClick={() => setShowEnrollModal(true)}>
-                + Add Node
-              </button>
               <button className="cd-refresh-icon" onClick={loadHosts} title="Refresh">
                 <CustomRefreshIcon size={14} className={loadingHosts ? 'spin' : ''} />
               </button>
@@ -2251,7 +2261,8 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
                           }}
                         >
                           <span>{[
-                            (rolesByHost[host.id] || defaultRoleForMode).replace('_', ' + ').replace(/\b\w/g, l => l.toUpperCase()),
+                            allRoleOptions.find(role => role.id === (rolesByHost[host.id] || defaultRoleForMode))?.label
+                              || (rolesByHost[host.id] || defaultRoleForMode).replace('_', ' + ').replace(/\b\w/g, l => l.toUpperCase()),
                             ...(addonRolesByHost[host.id] || []).map(role => role === 'schema_registry' ? 'Schema Registry' : 'Kafka Connect'),
                           ].join(' + ')}</span>
                           <MoreVertical size={14} />

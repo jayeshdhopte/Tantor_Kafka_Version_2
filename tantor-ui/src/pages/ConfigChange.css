@@ -86,6 +86,23 @@
 .cc-delete-button:disabled { opacity: .5; cursor: not-allowed; }
 .cc-deletion-preview p { font-size: 13px; color: #747786; }
 .cc-deletion-preview > button { margin-right: 10px; }
+.cc-deletion-preview { min-width: 0; scroll-margin-top: 24px; }
+.cc-deletion-preview > h3 { margin: 0 0 16px; padding: 12px 14px; border-left: 3px solid #5B126D; border-radius: 6px; background: #EEF0F3; color: #5B126D; font-size: 16px; }
+.cc-deletion-notice { margin-bottom: 20px; padding-left: 12px; border-left: 2px solid #D8C8E8; }
+.cc-deletion-notice p { margin: 0 0 8px; line-height: 1.6; }
+.cc-deletion-property + .cc-deletion-property { margin-top: 20px; }
+.cc-deletion-property h4 { margin: 0 0 10px; font-size: 13px; overflow-wrap: anywhere; }
+.cc-deletion-table-wrap { overflow: auto; max-height: 320px; border: 1px solid #D2D2D7; border-radius: 6px; }
+.cc-deletion-table { width: 100%; min-width: 480px; table-layout: fixed; border-collapse: collapse; font-size: 13px; text-align: left; }
+.cc-deletion-table th { position: sticky; top: 0; background: #EEF0F3; color: #5B126D; font-weight: 600; }
+.cc-deletion-table th, .cc-deletion-table td { padding: 12px; vertical-align: top; overflow-wrap: anywhere; }
+.cc-deletion-table th:first-child { width: 64px; }
+.cc-deletion-table td { border-top: 1px solid #E4E4E7; }
+.cc-deletion-table code { white-space: pre-wrap; }
+.cc-deletion-table small { display: block; margin-top: 6px; color: #747786; }
+.cc-deletion-preview .cc-deletion-health { margin: 16px 0; color: #332849; line-height: 1.5; }
+.cc-deletion-actions { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 10px; padding-top: 16px; border-top: 1px solid #E4E4E7; }
+.cc-deletion-actions button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; min-height: 40px; }
 
 /* Shared visual treatment with the internal cluster Configuration view. */
 .cc-page.versioned-config-page { max-width: none; margin: 0; padding: 16px 0 24px; gap: 16px; color: #332849; }
@@ -109,6 +126,11 @@
 .cc-history-version { border: 1px solid #D2D2D7; border-radius: 8px; overflow: hidden; }
 .cc-history-version summary { cursor: pointer; padding: 14px; background: #FAFAFA; font-size: 13px; }
 .cc-history-version summary > * { margin-right: 14px; }
+.cc-history-version summary > * { display: inline-block; margin-bottom: 6px; vertical-align: middle; }
+.cc-history-tags { display: inline-flex !important; flex-wrap: wrap; gap: 6px; align-items: center; }
+.cc-history-tag { display: inline-block; padding: 3px 8px; border: 1px solid #D8C8E8; border-radius: 6px; color: #5B126D; background: #F5EFFA; font-size: 12px; font-weight: 500; line-height: 18px; }
+.cc-history-node-heading > strong { min-width: 0; overflow-wrap: anywhere; }
+.cc-history .cc-config-toolbar { margin-top: 16px; }
 .cc-history-version summary strong { color: #5B126D; font-size: 16px; }
 .cc-history-status { display: inline-block; font-size: 11px; padding: 4px 8px; border-radius: 20px; background: #eee; color: #555; }
 .cc-history-status.success { background: #dff3e6; color: #276c42; }

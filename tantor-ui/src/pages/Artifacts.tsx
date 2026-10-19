@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   Upload, XCircle, ChevronDown, ChevronUp,
   Loader2, X, RefreshCw, Server, DownloadCloud,
-  Power, PowerOff, Trash2, AlertTriangle, MoreVertical, FileText
+  Power, PowerOff, Trash2, AlertTriangle, MoreVertical, FileText, Package, FolderOpen
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { AnchoredMenu } from '../components/AnchoredMenu';
@@ -567,8 +567,9 @@ export function Artifacts() {
       </header>
 
       <section className="universal-distribution-directory">
-        <label>Universal distribution directory</label>
+        <label htmlFor="universal-distribution-directory"><FolderOpen size={18} aria-hidden="true" />Universal distribution directory</label>
         <input
+          id="universal-distribution-directory"
           className="form-control"
           value={universalDistributionDir}
           onChange={event => setUniversalDistributionDir(event.target.value)}
@@ -628,6 +629,7 @@ export function Artifacts() {
                       }}
                     >
                       <div className="status-dot-container">
+                        <Package size={22} aria-hidden="true" />
                         <span className={`status-dot ${ver.available ? 'available' : 'unavailable'}`}></span>
                       </div>
                       <div className="version-info">
@@ -641,11 +643,9 @@ export function Artifacts() {
                           {active > 0 && <span className="status-badge active">Active on {active}</span>}
                         </div>
                         <div className="version-meta">
-                          <span>Uploaded: {ver.release_date || 'N/A'}</span>
-                          <span className="meta-separator">|</span>
-                          <span>Size: {ver.size_mb} MB</span>
-                          <span className="meta-separator">|</span>
-                          <span className="meta-filename">File: {ver.filename}</span>
+                          <span className="artifact-meta-item"><span className="artifact-meta-label">Uploaded</span><span>{ver.release_date || 'N/A'}</span></span>
+                          <span className="artifact-meta-item"><span className="artifact-meta-label">Size</span><span>{ver.size_mb} MB</span></span>
+                          <span className="artifact-meta-item meta-filename"><span className="artifact-meta-label">File</span><span title={ver.filename}>{ver.filename}</span></span>
                         </div>
                       </div>
                     </button>

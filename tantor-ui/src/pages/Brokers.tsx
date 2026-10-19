@@ -252,7 +252,7 @@ export function Brokers() {
                 CPU
               </th>
               <th onClick={() => handleSort('memoryUsedMb')} className="sortable">
-                RAM
+                Used RAM
               </th>
               <th onClick={() => handleSort('diskUsedBytes')} className="sortable" title="OS filesystem containing the Kafka data directory; reported by the node agent">
                 Host Disk <span className="broker-metric-level">OS level</span>

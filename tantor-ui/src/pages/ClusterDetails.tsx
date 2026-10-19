@@ -7,6 +7,7 @@ import { clusterStatusTone } from '../utils/clusterStatusTone';
 import { AnchoredMenu } from '../components/AnchoredMenu';
 import { useActiveClusterJobs, locksClusterView } from '../hooks/useActiveClusterJobs';
 import './ClusterDetails.css';
+import './ClusterTabTheme.css';
 
 interface ClusterInfo {
   id: string;

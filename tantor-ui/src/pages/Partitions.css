@@ -113,6 +113,13 @@
 
 /* ── Pagination ──────────────────────────────────────────── */
 
+.partitions-tab .partitions-pagination,
+.partitions-tab .partitions-pagination-controls {
+    flex-wrap: wrap;
+    gap: 12px;
+    min-width: 0;
+}
+
 .pagination {
     display: flex;
     justify-content: space-between;

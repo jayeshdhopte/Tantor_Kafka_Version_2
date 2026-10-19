@@ -1031,9 +1031,42 @@ input:checked+.cd-toggle-slider:before {
   width: auto;
   height: 32px;
   align-self: flex-start;
-  margin-top: 4px;
+  margin-top: 0;
   padding: 6px 10px;
   white-space: nowrap;
+}
+
+.cluster-deploy-page .cd-modal-detail-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cluster-deploy-page .cd-header-side {
+  align-items: center;
+  gap: 8px;
+}
+
+.cluster-deploy-page :is(.cd-header-side, .cd-modal-detail-actions) > :is(.cd-artifact-upload-trigger, .cd-add-node-btn) {
+  box-sizing: border-box;
+  height: 40px;
+  min-height: 40px;
+  width: auto;
+  align-self: center;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.cluster-deploy-page .cd-header-side > .cd-stage-tabs {
+  flex-shrink: 0;
 }
 
 .cd-field .cd-artifact-upload-notice {
@@ -1888,6 +1921,21 @@ input:checked+.cd-toggle-slider:before {
 
 .cd-figma-action-btn:hover {
   background: #EBEBEB;
+}
+
+.cluster-deploy-page .cd-role-menu-wrap .cd-figma-action-btn {
+  min-height: 35px;
+  height: auto;
+  max-width: 100%;
+}
+
+.cluster-deploy-page .cd-role-menu-wrap .cd-figma-action-btn > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cluster-deploy-page .cd-role-menu-wrap .cd-figma-action-btn > svg {
+  flex-shrink: 0;
 }
 
 .cd-figma-action-btn svg {

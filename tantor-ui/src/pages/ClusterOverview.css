@@ -293,7 +293,44 @@
 .overview-service-paths { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 16px; }
 .overview-service-path-card { min-width: 0; padding: 16px; border: 1px solid #D2D2D7; border-radius: 8px; }
 .overview-service-path-card h3 { margin: 0 0 6px; color: #332849; font-size: 16px; font-weight: 500; }
-.overview-service-path-card > p { margin: 0 0 16px; color: #818181; font-size: 13px; overflow-wrap: anywhere; }
+.overview-service-path-card > p {
+  margin: 0 0 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #E4E7EC;
+  color: #596174;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
 .overview-service-path-card dl { display: grid; gap: 12px; margin: 0; }
-.overview-service-path-card dt { color: #818181; font-size: 12px; margin-bottom: 4px; }
-.overview-service-path-card dd { margin: 0; color: #332849; font-size: 13px; overflow-wrap: anywhere; }
+.overview-service-path-card dt {
+  color: #596174;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  margin-bottom: 6px;
+}
+.overview-service-path-card dd {
+  min-width: 0;
+  margin: 0;
+  color: #332849;
+  font-size: 13px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+.overview-service-path-card dd code {
+  display: block;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  border-left: 2px solid #D6C5E7;
+  border-radius: 4px;
+  background: #FFFFFF;
+  color: var(--button-primary, #43166B);
+  font-size: inherit;
+  font-weight: 500;
+  line-height: inherit;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

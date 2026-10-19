@@ -1,10 +1,10 @@
 .add-services-overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(15, 15, 30, .48); backdrop-filter: blur(4px); z-index: 26000; }
-.add-services-modal { width: min(850px, calc(100vw - 32px)); max-height: 90vh; display: flex; flex-direction: column; }
+.add-services-modal { box-sizing: border-box; width: min(850px, calc(100vw - 32px)); max-height: min(90vh, calc(100dvh - 32px)); display: flex; flex-direction: column; overflow: hidden; }
 .add-services-modal:focus { outline: none; }
 .add-services-modal .cd-deployment-modal-header { flex-shrink: 0; align-items: flex-start; gap: 16px; padding: 24px 28px; }
 .add-services-modal .cd-deployment-modal-header > div { min-width: 0; overflow-wrap: anywhere; }
 .add-services-modal .cd-deployment-modal-header .cd-icon-btn { flex: none; }
-.add-services-body { overflow-y: auto; min-height: 0; padding: 20px 28px 0; scrollbar-gutter: stable; }
+.add-services-body { flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; min-height: 0; padding: 20px 28px; scrollbar-gutter: stable; }
 .add-services-modal .cd-deployment-cards-wrapper { margin: 0; padding: 20px; }
 .add-services-modal .cd-deployment-choice-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .add-services-modal .add-service-tile { text-align: left; font: inherit; cursor: pointer; color: inherit; min-width: 0; padding: 20px; display: flex; flex-direction: column; align-items: stretch; gap: 12px; }
@@ -20,31 +20,99 @@
 .add-services-fields section + section { margin-top: 24px; padding-top: 24px; border-top: 1px solid #e5e7eb; }
 .add-services-fields > section { min-width: 0; }
 .add-services-fields > section > .cd-field { margin-bottom: 20px; }
+.add-services-modal .add-services-fields > section > fieldset {
+  min-width: 0;
+  margin: 0 0 24px;
+  padding: 12px 16px 16px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: #FAFAFC;
+}
+.add-services-modal .add-services-fields > section > fieldset legend {
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 0 6px;
+  color: var(--button-primary);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.add-services-modal .add-services-fields > section > fieldset .cd-field {
+  margin: 4px 0;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: var(--bg-surface);
+  cursor: pointer;
+}
+.add-services-modal .add-services-fields > section > fieldset .cd-field > span {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.add-services-modal .add-services-fields > section > fieldset input[type="checkbox"] {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--button-primary);
+  cursor: pointer;
+}
+.add-services-modal .add-services-fields > section > fieldset .cd-field:hover,
+.add-services-modal .add-services-fields > section > fieldset .cd-field:has(input:checked) {
+  border-color: color-mix(in srgb, var(--button-primary) 25%, white);
+  background: color-mix(in srgb, var(--button-primary) 5%, white);
+}
+.add-services-modal .add-services-fields > section > fieldset input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--button-primary);
+  outline-offset: 3px;
+}
+.add-services-modal .add-services-fields > section > fieldset > p {
+  margin: 12px 0 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
 .add-services-fields .cd-node-config-editor { padding: 0; background: transparent; border-radius: 0; }
-.add-services-fields .cd-node-config-top { margin-bottom: 16px; }
-.add-services-fields .cd-node-config-top h3 { margin: 0 0 6px; font-size: 16px; color: var(--text-primary); }
+.add-services-fields .cd-node-config-top { margin-bottom: 20px; }
+.add-services-fields .cd-node-config-top h3 { margin: 0 0 10px; padding: 12px 14px; border-left: 3px solid var(--button-primary); border-radius: 6px; background: #EEF0F3; font-size: 16px; line-height: 1.5; color: var(--button-primary); }
 .add-services-fields .cd-node-config-top p { margin: 0; line-height: 1.5; overflow-wrap: anywhere; }
 .add-services-fields .cd-grid-2 { gap: 16px; align-items: start; }
 .add-services-fields .cd-field { min-width: 0; }
-.add-services-fields .cd-field span { line-height: 1.4; overflow-wrap: anywhere; }
-.add-services-fields .cd-field input, .add-services-fields .cd-field select { min-width: 0; }
+.add-services-fields .cd-field > span { min-height: 20px; line-height: 1.4; overflow-wrap: anywhere; }
+.add-services-fields .cd-field input:not([type="checkbox"]), .add-services-fields .cd-field select { min-width: 0; width: 100%; height: 44px; }
 .add-services-fields .cd-template-summary { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin-top: 16px; padding: 14px 16px; line-height: 1.5; overflow-wrap: anywhere; }
 .add-services-fields .cd-template-summary strong { font-size: 13px; }
 .add-services-fields .cd-template-summary span { font-size: 13px; }
-.add-services-footer { display: flex; justify-content: flex-end; gap: 12px; padding: 20px 28px; margin-top: 20px; border-top: 1px solid #e5e7eb; flex-shrink: 0; }
-.add-services-modal .add-services-footer button,
-.add-services-modal .add-services-footer button:disabled {
+.add-services-modal .add-services-fields .cd-template-summary { background: #F0FDF4; color: #166534; border-left: 3px solid #86EFAC; }
+.add-services-footer { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 12px; padding: 20px 28px; margin-top: 0; border-top: 1px solid #e5e7eb; background: #FFFFFF; flex-shrink: 0; }
+.add-services-modal .add-services-footer button {
   background: #3E1363;
   border-color: #3E1363;
   color: #FFFFFF;
   opacity: 1;
+  min-height: 44px;
+  height: auto;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
+.add-services-modal .add-services-footer button:disabled { opacity: .5; cursor: not-allowed; }
 .add-services-validation { color: #795515; font-size: 13px; padding-left: 20px; }
 .add-services-error { color: #b42318; }
 .add-services-existing { margin: 20px 0; }
 .add-services-existing h3 { margin: 0 0 12px; font-size: 16px; color: var(--text-primary); }
 .add-services-existing-scroll { overflow-x: auto; border: 1px solid var(--border-default); border-radius: 8px; }
-.add-services-existing table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px; }
+.add-services-existing table { width: 100%; min-width: 420px; border-collapse: collapse; table-layout: fixed; font-size: 13px; }
 .add-services-existing th, .add-services-existing td { padding: 12px; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
 .add-services-existing th { background: var(--bg-surface); color: var(--text-secondary); font-weight: 600; }
 .add-services-existing td { border-top: 1px solid var(--border-default); color: var(--text-primary); }
@@ -68,7 +136,7 @@
 @media (max-width: 600px) { .add-services-modal .cd-deployment-choice-grid, .add-services-modal .cd-grid-2 { grid-template-columns: 1fr; } }
 @media (max-width: 600px) {
   .add-services-modal .cd-deployment-modal-header { padding: 20px; }
-  .add-services-body { padding: 16px 20px 0; }
+  .add-services-body { padding: 16px 20px; }
   .add-services-modal .cd-deployment-cards-wrapper { padding: 12px; }
   .add-services-footer { padding: 16px 20px; flex-wrap: wrap; }
   .add-services-footer button { min-width: 0; max-width: 100%; height: auto; white-space: normal; }

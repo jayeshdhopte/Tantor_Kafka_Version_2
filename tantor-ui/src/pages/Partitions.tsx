@@ -247,13 +247,14 @@ export function Partitions() {
         )}
 
         {/* Pagination Controls */}
-        {data && data.totalPages > 1 && (
-          <div className="pagination" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', borderTop: '1px solid var(--border-default)' }}>
+        {data && (
+          <div className="pagination partitions-pagination" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem', borderTop: '1px solid var(--border-default)' }}>
             <div style={{ fontSize: '0.875rem', color: 'var(--text-tertiary)' }}>
               Showing page {data.page + 1} of {data.totalPages === 0 ? 1 : data.totalPages} (Total {data.totalElements} partitions)
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <div className="partitions-pagination-controls" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
               <select 
+                aria-label="Partitions per page"
                 value={size} 
                 onChange={(e) => { setSize(Number(e.target.value)); setPage(0); }}
                 style={{ padding: '0.4rem', borderRadius: '6px', border: '1px solid var(--border-default)', backgroundColor: "var(--text-light)", color: 'var(--text-heading)' }}
@@ -268,6 +269,7 @@ export function Partitions() {
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <button 
                   className="pagination-btn" 
+                  aria-label="Previous partitions page"
                   disabled={data.page === 0} 
                   onClick={() => setPage(p => Math.max(0, p - 1))}
                   style={{ padding: '0.4rem', display: 'flex', alignItems: 'center', background: "var(--bg-surface)", border: '1px solid var(--border-default)', borderRadius: '6px', cursor: data.page === 0 ? 'not-allowed' : 'pointer', opacity: data.page === 0 ? 0.5 : 1 }}
@@ -276,6 +278,7 @@ export function Partitions() {
                 </button>
                 <button 
                   className="pagination-btn" 
+                  aria-label="Next partitions page"
                   disabled={!data.hasNext} 
                   onClick={() => setPage(p => p + 1)}
                   style={{ padding: '0.4rem', display: 'flex', alignItems: 'center', background: "var(--bg-surface)", border: '1px solid var(--border-default)', borderRadius: '6px', cursor: !data.hasNext ? 'not-allowed' : 'pointer', opacity: !data.hasNext ? 0.5 : 1 }}

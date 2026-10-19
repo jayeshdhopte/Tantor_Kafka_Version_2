@@ -248,7 +248,7 @@ export function Hosts() {
                         </span>
                       </div>
                     </td>
-                    <td>{host.agentName ?? '-'}</td>
+                    <td><span className="host-agent-name" title={host.agentName || undefined}>{host.agentName ?? '-'}</span></td>
                     <td>{host.hostname}</td>
                     <td>{ip}</td>
                     <td>
@@ -320,7 +320,7 @@ export function Hosts() {
                           />
                         </label>
                         <div className="pending-node-info">
-                          <p className="name">{host.agentName || host.hostname}</p>
+                          <p className="name host-agent-name" title={host.agentName || host.hostname}>{host.agentName || host.hostname}</p>
                           <p className="ip">{displayIp(host.ipAddresses)} - {host.agentPath || 'Path unavailable'}</p>
                         </div>
                         <div className="pending-node-actions">

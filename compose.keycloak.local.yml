@@ -10,6 +10,7 @@ services:
       - "127.0.0.1:8180:8080"
     volumes:
       - ./keycloak/local-realm.json:/opt/keycloak/data/import/Gatekeeper-realm.json:ro
+      - ./themes/tantor:/opt/keycloak/themes/tantor:ro
     command:
       - start-dev
       - --import-realm

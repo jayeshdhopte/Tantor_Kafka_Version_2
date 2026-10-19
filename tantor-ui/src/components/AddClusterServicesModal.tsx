@@ -41,7 +41,7 @@ export function AddClusterServicesModal({ cluster, onClose }: { cluster: Cluster
   const endpoint = external ? `/api/v1/ui/external-clusters/${cluster.id}/services` : `/api/v1/ui/clusters/${cluster.id}/services`;
   const [warning, setWarning] = useState('');
   const [agentIssues, setAgentIssues] = useState<string[]>([]);
-  const [serviceStates, setServiceStates] = useState<{ role: string; status: string; lastError?: string }[]>([]);
+  const [serviceStates, setServiceStates] = useState<{ id?: string; role: string; agentId?: string; hostname?: string; status: string; lastError?: string }[]>([]);
   const [details, setDetails] = useState<ClusterDetails | null>(null);
   const [prechecks, setPrechecks] = useState<Record<string, PrecheckResult>>({});
   const [checking, setChecking] = useState(false);
@@ -247,10 +247,30 @@ export function AddClusterServicesModal({ cluster, onClose }: { cluster: Cluster
         {external && <p>Deploy services through a Discovery agent linked to this cluster. Prerequisite checks run before installation; progress appears in Jobs. Existing Kafka configuration is preserved.</p>}
         {warning && <p role="alert" className="add-services-error">{warning}</p>}
         {agentIssues.length > 0 && <ul>{agentIssues.map(issue => <li key={issue}>{issue}</li>)}</ul>}
-        {external && serviceStates.map(service => <p key={service.role}>{service.role === 'schema_registry' ? 'Schema Registry' : 'Kafka Connect'}: {service.status}{service.lastError ? ` — ${service.lastError}` : ''}</p>)}
-        {!external && details?.serviceInstances?.map(instance => <p key={instance.role + ':' + instance.hostId}>
-          {instance.role === 'schema_registry' ? 'Schema Registry' : 'Kafka Connect'} on {hosts.find(host => host.hostId === instance.hostId)?.hostname || instance.hostId}: {instance.status || 'Pending'}
-        </p>)}
+        {!loading && (external ? serviceStates.length > 0 : !!details?.serviceInstances?.length) &&
+          <section className="add-services-existing" aria-labelledby="existing-services-title">
+            <h3 id="existing-services-title">Existing service instances</h3>
+            <div className="add-services-existing-scroll">
+              <table>
+                <thead><tr><th scope="col">Service</th><th scope="col">Hostname</th><th scope="col">Status</th></tr></thead>
+                <tbody>{(external
+                  ? serviceStates.map(service => ({ key: service.id || service.role, role: service.role,
+                    hostname: service.hostname || hosts.find(host => host.hostId === service.agentId)?.hostname || service.agentId || 'Not reported',
+                    status: service.status || 'UNKNOWN', error: service.lastError }))
+                  : (details?.serviceInstances || []).map(instance => ({ key: instance.role + ':' + instance.hostId, role: instance.role,
+                    hostname: hosts.find(host => host.hostId === instance.hostId)?.hostname || instance.hostId,
+                    status: instance.status || 'UNKNOWN', error: undefined }))
+                ).map(instance => <tr key={instance.key}>
+                  <td><strong>{instance.role === 'schema_registry' ? 'Schema Registry' : 'Kafka Connect'}</strong></td>
+                  <td>{instance.hostname}</td>
+                  <td><span className={`add-services-instance-status ${instance.status.toUpperCase() === 'ONLINE' ? 'online' : ['OFFLINE', 'ERROR', 'FAILED'].includes(instance.status.toUpperCase()) ? 'offline' : 'unknown'}`}
+                    title="Status reported by the backend; deployment success does not imply live connectivity.">{instance.status}</span>
+                    {instance.error && <small className="add-services-error">{instance.error}</small>}
+                  </td>
+                </tr>)}</tbody>
+              </table>
+            </div>
+          </section>}
         {loading ? <p role="status">Loading available services…</p> : <>
           <div className="cd-deployment-cards-wrapper"><div className="cd-deployment-choice-grid">
             {choices.map(({ role, title, description, Icon }) => <button key={role} type="button"
@@ -279,7 +299,7 @@ export function AddClusterServicesModal({ cluster, onClose }: { cluster: Cluster
               </fieldset>}
               {role === 'schema_registry'
                 ? <SchemaRegistryFields unifiedDefault={!external} cfg={schema} artifacts={artifactsFor(role)} onChange={patch => setSchema(current => ({ ...current, ...patch }))} />
-                : <KafkaConnectFields unifiedDefault={!external} cfg={connect} artifacts={artifactsFor(role)} onChange={patch => setConnect(current => ({ ...current, ...patch }))} />}
+                : <KafkaConnectFields showPluginNote={false} unifiedDefault={!external} cfg={connect} artifacts={artifactsFor(role)} onChange={patch => setConnect(current => ({ ...current, ...patch }))} />}
             </section>)}
             {issues.length > 0 && <ul className="add-services-validation" aria-live="polite">{[...new Set(issues)].map(issue => <li key={issue}>{issue}</li>)}</ul>}
           </fieldset>}

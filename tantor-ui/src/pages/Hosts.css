@@ -127,6 +127,34 @@
 }
 
 /* ── Table ── */
+.hosts-page > .table-container {
+  scrollbar-gutter: auto;
+}
+
+.hosts-page > .table-container > .data-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.hosts-page > .table-container > .data-table th {
+  background: #EEF0F3;
+  color: var(--button-primary, #3E1363) !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  line-height: 22px;
+  letter-spacing: 0 !important;
+}
+
+.hosts-page > .table-container > .data-table th:first-child {
+  box-shadow: inset 3px 0 0 var(--button-primary, #3E1363);
+  border-radius: 6px 0 0 6px;
+}
+
+.hosts-page > .table-container > .data-table th:last-child {
+  border-radius: 0 6px 6px 0;
+}
+
 .table-container {
   background: #ffffff;
   border: 0.5px solid #e8e6e1;
@@ -197,6 +225,21 @@
 .text-secondary {
   color: var(--text-secondary);
   font-size: 0.8rem;
+}
+
+.hosts-page .host-agent-name,
+.discovered-nodes-list .host-agent-name {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 20px;
+}
+
+.discovered-nodes-list .pending-node-info {
+  min-width: 0;
 }
 
 .agent-kind-cell {

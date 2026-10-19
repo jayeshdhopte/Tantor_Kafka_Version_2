@@ -226,9 +226,9 @@ export function DeploymentLogs() {
     <div className="deployment-log-view animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', alignSelf: 'stretch' }}>
       
       {/* Title Row with Task output & refresh icon */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+      <div className="deployment-log-heading" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-          <h2 style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-bold)', fontSize: 'var(--text-md)', lineHeight: '22px', color: 'var(--text-primary)', margin: 0 }}>Task output</h2>
+          <h2>Task output</h2>
           <span style={{ fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-regular)', fontSize: 'var(--text-base)', lineHeight: '19px', color: 'var(--text-tertiary)' }}>
             {tasks.length} task{tasks.length === 1 ? '' : 's'} recorded
           </span>

@@ -23,3 +23,31 @@
 .cc-entry-primary { background: #4c1d6f; border: 1px solid #4c1d6f; color: white; }
 .cc-entry-primary:disabled { opacity: .55; cursor: not-allowed; }
 @media (max-width: 640px) { .cc-entry-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } .cc-entry-list>div { grid-template-columns: 75px 1fr; } .cc-entry-list>div>span:last-child { grid-column: 2; } }
+.config-change-entry-dialog .cc-entry-header > div { min-width: 0; }
+.config-change-entry-dialog .cc-entry-header h2, .config-change-entry-dialog .cc-entry-header p { overflow-wrap: anywhere; }
+.config-change-entry-dialog .cc-entry-close { flex: none; }
+.config-change-entry-dialog .cc-entry-facts strong { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; line-height: 1.5; }
+.config-change-entry-dialog .cc-entry-facts { grid-auto-rows: minmax(90px, auto); }
+.config-change-entry-dialog .cc-entry-facts > div { min-height: 86px; padding: 12px; border-color: #E1E7EC; background: #F9FAFC; }
+.config-change-entry-dialog .cc-entry-facts strong { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; max-height: 39px; }
+.cc-bootstrap-toggle { display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0; min-height: 28px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: #332849; font: 600 13px/20px var(--font-sans); cursor: pointer; text-align: left; }
+.config-change-entry-dialog .cc-bootstrap-toggle > span { flex: 1; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; font: inherit; }
+.cc-bootstrap-toggle svg { flex: none; color: #65417F; transition: transform 160ms ease; }
+.cc-bootstrap-toggle svg.expanded { transform: rotate(180deg); }
+.cc-bootstrap-toggle:focus-visible { outline: 2px solid #65417F; outline-offset: 3px; }
+.cc-bootstrap-menu { padding: 8px; border: 1px solid #DDD5E6; border-radius: 8px; background: #FFFFFF; color: #332849; box-shadow: 0 12px 32px rgba(40, 47, 73, .16); transform-origin: top center; animation: cc-bootstrap-reveal 160ms ease-out; overscroll-behavior: contain; }
+.cc-bootstrap-menu h4 { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px; margin: 0 0 4px; font-size: 13px; font-weight: 600; line-height: 20px; letter-spacing: 0; }
+.cc-bootstrap-menu h4 > span { color: #667085; font-size: 12px; font-weight: 400; }
+.cc-bootstrap-menu ol { list-style: none; margin: 0; padding: 0; }
+.cc-bootstrap-menu li { display: flex; align-items: baseline; gap: 10px; padding: 10px 8px; border-top: 1px solid #EEF0F3; }
+.cc-bootstrap-menu li > span { flex: 0 0 20px; color: #818181; font-size: 11px; text-align: right; }
+.cc-bootstrap-menu code { min-width: 0; font-size: 12px; line-height: 20px; overflow-wrap: anywhere; }
+@keyframes cc-bootstrap-reveal { from { opacity: 0; transform: perspective(600px) rotateX(-6deg) translateY(-4px); } to { opacity: 1; transform: perspective(600px) rotateX(0) translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .cc-bootstrap-menu { animation: none; } .cc-bootstrap-toggle svg { transition: none; } }
+.config-change-entry-dialog .cc-entry-list > div > * { min-width: 0; overflow-wrap: anywhere; }
+.config-change-entry-dialog .cc-entry-footer { flex-wrap: wrap; }
+.config-change-entry-dialog .cc-entry-footer button { max-width: 100%; white-space: normal; }
+@media (max-width: 640px) {
+  .config-change-entry-dialog .cc-entry-header, .config-change-entry-dialog .cc-entry-content, .config-change-entry-dialog .cc-entry-footer { padding: 16px; }
+  .config-change-entry-dialog .cc-entry-list > div { grid-template-columns: 75px minmax(0, 1fr); }
+}

@@ -5,8 +5,10 @@ import { AlertOctagon, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardP
 import { usePermissions } from '../hooks/usePermissions';
 import orangeBanner from '../assets/orange.png';
 import { AnchoredMenu } from '../components/AnchoredMenu';
+import { ServiceDirectories } from '../components/ServiceDirectories';
 import { readDataServiceSession, writeDataServiceSession } from '../utils/dataServiceSessionCache';
 import { compareSchemaFields } from '../utils/schemaFieldDiff';
+import { compareSchemaCode } from '../utils/schemaCodeDiff';
 import { schemaSubmissionError } from '../utils/schemaSubmissionError';
 import { SchemaSubjectFilter } from '../components/SchemaSubjectFilter';
 import { filterSchemaSubjects, schemaTypes, schemaCompatibilityLevels, subjectCompatibilityLevel } from '../utils/schemaSubjectFilters';
@@ -874,8 +876,9 @@ export function SchemaRegistry() {
       return;
     }
     setError(null);
-    setCompareVersionA(comparableVersions[0].version);
-    setCompareVersionB(comparableVersions[1].version);
+    const ascendingVersions = [...comparableVersions].sort((a, b) => a.version - b.version);
+    setCompareVersionA(ascendingVersions[0].version);
+    setCompareVersionB(ascendingVersions[1].version);
     setShowCompare(true);
   };
 
@@ -891,6 +894,14 @@ export function SchemaRegistry() {
     ? compareSchemaFields(olderSchema.schema, newerSchema.schema, olderSchema.schemaType, newerSchema.schemaType)
     : null;
   const schemasAreIdentical = schemaComparison?.identical ?? false;
+  const comparedCode = showCompare && olderSchema && newerSchema
+    ? compareSchemaCode(
+      formatSchema(olderSchema.schema, olderSchema.schemaType),
+      formatSchema(newerSchema.schema, newerSchema.schemaType),
+    )
+    : null;
+  const codeLinesA = comparedSchemaA === olderSchema ? comparedCode?.before : comparedCode?.after;
+  const codeLinesB = comparedSchemaB === olderSchema ? comparedCode?.before : comparedCode?.after;
 
   const toggleVersion = (version: number) => {
     setExpandedVersions(prev => {
@@ -929,7 +940,7 @@ export function SchemaRegistry() {
 
   const submitEditSchema = async (e?: React.FormEvent, confirmed = false) => {
     e?.preventDefault();
-    if (!canManage) return;
+    if (!canManage || saving) return;
     if (!selected || !newSchema.trim()) return;
     if (!confirmed && editCompatibility !== (details?.compatibility ?? subjectCompatibility)) {
       requestSetting('edit-compatibility', editCompatibility, selected.subject); return;
@@ -1067,7 +1078,7 @@ export function SchemaRegistry() {
                       className="ds-instance-select"
                       value={selectedConnectionId ?? ''}
                       onChange={handleInstanceChange}
-                      disabled={savedConnections.length === 0}
+                      disabled={savedConnections.length === 0 || saving}
                       options={
                         savedConnections.length > 0
                           ? savedConnections.map(c => ({
@@ -1270,6 +1281,7 @@ export function SchemaRegistry() {
               </table>
             </div>
           </>}
+          <ServiceDirectories clusterId={id} serviceType="SCHEMA_REGISTRY" />
         </>
       )}
 
@@ -1492,29 +1504,33 @@ export function SchemaRegistry() {
                       : 'The selected schema versions are different.'}
                 </div>
                 {!schemasAreIdentical && schemaComparison && (
-                  <section className="ds-compare-summary" aria-label="Field changes">
-                    <div className="ds-compare-summary-heading">
-                      <strong>Field changes</strong>
+                  <details key={`${compareVersionA}-${compareVersionB}`} className="ds-compare-summary">
+                    <summary className="ds-compare-summary-heading">
+                      <strong><ChevronRight size={16} className="ds-compare-summary-arrow" />Field changes</strong>
                       <span>Version {olderSchema?.version} → Version {newerSchema?.version}</span>
-                    </div>
+                    </summary>
                     {schemaComparison.supported && schemaComparison.changes.length > 0 ? (
                       <ul className="ds-compare-changes">
                         {schemaComparison.changes.map((change, index) => (
                           <li key={`${change.field}-${change.kind}-${index}`}>
-                            <span className={`ds-compare-change-kind ${change.kind}`}>{change.kind === 'type' ? 'Type changed' : change.kind === 'required' ? 'Required changed' : change.kind === 'default' ? 'Default changed' : change.kind}</span>
-                            <code>{change.field}</code>
-                            {change.kind === 'added'
-                              ? <span>added as <code>{change.after}</code></span>
-                              : change.kind === 'removed'
-                                ? <span>removed (was <code>{change.before}</code>)</span>
-                                : <span><code>{change.before}</code> → <code>{change.after}</code></span>}
+                            <span className={`ds-compare-change-kind ${change.kind}`}>
+                              {change.kind === 'type' ? 'Type changed' : change.kind === 'required' ? 'Required changed' : change.kind === 'default' ? 'Default changed' : change.kind === 'added' ? 'Added' : 'Removed'}
+                            </span>{' '}
+                            <span className="ds-compare-change-description">
+                              <code className="ds-compare-field-name">{change.field}</code>{' - '}
+                              {change.kind === 'added'
+                                ? <span>Added (<code>{change.after}</code>)</span>
+                                : change.kind === 'removed'
+                                  ? <span>Removed (<code>{change.before}</code>)</span>
+                                  : <span>{change.kind === 'default' ? 'Default changed: ' : change.kind === 'required' ? 'Required changed: ' : ''}<code>{change.before}</code> → <code>{change.after}</code></span>}
+                            </span>
                           </li>
                         ))}
                       </ul>
                     ) : (
                       <p>{schemaComparison.reason || 'No field-level changes found. Other schema details or field order may differ.'}</p>
                     )}
-                  </section>
+                  </details>
                 )}
                 <div className="ds-compare-grid">
                   <div className="ds-compare-card">
@@ -1523,7 +1539,11 @@ export function SchemaRegistry() {
                       <span>Schema ID: {comparedSchemaA?.id ?? '-'}</span>
                     </div>
                     <pre className="ds-compare-code">
-                      {formatSchema(comparedSchemaA?.schema, comparedSchemaA?.schemaType, 'Schema unavailable')}
+                      {codeLinesA ? codeLinesA.map((line, index) => (
+                        <span key={index} className={`ds-compare-code-line ${line.kind}`} title={line.kind === 'unchanged' ? undefined : `${line.kind === 'added' ? 'Added' : 'Removed'} in version ${newerSchema?.version}`}>
+                          {line.text || ' '}
+                        </span>
+                      )) : formatSchema(comparedSchemaA?.schema, comparedSchemaA?.schemaType, 'Schema unavailable')}
                     </pre>
                   </div>
                   <div className="ds-compare-card">
@@ -1532,7 +1552,11 @@ export function SchemaRegistry() {
                       <span>Schema ID: {comparedSchemaB?.id ?? '-'}</span>
                     </div>
                     <pre className="ds-compare-code">
-                      {formatSchema(comparedSchemaB?.schema, comparedSchemaB?.schemaType, 'Schema unavailable')}
+                      {codeLinesB ? codeLinesB.map((line, index) => (
+                        <span key={index} className={`ds-compare-code-line ${line.kind}`} title={line.kind === 'unchanged' ? undefined : `${line.kind === 'added' ? 'Added' : 'Removed'} in version ${newerSchema?.version}`}>
+                          {line.text || ' '}
+                        </span>
+                      )) : formatSchema(comparedSchemaB?.schema, comparedSchemaB?.schemaType, 'Schema unavailable')}
                     </pre>
                   </div>
                 </div>

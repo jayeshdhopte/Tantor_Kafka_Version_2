@@ -5,6 +5,7 @@ import { CheckCircle, MoreVertical, Plus, RefreshCw, Settings, Trash2, Upload, X
 import { usePermissions } from '../hooks/usePermissions';
 import { confirmAction } from '../components/confirmUtils';
 import { AnchoredMenu } from '../components/AnchoredMenu';
+import { ServiceDirectories } from '../components/ServiceDirectories';
 import { readDataServiceSession, writeDataServiceSession } from '../utils/dataServiceSessionCache';
 import { KafkaConnectorDetails } from '../components/KafkaConnectorDetails';
 import { KafkaConnectorsTable } from '../components/KafkaConnectorsTable';
@@ -928,6 +929,7 @@ export function KafkaConnect() {
         )}
       </div>
       </>}
+      <ServiceDirectories clusterId={id} serviceType="KAFKA_CONNECT" />
 
       </div>
 

@@ -362,7 +362,7 @@ export function Clusters() {
                         <th>Cluster Name</th>
                         <th>Cluster ID</th>
                         <th>Broker</th>
-                        <th>DEV</th>
+                        <th>ENV</th>
                         <th>Hosts</th>
                         <th>Created</th>
                         <th>Tags</th>
@@ -456,7 +456,7 @@ export function Clusters() {
                                 </span>
                                 <span className={`status-badge-v2 ${statusClass(cluster)} ${statusTagTone}`}>
                                   {statusLabel(cluster)}
-                                </span>{activeJobs.filter(job => job.clusterId === cluster.id && locksClusterView(job)).map(job => <button key={job.id} title={currentJobNode(job)} className="badge badge-warning" onClick={event => { event.stopPropagation(); navigate(`/jobs/${job.id}`); }}>{clusterJobLabel(job)} {job.status === 'PENDING' ? 'queued' : job.status === 'WAITING_AGENT' ? 'waiting for agent' : 'in progress'} · View job</button>)}
+                                </span>{activeJobs.filter(job => job.clusterId === cluster.id && locksClusterView(job)).map(job => <button key={job.id} title={currentJobNode(job)} className="badge badge-warning cluster-processing-pill" onClick={event => { event.stopPropagation(); navigate(`/jobs/${job.id}`); }}>{['ROLLING_RESTART', 'EXTERNAL_ROLLING_RESTART'].includes(job.type) ? <RefreshCw size={13} aria-hidden="true" /> : <Settings size={13} aria-hidden="true" />}<span>{clusterJobLabel(job)} {job.status === 'PENDING' ? 'queued' : job.status === 'WAITING_AGENT' ? 'waiting for agent' : 'in progress'} · View job</span></button>)}
                               </div>
                             </td>
                             <td>
