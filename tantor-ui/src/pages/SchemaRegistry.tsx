@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams } from 'react-router-dom';
-import { AlertOctagon, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardPaste, Copy, Edit3, FileDown, FileText, GitCompare, MoreVertical, Paperclip, Plus, RefreshCw, Save, Search, Settings, Trash2, X } from 'lucide-react';
+import { AlertOctagon, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardPaste, Copy, Edit3, FileText, GitCompare, MoreVertical, Paperclip, Plus, RefreshCw, Search, Settings, Trash2, X } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import orangeBanner from '../assets/orange.png';
 import { AnchoredMenu } from '../components/AnchoredMenu';
@@ -321,6 +321,8 @@ export function SchemaRegistry() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [pendingSetting, setPendingSetting] = useState<PendingSetting | null>(null);
+  const [settingSuccess, setSettingSuccess] = useState<PendingSetting | null>(null);
+  const settingSaveInFlight = useRef(false);
   const [settingError, setSettingError] = useState<string | null>(null);
   const [globalModeState, setGlobalModeState] = useState<{ context: string; value: string | null; error: string | null }>({ context: '', value: null, error: null });
   const [subjectModeState, setSubjectModeState] = useState<{ context: string; value: string | null; error: string | null }>({ context: '', value: null, error: null });
@@ -674,7 +676,7 @@ export function SchemaRegistry() {
     if (!connectionId || connectionId === selectedConnectionId) return;
     loadRequestId.current += 1;
     setSelectedConnectionId(connectionId);
-    setPendingSetting(null); setSuccess(null); setSelected(null); setView('list');
+    setPendingSetting(null); setSettingSuccess(null); setSuccess(null); setSelected(null); setView('list');
     setSummary(null);
     setError(null);
     setHasFetched(true);
@@ -1018,11 +1020,11 @@ export function SchemaRegistry() {
     }
   };
 
-  const confirmSetting = async () => {
-    const change = pendingSetting;
-    if (!change || !canManage || saving) return;
+  const confirmSetting = async (change = pendingSetting, automatic = false) => {
+    if (!change || !canManage || saving || settingSaveInFlight.current) return;
     if (change.kind === 'edit-compatibility') { await submitEditSchema(undefined, true); return; }
-    setSaving(true); setSettingError(null); setError(null);
+    settingSaveInFlight.current = true;
+    setSaving(true); setSettingError(null); setError(null); setSuccess(null); setSettingSuccess(null);
     try {
       const scopePath = change.subject ? `/subjects/${encodeURIComponent(change.subject)}` : '';
       const path = scopePath + (change.kind === 'mode' ? '/mode' : '/config');
@@ -1043,8 +1045,18 @@ export function SchemaRegistry() {
       } else { setGlobalCompatibility(change.value); setAppliedGlobalCompatibility(change.value); }
       setSuccess(`${change.subject ? `Subject ${change.subject}` : 'Global'}: ${change.kind} changed from ${change.oldValue} to ${change.value}.`);
       setPendingSetting(null);
-    } catch (reason) { setSettingError(errorMessage(reason, 'Unable to save Schema Registry setting.')); }
-    finally { setSaving(false); }
+      if (automatic) setSettingSuccess(change);
+    } catch (reason) {
+      const message = errorMessage(reason, 'Unable to save Schema Registry setting.');
+      if (automatic) setError(message);
+      else setSettingError(message);
+    } finally { settingSaveInFlight.current = false; setSaving(false); }
+  };
+
+  const changeCompatibility = (value: string, subject?: string) => {
+    const oldValue = subject ? details?.compatibility : appliedGlobalCompatibility;
+    if (!oldValue || oldValue === value || !canManage || saving || loading || loadingDetails) return;
+    void confirmSetting({ kind: 'compatibility', value, oldValue, subject, connectionId: selectedConnectionId }, true);
   };
 
   const connStatusColor = (s: string) =>
@@ -1054,6 +1066,11 @@ export function SchemaRegistry() {
   return (
     <div className="data-services-page animate-fade-in">
       {success && <div className="ds-settings-success" role="status">{success}<button aria-label="Dismiss notification" onClick={() => setSuccess(null)}><X size={16} /></button></div>}
+      {settingSuccess && <SchemaRegistrySettingModal completed
+        title="Compatibility changed"
+        description={`${settingSuccess.subject ? `Subject ${settingSuccess.subject}` : 'Global'} compatibility was saved successfully.`}
+        detail={`${settingSuccess.oldValue} → ${settingSuccess.value}`}
+        saving={false} error={null} onClose={() => setSettingSuccess(null)} onConfirm={() => setSettingSuccess(null)} />}
       {pendingSetting && <SchemaRegistrySettingModal
         title={`Change ${pendingSetting.kind === 'mode' ? 'mode' : 'compatibility'}?`}
         description={pendingSetting.kind === 'mode'
@@ -1088,7 +1105,6 @@ export function SchemaRegistry() {
                           : [{ value: '', label: 'Default connection' }]
                       }
                     />
-
                   </div>
                 </div>
 
@@ -1098,8 +1114,8 @@ export function SchemaRegistry() {
                   <CustomSelect
                     className="ds-compat-select"
                     value={globalCompatibility}
-                    onChange={setGlobalCompatibility}
-                    disabled={!canManage || saving}
+                    onChange={value => changeCompatibility(value)}
+                    disabled={!canManage || saving || loading || !summary}
                     options={compatibilityOptions.map(o => ({
                       value: o,
                       label: o.charAt(0) + o.slice(1).toLowerCase().replace('_', ' ')
@@ -1116,34 +1132,6 @@ export function SchemaRegistry() {
               </div>
               <div className="ds-buttons-group">
                 {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Buttons ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
-                {canManage && (
-                  <button
-                    className="ds-sr-save-button"
-                    onClick={() => requestSetting('compatibility', globalCompatibility)}
-                    disabled={saving}
-                    style={{
-                      boxSizing: 'border-box',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      padding: '0 8px',
-                      gap: 'var(--space-2)',
-                      height: '32px',
-                      background: "var(--bg-surface)",
-                      border: '1px solid var(--button-primary)',
-                      borderRadius: 'var(--radius-md)',
-                      color: 'var(--button-primary)',
-                      fontFamily: 'Satoshi, sans-serif',
-                      fontWeight: 'var(--font-medium)',
-                      fontSize: 'var(--text-base)',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s'
-                    }}
-                  >
-                    <Save size={16} /> Save
-                  </button>
-                )}
-
                 {canManage && (
                   <button
                     className="ds-button ds-kafka-connect-action-button"
@@ -1356,15 +1344,10 @@ export function SchemaRegistry() {
                   <div className="ds-compat-inline-custom">
                     <CustomSelect
                       value={subjectCompatibility}
-                      onChange={setSubjectCompatibility}
-                      disabled={!canManage || saving || Boolean(selected.deleted)}
+                      onChange={value => changeCompatibility(value, selected.subject)}
+                      disabled={!canManage || saving || loadingDetails || !details || Boolean(selected.deleted)}
                       options={compatibilityOptions.map(o => ({ value: o, label: o }))}
                     />
-                    {canManage && !selected.deleted && (
-                      <button className="ds-icon-button ds-compat-save-btn" onClick={() => requestSetting('compatibility', subjectCompatibility, selected.subject)} disabled={saving} title="Save">
-                        <FileDown size={16} />
-                      </button>
-                    )}
                   </div>
                 </div>
                 <div className="ds-meta-row ds-compat-row-block">

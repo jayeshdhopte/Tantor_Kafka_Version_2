@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X } from 'lucide-react';
+import { CheckCircle2, X } from 'lucide-react';
 import './TopicActionConfirmationModal.css';
 
-export function SchemaRegistrySettingModal({ title, description, detail, saving, error, onClose, onConfirm }: {
+export function SchemaRegistrySettingModal({ title, description, detail, saving, error, onClose, onConfirm, completed = false }: {
+  completed?: boolean;
   title: string; description: string; detail: string; saving: boolean; error: string | null;
   onClose: () => void; onConfirm: () => void;
 }) {
@@ -30,11 +31,11 @@ export function SchemaRegistrySettingModal({ title, description, detail, saving,
       <div className="topic-action-banner" aria-hidden="true" />
       <button className="topic-action-close" disabled={saving} onClick={onClose} aria-label="Close modal"><X size={22} /></button>
       <div className="topic-action-content">
-        <div className="topic-action-title"><span className="topic-action-icon" aria-hidden="true" /><h3 id="sr-setting-title">{title}</h3></div>
+        <div className="topic-action-title">{completed ? <CheckCircle2 size={22} color="#15803d" aria-hidden="true" /> : <span className="topic-action-icon" aria-hidden="true" />}<h3 id="sr-setting-title">{title}</h3></div>
         <p id="sr-setting-description">{description}</p><div className="topic-action-names">{detail}</div>
         {error && <p className="ds-alert" role="alert">{error}</p>}
-        <footer><button className="topic-action-cancel" disabled={saving} onClick={onClose}>Cancel</button>
-          <button className="topic-action-confirm" disabled={saving} onClick={onConfirm}>{saving ? 'Saving...' : 'Confirm change'}</button></footer>
+        <footer>{!completed && <button className="topic-action-cancel" disabled={saving} onClick={onClose}>Cancel</button>}
+          <button className="topic-action-confirm" disabled={saving} onClick={onConfirm}>{completed ? 'Done' : saving ? 'Saving...' : 'Confirm change'}</button></footer>
       </div>
     </div>
   </div>, document.body);

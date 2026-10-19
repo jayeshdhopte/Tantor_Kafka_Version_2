@@ -2409,7 +2409,8 @@
 
 .ds-sr-detail-shell {
   grid-template-columns: minmax(0, 7fr) minmax(260px, 3fr);
-  height: 260px;
+  height: auto;
+  min-height: 300px;
   overflow: hidden;
   border-color: #D2D2D7;
   border-radius: 12px;
@@ -2447,6 +2448,10 @@
   font-size: 12px;
   font-weight: 400;
 }
+
+.ds-sr-detail-shell .ds-custom-select-container { width: 100%; min-width: 0; }
+.ds-sr-detail-shell .ds-custom-select-trigger { background: #fff; border: 1px solid #ccc; }
+.ds-sr-detail-shell .ds-custom-select-trigger span { color: var(--text-primary) !important; }
 
 .ds-sr-detail-shell .ds-meta-row.ds-compat-row-block {
   display: flex;
