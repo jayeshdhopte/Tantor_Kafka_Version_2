@@ -171,16 +171,22 @@ public class ConsumerLagCacheService {
             if (hasOfflinePartitions) health = "WARNING";
             if (desc.state().toString().equals("Dead") || desc.state().toString().equals("Empty")) health = "INACTIVE";
 
-            summaries.add(new ConsumerGroupSummaryDto(
+            Integer coordinatorId = desc.coordinator() != null && desc.coordinator().id() >= 0
+                    ? desc.coordinator().id() : null;
+            ConsumerGroupSummaryDto summary = new ConsumerGroupSummaryDto(
                 groupId, 
                 desc.state().toString(), 
                 desc.members().size(), 
                 totalLag, 
                 health, 
                 now
-            ));
+            );
+            summary.setCoordinatorId(coordinatorId);
+            summaries.add(summary);
             
-            details.put(groupId, new ConsumerGroupDetailDto(groupId, desc.state().toString(), memberDtos));
+            ConsumerGroupDetailDto detail = new ConsumerGroupDetailDto(groupId, desc.state().toString(), memberDtos);
+            detail.setCoordinatorId(coordinatorId);
+            details.put(groupId, detail);
         }
 
         summaryCache.put(clusterId, summaries);

@@ -3,6 +3,7 @@ package io.translab.tantor.server.dto;
 public class ConsumerGroupSummaryDto {
     private String groupId;
     private String state;
+    private Integer coordinatorId;
     private int membersCount;
     private long totalLag;
     private String health;
@@ -34,6 +35,9 @@ public class ConsumerGroupSummaryDto {
     public void setState(String state) {
         this.state = state;
     }
+
+    public Integer getCoordinatorId() { return coordinatorId; }
+    public void setCoordinatorId(Integer coordinatorId) { this.coordinatorId = coordinatorId; }
 
     public int getMembersCount() {
         return membersCount;

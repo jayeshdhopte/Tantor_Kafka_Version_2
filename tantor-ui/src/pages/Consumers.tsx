@@ -7,6 +7,7 @@ import './Consumers.css';
 interface ConsumerGroupSummaryDto {
   groupId: string;
   state: string;
+  coordinatorId?: number | null;
   membersCount: number;
   totalLag: number;
   health: 'HEALTHY' | 'WARNING' | 'INACTIVE' | 'CRITICAL';
@@ -40,6 +41,7 @@ interface ConsumerGroupMemberDto {
 interface ConsumerGroupDetailDto {
   groupId: string;
   state: string;
+  coordinatorId?: number | null;
   members: ConsumerGroupMemberDto[];
 }
 
@@ -175,7 +177,7 @@ export function Consumers() {
                         Total Lag
                       </button>
                     </th>
-                    <th>Health</th>
+                    <th>Coordinator ID</th>
                     <th>Last Updated</th>
                   </tr>
                 </thead>
@@ -186,7 +188,7 @@ export function Consumers() {
                       <td>{g.state}</td>
                       <td>{g.membersCount}</td>
                       <td>{g.totalLag}</td>
-                      <td>{g.health.charAt(0) + g.health.slice(1).toLowerCase()}</td>
+                      <td>{g.coordinatorId ?? 'Unavailable'}</td>
                       <td className="consumer-last-updated">
                         {new Date(g.lastUpdated).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                       </td>
@@ -229,7 +231,7 @@ export function Consumers() {
         <div className="modal-overlay" onClick={() => setSelectedGroupId(null)} style={{
           fontFamily: 'Satoshi, Inter, sans-serif'
         }}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{
+          <div className="modal-content" role="dialog" aria-modal="true" aria-label="Consumer Group Details" onClick={e => e.stopPropagation()} style={{
             background: "var(--bg-surface)",
             borderRadius: '16px',
             width: '100%',
@@ -242,7 +244,7 @@ export function Consumers() {
             <div style={{ padding: '24px 32px 12px 32px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <h3 style={{ margin: 0, fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-semibold)', fontSize: 'var(--text-xl)', color: 'var(--button-primary-active)' }}>Consumer Group Details</h3>
-                <button onClick={() => setSelectedGroupId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}>
+                <button aria-label="Close consumer group details" onClick={() => setSelectedGroupId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}>
                   <X size={20} color="#94a3b8" />
                 </button>
               </div>
@@ -254,46 +256,10 @@ export function Consumers() {
                 <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>Loading details...</div>
               ) : detailData ? (
                 <div>
-                  {/* Info Cards */}
-                  <div style={{ display: 'flex', gap: 'var(--space-4)', padding: '0 32px 24px 32px' }}>
-                    <div style={{
-                      boxSizing: 'border-box',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'center',
-                      alignItems: 'flex-start',
-                      padding: '16px 20px',
-                      gap: 'var(--space-2)',
-                      width: '280px',
-                      height: '84px',
-                      background: '#F9F9FB',
-                      border: '1px solid var(--border-subtle)',
-                      borderRadius: 'var(--radius-md)'
-                    }}>
-                      <span style={{ fontSize: 'var(--text-xs)', fontWeight: 'var(--font-medium)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>State</span>
-                      <span style={{
-                        fontSize: '18px',
-                        fontWeight: 'var(--font-semibold)',
-                        color: detailData.state === 'Stable' ? '#10B981' : '#EF4444'
-                      }}>{detailData.state}</span>
-                    </div>
-                    <div style={{
-                      boxSizing: 'border-box',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'center',
-                      alignItems: 'flex-start',
-                      padding: '16px 20px',
-                      gap: 'var(--space-2)',
-                      width: '280px',
-                      height: '84px',
-                      background: '#F9F9FB',
-                      border: '1px solid var(--border-subtle)',
-                      borderRadius: 'var(--radius-md)'
-                    }}>
-                      <span style={{ fontSize: 'var(--text-xs)', fontWeight: 'var(--font-medium)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Members</span>
-                      <span style={{ fontSize: '18px', fontWeight: 'var(--font-semibold)', color: '#10B981' }}>{detailData.members.length}</span>
-                    </div>
+                  <div className="consumer-detail-summary">
+                    <article><span>State</span><strong style={{ color: detailData.state === 'Stable' ? '#10B981' : '#EF4444' }}>{detailData.state}</strong></article>
+                    <article><span>Total Members</span><strong>{detailData.members.length}</strong></article>
+                    <article><span>Coordinator ID</span><strong>{detailData.coordinatorId ?? 'Unavailable'}</strong></article>
                   </div>
 
                   {/* Section Title */}
@@ -329,8 +295,8 @@ export function Consumers() {
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-base)', fontFamily: 'Satoshi, sans-serif' }}>
                               <thead>
                                 <tr style={{ background: '#F9F9FB', borderBottom: '1px solid var(--border-subtle)' }}>
-                                  <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 'var(--font-medium)', color: 'var(--button-primary-active)' }}>Topic</th>
-                                  <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 'var(--font-medium)', color: 'var(--button-primary-active)' }}>Partition</th>
+                                  <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 'var(--font-medium)', color: 'var(--button-primary-active)' }}>Assigned Topic</th>
+                                  <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 'var(--font-medium)', color: 'var(--button-primary-active)' }}>Assigned Partition</th>
                                   <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 'var(--font-medium)', color: 'var(--button-primary-active)' }}>Current Offset</th>
                                   <th style={{ padding: '12px 16px', textAlign: 'left', fontWeight: 'var(--font-medium)', color: 'var(--button-primary-active)' }}>Lag</th>
                                 </tr>
