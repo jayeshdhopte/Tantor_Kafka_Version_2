@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams } from 'react-router-dom';
 import { Users, Search, ChevronLeft, ChevronRight, X, ArrowUp, RefreshCw } from 'lucide-react';
@@ -56,6 +56,8 @@ export function Consumers() {
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('totalLag');
+  const [refreshInterval, setRefreshInterval] = useState(0);
+  const activeRequest = useRef<{ key: string; controller: AbortController } | null>(null);
 
   // Detail Modal State
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
@@ -63,27 +65,46 @@ export function Consumers() {
   const [detailData, setDetailData] = useState<ConsumerGroupDetailDto | null>(null);
 
   const fetchGroups = useCallback(async () => {
+    const key = JSON.stringify([id, page, size, searchQuery, sortBy]);
+    if (activeRequest.current?.key === key) return;
+    activeRequest.current?.controller.abort();
+    const controller = new AbortController();
+    activeRequest.current = { key, controller };
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/v1/clusters/${id}/consumer-groups?page=${page}&size=${size}&search=${encodeURIComponent(searchQuery)}&sortBy=${sortBy}`);
+      const res = await fetch(`/api/v1/clusters/${id}/consumer-groups?page=${page}&size=${size}&search=${encodeURIComponent(searchQuery)}&sortBy=${sortBy}`, { signal: controller.signal });
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
         throw new Error(errorData.message || `Failed to load consumer groups (HTTP ${res.status})`);
       }
       const json = await res.json();
-      setData(json);
+      if (!controller.signal.aborted && activeRequest.current?.controller === controller) setData(json);
     } catch (e: unknown) {
-      console.error(e);
-      setError(e instanceof Error ? e.message : 'Failed to load consumer groups');
+      if (!controller.signal.aborted && activeRequest.current?.controller === controller) {
+        console.error(e);
+        setError(e instanceof Error ? e.message : 'Failed to load consumer groups');
+      }
     } finally {
-      setLoading(false);
+      if (activeRequest.current?.controller === controller) {
+        activeRequest.current = null;
+        setLoading(false);
+      }
     }
   }, [id, page, size, searchQuery, sortBy]);
 
   useEffect(() => {
     void (async () => { await fetchGroups(); })();
+    return () => { activeRequest.current?.controller.abort(); activeRequest.current = null; };
   }, [fetchGroups]);
+
+  useEffect(() => {
+    if (!refreshInterval) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible' && !activeRequest.current) void fetchGroups();
+    }, refreshInterval * 1000);
+    return () => window.clearInterval(timer);
+  }, [fetchGroups, refreshInterval]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -128,6 +149,13 @@ export function Consumers() {
               />
             </label>
           </form>
+          <div className="consumer-refresh-controls">
+          <label className="consumer-refresh-rate"><span>Refresh rate:</span>
+            <select aria-label="Consumer groups refresh rate" value={refreshInterval} onChange={event => setRefreshInterval(Number(event.target.value))}>
+              <option value={0}>Off</option>
+              {[2, 5, 10, 15].map(seconds => <option key={seconds} value={seconds}>{seconds} sec</option>)}
+            </select>
+          </label>
           <button
             type="button"
             className="consumer-refresh-button"
@@ -137,6 +165,7 @@ export function Consumers() {
           >
             <RefreshCw className={loading ? 'spin' : ''} size={15} />
           </button>
+          </div>
         </div>
       </div>
 
