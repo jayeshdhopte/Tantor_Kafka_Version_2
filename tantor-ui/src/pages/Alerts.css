@@ -297,8 +297,15 @@
   gap: 16px;
   width: 100%;
   box-sizing: border-box;
-  padding: 16px 16px 0;
+  padding: 16px 20px;
+  border: 1px solid #E1E7EC;
+  border-radius: 8px;
+  background: #F8FAFC;
 }
+
+.alerts-details-toolbar h2 { display: flex; align-items: center; gap: 10px; color: #3E1363; font-size: 16px; font-weight: 600; line-height: 24px; }
+.alerts-details-toolbar h2 svg { flex: none; }
+.alerts-details-toolbar .alerts-details-count { color: #667085; font-size: 13px; line-height: 20px; }
 
 .alerts-details-toolbar > div {
   display: flex;

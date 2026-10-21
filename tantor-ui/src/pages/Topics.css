@@ -197,6 +197,7 @@
 /* -- Table Container -- */
 .topics-table-card {
   overflow: auto;
+  scrollbar-gutter: auto;
   border: 1px solid #CCCCCC;
   border-radius: 8px;
   background: #ffffff;

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  AlertTriangle, CheckCircle, RefreshCw,
+  AlertTriangle, Bell, CheckCircle, RefreshCw,
   Shield, Activity
 } from 'lucide-react';
 import './Alerts.css';
@@ -159,7 +159,7 @@ export function Alerts() {
           <section className="alerts-details-panel">
             <div className="alerts-details-toolbar">
               <div>
-                <h2>{viewMode === 'CURRENT' ? 'Current Alerts' : 'Resolved Alerts'}</h2>
+                <h2><Bell size={20} aria-hidden="true" />{viewMode === 'CURRENT' ? 'Current Alerts' : 'Resolved Alerts'}</h2>
                 <span className="alerts-details-count">
                   {visibleAlerts.length} {visibleAlerts.length === 1 ? 'alert' : 'alerts'}
                 </span>

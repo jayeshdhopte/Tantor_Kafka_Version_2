@@ -257,7 +257,7 @@ export function Partitions() {
                 aria-label="Partitions per page"
                 value={size} 
                 onChange={(e) => { setSize(Number(e.target.value)); setPage(0); }}
-                style={{ padding: '0.4rem', borderRadius: '6px', border: '1px solid var(--border-default)', backgroundColor: "var(--text-light)", color: 'var(--text-heading)' }}
+                style={{ padding: '0.4rem 2.5rem 0.4rem 0.75rem', borderRadius: '6px', border: '1px solid var(--border-default)', backgroundColor: "var(--text-light)", color: 'var(--text-heading)' }}
               >
                 <option value={10}>10 per page</option>
                 <option value={25}>25 per page</option>

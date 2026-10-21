@@ -4,6 +4,26 @@
   --table-heading-divider: #D2D2D7;
 }
 
+/* Do not reserve an empty scrollbar strip beside table headers. */
+body :is(.audit-table-wrap,
+  .table-container,
+  .clusters-table-wrap,
+  .external-table-wrap,
+  .brokers-table-container,
+  .topics-table-wrap,
+  .topics-table-card,
+  .ds-table-wrapper,
+  .cluster-nodes-table-wrap,
+  .overview-table-wrap,
+  .node-config-table-wrap,
+  .detail-table-wrap,
+  .consumer-table-scroll,
+  .ds-kc-list-scroll,
+  .artifacts-list-container > .versions-list),
+body :has(> table, > .figma-table) {
+  scrollbar-gutter: auto;
+}
+
 /* Layered important rules also override older page-specific important rules.
    Cell dimensions, scrolling, row states and controls remain page-owned. */
 @layer tantor-table-headers {

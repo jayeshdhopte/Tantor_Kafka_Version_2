@@ -21,9 +21,10 @@ interface DirectoryResult {
   error?: string;
 }
 
-export function ServiceDirectories({ clusterId, serviceType }: {
+export function ServiceDirectories({ clusterId, serviceType, preview = false }: {
   clusterId?: string;
   serviceType: 'SCHEMA_REGISTRY' | 'KAFKA_CONNECT';
+  preview?: boolean;
 }) {
   const [result, setResult] = useState<DirectoryResult | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -53,16 +54,16 @@ export function ServiceDirectories({ clusterId, serviceType }: {
   return <section className="service-directories" aria-label={`${serviceName} directories`}>
     <header className="service-directories-heading">
       <h3>
-        <button className="service-directories-toggle" type="button" aria-expanded={expanded} aria-controls={contentId} onClick={() => setExpanded(value => !value)}>
+        {preview ? `${serviceName} Directories` : <button className="service-directories-toggle" type="button" aria-expanded={expanded} aria-controls={contentId} onClick={() => setExpanded(value => !value)}>
           {serviceName} Directories
           <ChevronDown size={18} aria-hidden="true" className={expanded ? 'expanded' : ''} />
-        </button>
+        </button>}
       </h3>
       <button type="button" title="Refresh service directories" aria-label={`Refresh ${serviceName} directories`} disabled={!current} onClick={() => setAttempt(value => value + 1)}>
         <RefreshCw size={16} className={!current ? 'spin' : ''} aria-hidden="true" />
       </button>
     </header>
-    <div id={contentId} className="service-directories-content" hidden={!expanded}>
+    <div id={contentId} className="service-directories-content" hidden={!preview && !expanded}>
     {!current ? <p role="status">Loading service directories...</p>
       : current.error ? <p className="service-directories-error" role="alert">{current.error}</p>
         : paths.length === 0 ? <p>No directory information has been reported for this service.</p>

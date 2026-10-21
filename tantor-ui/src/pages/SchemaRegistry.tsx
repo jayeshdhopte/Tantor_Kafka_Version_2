@@ -1,11 +1,11 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams } from 'react-router-dom';
-import { AlertOctagon, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardPaste, Copy, Edit3, FileText, GitCompare, MoreVertical, Paperclip, Plus, RefreshCw, Search, Settings, Trash2, X } from 'lucide-react';
+import { AlertOctagon, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardPaste, Copy, Edit3, Info, FileText, GitCompare, MoreVertical, Paperclip, Plus, RefreshCw, Search, Settings, Trash2, X } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import orangeBanner from '../assets/orange.png';
 import { AnchoredMenu } from '../components/AnchoredMenu';
-import { ServiceDirectories } from '../components/ServiceDirectories';
+import { ServiceDirectoriesModal } from '../components/ServiceDirectoriesModal';
 import { readDataServiceSession, writeDataServiceSession } from '../utils/dataServiceSessionCache';
 import { compareSchemaFields } from '../utils/schemaFieldDiff';
 import { compareSchemaCode } from '../utils/schemaCodeDiff';
@@ -259,9 +259,10 @@ interface CustomSelectProps {
   placeholder?: string;
   disabled?: boolean;
   className?: string;
+  onInspect?: (value: string, returnFocus: HTMLElement) => void;
 }
 
-function CustomSelect({ value, onChange, options, placeholder, disabled, className }: CustomSelectProps) {
+function CustomSelect({ value, onChange, options, placeholder, disabled, className, onInspect }: CustomSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [anchor, setAnchor] = useState<HTMLDivElement | null>(null);
   const selectedOption = options.find(o => o.value === value);
@@ -270,6 +271,14 @@ function CustomSelect({ value, onChange, options, placeholder, disabled, classNa
     <div ref={setAnchor} className={`ds-custom-select-container ${className || ''} ${disabled ? 'disabled' : ''}`}>
       <div
         className="ds-custom-select-trigger"
+        tabIndex={onInspect && !disabled ? 0 : undefined}
+        role={onInspect ? 'button' : undefined}
+        aria-expanded={onInspect ? isOpen : undefined}
+        onKeyDown={onInspect ? event => {
+          if (!disabled && (event.key === 'Enter' || event.key === ' ')) {
+            event.preventDefault(); setIsOpen(open => !open);
+          }
+        } : undefined}
         onClick={() => !disabled && setIsOpen(!isOpen)}
       >
         <span>{selectedOption ? selectedOption.label : placeholder || 'Select...'}</span>
@@ -285,6 +294,16 @@ function CustomSelect({ value, onChange, options, placeholder, disabled, classNa
           matchAnchorWidth
         >
           {options.map(opt => (
+            onInspect ? <div key={opt.value} className={`ds-sr-connection-option ${opt.value === value ? 'selected' : ''}`}>
+              <button type="button" className="ds-sr-connection-choice" onClick={() => {
+                onChange(opt.value); setIsOpen(false);
+              }}>{opt.label}</button>
+              <button type="button" className="ds-sr-connection-preview" title={`View Schema Registry directories: ${opt.label}`}
+                aria-label={`View Schema Registry directories: ${opt.label}`} onClick={() => {
+                  const trigger = anchor.querySelector<HTMLElement>('.ds-custom-select-trigger');
+                  if (trigger) { setIsOpen(false); onInspect(opt.value, trigger); }
+                }}><Info size={17} aria-hidden="true" /></button>
+            </div> :
             <div
               key={opt.value}
               className={`ds-custom-select-option ${opt.value === value ? 'selected' : ''}`}
@@ -311,6 +330,7 @@ const modeOptions = [{ value: 'READONLY', label: 'Read only' }, { value: 'READWR
 
 export function SchemaRegistry() {
   const { id } = useParams<{ id: string }>();
+  const [directoryPreview, setDirectoryPreview] = useState<{ connectionName: string; returnFocus: HTMLElement } | null>(null);
   const { canManage } = usePermissions();
   const [initialSession] = useState(() => readDataServiceSession<SchemaSummary>('schema-registry', id));
   const [view, setView] = useState<View>('list');
@@ -1064,7 +1084,7 @@ export function SchemaRegistry() {
 
   // ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Render ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬
   return (
-    <div className="data-services-page animate-fade-in">
+    <div className="data-services-page ds-schema-registry-page animate-fade-in">
       {success && <div className="ds-settings-success" role="status">{success}<button aria-label="Dismiss notification" onClick={() => setSuccess(null)}><X size={16} /></button></div>}
       {settingSuccess && <SchemaRegistrySettingModal completed
         title="Compatibility changed"
@@ -1093,6 +1113,10 @@ export function SchemaRegistry() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
                     <CustomSelect
                       className="ds-instance-select"
+                      onInspect={(connectionId, returnFocus) => {
+                        const connection = savedConnections.find(item => item.id === connectionId);
+                        setDirectoryPreview({ connectionName: connection?.isDefault ? 'Default connection' : connection?.connectionName || 'Default connection', returnFocus });
+                      }}
                       value={selectedConnectionId ?? ''}
                       onChange={handleInstanceChange}
                       disabled={savedConnections.length === 0 || saving}
@@ -1223,18 +1247,23 @@ export function SchemaRegistry() {
               </div>
             </div>
 
-            <div className="ds-panel ds-sr-subjects-panel">
+            <div className="ds-schema-subjects-inventory">
               <div className="ds-subject-filters ds-schema-subject-filters" role="group" aria-label="Filter schema subjects">
                 <label className="ds-subject-search"><Search size={18} /><input type="search" aria-label="Search subjects by name or schema ID"
                   placeholder="Filter by subject name or schema ID" value={filters.search} onChange={event => updateSubjectFilters({ search: event.target.value })} /></label>
+                <div className="ds-schema-filter-controls">
                 <SchemaSubjectFilter label="Type" options={availableTypes.map(value => ({ value, label: ({ AVRO: 'Avro', PROTOBUF: 'Protobuf', JSON: 'JSON' } as Record<string, string>)[value] || value }))}
                   selected={filters.types} counts={typeCounts} onChange={types => updateSubjectFilters({ types })} />
                 <SchemaSubjectFilter label="Compatibility" options={availableCompatibility.map(value => ({ value, label: value === 'UNKNOWN' ? 'Unavailable' : value }))}
                   selected={filters.compatibility} counts={compatibilityCounts} onChange={compatibility => updateSubjectFilters({ compatibility })} />
                 <label className="ds-subject-deleted"><input type="checkbox" checked={showDeletedSubjects} onChange={event => switchDeletedSubjects(event.target.checked)} /> Show only soft-deleted</label>
+                </div>
+                <div className="ds-schema-filter-meta">
                 {filtersActive && <button type="button" className="ds-subject-filter-reset" onClick={() => updateSubjectFilters({ search: '', types: [], compatibility: [] })}>Clear filters</button>}
                 <span className="ds-subject-results" role="status">{visibleSubjects.length} of {scopeSubjects.length} subjects</span>
+                </div>
               </div>
+              <div className="ds-panel ds-sr-subjects-panel">
               <table className="ds-table ds-sr-subjects-table">
                 <thead>
                   <tr><th>Subject</th><th>Type</th><th>Latest Version</th><th>Schema ID</th><th>Schema Type</th><th>Compatibility</th>{canManage && <th>Actions</th>}</tr>
@@ -1267,9 +1296,12 @@ export function SchemaRegistry() {
                   )}
                 </tbody>
               </table>
+              </div>
             </div>
           </>}
-          <ServiceDirectories clusterId={id} serviceType="SCHEMA_REGISTRY" />
+          {directoryPreview && <ServiceDirectoriesModal clusterId={id} serviceType="SCHEMA_REGISTRY"
+            connectionName={directoryPreview.connectionName} returnFocus={directoryPreview.returnFocus}
+            onClose={() => setDirectoryPreview(null)} />}
         </>
       )}
 
@@ -1659,7 +1691,7 @@ export function SchemaRegistry() {
       {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Connection modal ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
       {canManage && showConnection && createPortal(
         <div className="ds-modal-backdrop" role="dialog" aria-modal="true">
-          <div className="ds-modal ds-connection-modal ds-upload-style-modal">
+          <div className="ds-modal ds-connection-modal ds-upload-style-modal ds-sr-connection-modal">
             <div className="ds-modal-header">
               <div>
                 <h3>{editingConnectionId ? 'Edit Connection' : 'Add Schema Registry Connection'}</h3>
@@ -1704,7 +1736,7 @@ export function SchemaRegistry() {
                   <div className="ds-field"><label>Host / IP</label><input value={customIp} onChange={e => setCustomIp(e.target.value)} placeholder="Host or IP address" required /></div>
                   <div className="ds-field"><label>Port</label><input type="number" value={customPort} onChange={e => setCustomPort(e.target.value)} placeholder="8081" required /></div>
                 </div>
-                <div className="ds-form-grid two">
+                <div className="ds-form-grid two ds-sr-certificate-grid">
                   <div className="ds-field">
                     <label>Certificate Type</label>
                     <CustomSelect
@@ -1723,14 +1755,7 @@ export function SchemaRegistry() {
                   </div>
                   {certType === 'PEM' ? (
                     <div className="ds-field ds-certificate-field">
-                      <div className="ds-certificate-label-row">
-                        <label>Certificate</label>
-                        <button type="button" className="ds-mini-button" onClick={() => { setCertPasteMode(!certPasteMode); setCertFile(null); setCertFileName(''); setCertPasteText(''); }}>
-                          {certPasteMode
-                            ? <><Paperclip size={14} aria-hidden="true" /> Upload file</>
-                            : <><ClipboardPaste size={14} aria-hidden="true" /> Paste text</>}
-                        </button>
-                      </div>
+                      <label>Certificate</label>
                       {certPasteMode ? (
                         <textarea value={certPasteText} onChange={e => setCertPasteText(e.target.value)}
                           placeholder="-----BEGIN CERTIFICATE-----&#10;MIIDXTCCAkWgAwIBAgIJAMEn...&#10;-----END CERTIFICATE-----"
@@ -1750,6 +1775,11 @@ export function SchemaRegistry() {
                           )}
                         </div>
                       )}
+                      <button type="button" className="ds-mini-button ds-sr-certificate-mode" onClick={() => { setCertPasteMode(!certPasteMode); setCertFile(null); setCertFileName(''); setCertPasteText(''); }}>
+                        {certPasteMode
+                          ? <><Paperclip size={14} aria-hidden="true" /> Upload file</>
+                          : <><ClipboardPaste size={14} aria-hidden="true" /> Paste text</>}
+                      </button>
                     </div>
                   ) : (
                     <div className="ds-field">

@@ -903,10 +903,10 @@
 .artifacts-page .universal-distribution-directory .form-control { border-color: #D2D2D7; border-radius: 6px; font-family: monospace; font-size: 13px; }
 
 .artifacts-page .artifacts-list-container .section-title {
-  margin: 0 0 16px !important;
+  margin: 0 !important;
   padding: 10px 12px;
   border-left: 3px solid #3E1363;
-  border-radius: 6px;
+  border-radius: 6px 6px 0 6px;
   background: #EEF0F3;
   color: #3E1363;
   font-size: 16px;
@@ -915,8 +915,10 @@
   letter-spacing: 0;
 }
 
-.artifacts-page .versions-list { gap: 12px; padding: 0; border: 0; border-radius: 0; background: transparent; }
-.artifacts-page .version-card { border: 1px solid #E1E7EC; border-radius: 8px; box-shadow: 0 1px 3px rgba(40, 47, 73, .04); }
+.artifacts-page .versions-list { gap: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.artifacts-page .version-card { border: 1px solid #E1E7EC; border-radius: 0; box-shadow: none; }
+.artifacts-page .versions-list > .version-card + .version-card { border-top: 0; }
+.artifacts-page .versions-list > .version-card:last-child { border-radius: 0 0 8px 8px; }
 .artifacts-page .version-card:hover { border-color: #B8A5CC; }
 .artifacts-page .version-card:focus-within { border-color: #8665A5; }
 .artifacts-page .version-card-top { display: grid; grid-template-columns: minmax(0, 1fr) 76px; gap: 16px; padding: 0 18px; border-radius: 8px; }

@@ -25,8 +25,8 @@ export function KafkaConnectorsTable({ rows, instance, loading, saving, canManag
   });
   const active = Boolean(search || Object.values(filters).some(value => value.length));
   const headers = [['name', 'Name'], ['connect', 'Connect'], ['type', 'Type'], ['class', 'Plugin'], ['topics', 'Topics'], ['state', 'Status'], ['consumerGroup', 'Consumer group']];
-  return <>
-    <div className="ds-subject-filters" role="search" aria-label="Search and filter connectors">
+  return <div className="ds-kc-inventory">
+    <div className="ds-subject-filters ds-kc-connector-filters" role="search" aria-label="Search and filter connectors">
       <label className="ds-subject-search"><Search size={18} /><input type="search" aria-label="Search connectors"
         placeholder="Search by name, status, type or plugin" value={search} onChange={event => setSearch(event.target.value)} /></label>
       {([['type', 'Type'], ['state', 'Status'], ['class', 'Plugin'], ['topics', 'Topics'], ['consumerGroup', 'Consumer group']] as [FilterKey, string][]).map(([key, label]) => {
@@ -40,7 +40,7 @@ export function KafkaConnectorsTable({ rows, instance, loading, saving, canManag
       <span className="ds-subject-results" role="status">{visible.length} of {rows.length} connectors · {rows.reduce((sum, row) => sum + row.tasks, 0)} tasks</span>
       <button className="ds-button outlined" onClick={() => downloadConnectFile('tantor-connectors.csv', connectorCsv(visible, instance), 'text/csv;charset=utf-8')} disabled={!visible.length}><Download size={16} /> Export CSV</button>
     </div>
-    <div className="ds-kc-list-scroll"><table className="ds-table ds-kc-table ds-kc-expanded-table">
+    <div className="ds-panel ds-kc-panel ds-kc-list-scroll"><table className="ds-table ds-kc-table ds-kc-expanded-table">
       <thead><tr>{headers.map(([key, label]) => <th key={key} aria-sort={sort.key === key ? sort.ascending ? 'ascending' : 'descending' : 'none'}>
         <button className="ds-kc-sort" aria-label={`Sort by ${label.toLowerCase()}`} onClick={() => setSort(current => ({ key, ascending: current.key === key ? !current.ascending : true }))}>
           {label}{sort.key === key && (sort.ascending ? <ArrowUp size={13} /> : <ArrowDown size={13} />)}</button></th>)}
@@ -56,5 +56,5 @@ export function KafkaConnectorsTable({ rows, instance, loading, saving, canManag
               <button key={action} className={`ds-button${action === 'delete' ? ' danger' : ''}`} title={action} aria-label={`${action} ${row.name}`} disabled={saving} onClick={() => onAction(row.name, action)}><Icon size={15} /></button>)}
           </div></td>}</tr>) : <tr><td colSpan={canManage ? 9 : 8} className="ds-empty">{active ? 'No connectors match your search and filters.' : 'No connectors found.'}</td></tr>}
       </tbody></table></div>
-  </>;
+  </div>;
 }
