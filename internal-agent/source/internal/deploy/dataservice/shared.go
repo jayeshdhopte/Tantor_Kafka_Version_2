@@ -118,7 +118,7 @@ func deploySharedDataService(ctx context.Context, exec executor.Executor, s Sett
 	if err = validateSharedRuntime(ctx, exec, s, task); err != nil {
 		return "", err
 	}
-	unitPath := "/etc/systemd/system/" + s.Kind + ".service"
+	unitPath := "/etc/systemd/system/" + s.ServiceName + ".service"
 	if _, _, e := exec.RunSudo(ctx, "test", "-e", unitPath); e == nil {
 		unit, _, e := exec.RunSudo(ctx, "cat", unitPath)
 		if e != nil || !strings.Contains(unit, "Description=Tantor "+s.Kind+"\n") {
@@ -126,7 +126,7 @@ func deploySharedDataService(ctx context.Context, exec executor.Executor, s Sett
 		}
 		return reconfigurePorts(ctx, exec, s, task)
 	}
-	if _, _, e := exec.Run(ctx, "systemctl", "is-active", "--quiet", s.Kind+".service"); e == nil {
+	if _, _, e := exec.Run(ctx, "systemctl", "is-active", "--quiet", s.ServiceName+".service"); e == nil {
 		return "", fmt.Errorf("another data-service service is active")
 	}
 	processClass := "org.apache.kafka.connect.cli.ConnectDistributed"
@@ -176,8 +176,8 @@ func deploySharedDataService(ctx context.Context, exec executor.Executor, s Sett
 		}
 		rollbackCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		_, _, stopErr := exec.RunSudo(rollbackCtx, "systemctl", "stop", s.Kind+".service")
-		_, _, disableErr := exec.RunSudo(rollbackCtx, "systemctl", "disable", s.Kind+".service")
+		_, _, stopErr := exec.RunSudo(rollbackCtx, "systemctl", "stop", s.ServiceName+".service")
+		_, _, disableErr := exec.RunSudo(rollbackCtx, "systemctl", "disable", s.ServiceName+".service")
 		_, _, restoreErr := exec.RunSudo(rollbackCtx, "cp", "-p", "--", backup, files[0].Path)
 		_, _, removeErr := exec.RunSudo(rollbackCtx, "rm", "-f", "--", unitPath)
 		_, _, reloadErr := exec.RunSudo(rollbackCtx, "systemctl", "daemon-reload")
@@ -215,7 +215,7 @@ func deploySharedDataService(ctx context.Context, exec executor.Executor, s Sett
 	for _, action := range []string{"daemon-reload", "enable", "start"} {
 		args := []string{action}
 		if action != "daemon-reload" {
-			args = append(args, s.Kind+".service")
+			args = append(args, s.ServiceName+".service")
 		}
 		if _, detail, err = exec.RunSudo(ctx, "systemctl", args...); err != nil {
 			return logs, fmt.Errorf("%s data-service: %w: %s", action, err, detail)

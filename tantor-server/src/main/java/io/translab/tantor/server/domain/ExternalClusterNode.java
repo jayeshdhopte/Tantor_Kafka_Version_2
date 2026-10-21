@@ -27,6 +27,12 @@ public class ExternalClusterNode {
     @Column(name = "host", nullable = false)
     private String host;
 
+    @Column(name="agent_id") private String agentId;
+    @Column(name="systemd_service") private String systemdService;
+    @Column(name="can_manage_kafka") private Boolean canManageKafka=false;
+    @Column(name="can_write_config") private Boolean canWriteConfig=false;
+    @Column(name="can_restart") private Boolean canRestart=false;
+
     @Column(name = "node_id")
     private Integer nodeId;
 

@@ -72,7 +72,6 @@ export function ConfigChange() {
   const eligibleStaticTargets = useMemo(() => services.filter(service => targetIds.includes(service.nodeId)
     && !service.role.toLowerCase().includes('broker + controller')
     && !service.role.toLowerCase().includes('broker_controller')), [services, targetIds]);
-  const openStaticTargets = () => navigate(`/clusters/${id}/config?targets=${eligibleStaticTargets.map(service => service.nodeId).join(',')}`);
   const staticTargetIds = useMemo(() => eligibleStaticTargets.map(service => service.nodeId), [eligibleStaticTargets]);
   const allKeys = useMemo(() => {
     const brokerIds = scope === 'ALL' ? ids : selected;
@@ -95,7 +94,7 @@ export function ConfigChange() {
     value: payload?.dynamicConfigs?.[String(nodeId)]?.[name]?.value ?? null,
   }));
   useEffect(() => {
-    if (!id || !payload || clusterMode === 'EXTERNAL' || staticTargetIds.length === 0) return;
+    if (!id || !payload || staticTargetIds.length === 0) return;
     const controller = new AbortController();
     Promise.resolve().then(() => { setStaticLoading(true); setStaticReadError(''); setFileValues(null); setStaticPreview(null); });
     void (async () => {
@@ -222,9 +221,7 @@ export function ConfigChange() {
   };
   const toggle = (nodeId: number) => { setSelected(current => current.includes(nodeId) ? current.filter(id => id !== nodeId) : [...current, nodeId]); setPreview(null); setStaticPreview(null); setDeletionPreview(null); };
   const updateRole = (next: 'BROKER' | 'CONTROLLER') => { setRole(next); setSelected([]); setChosenKeys([]); setChosenStaticKeys([]); setAddedKeys([]); setRemovedKeys([]); setDraftValues({}); setPropertyToAdd(''); setStaticAddedKeys([]); setStaticRemovedKeys([]); setStaticDraftValues({}); setStaticAddKey(''); setPreview(null); setStaticPreview(null); setDeletionPreview(null); setError(''); };
-  const staticControls = () => clusterMode === 'EXTERNAL'
-    ? <button className="cc-primary" disabled={eligibleStaticTargets.length === 0} onClick={openStaticTargets}>Configure selected {role.toLowerCase()}s</button>
-    : <>
+  const staticControls = () => <>
       {targetIds.length !== staticTargetIds.length && <p className="cc-error">Combined broker/controller processes are excluded from role-only rolling changes.</p>}
       {staticLoading && <p className="cc-loading"><Loader2 className="spin" size={16} /> Reading active {role.toLowerCase()} properties from selected nodes…</p>}
       {staticReadError && <p className="cc-error">{staticReadError} <button type="button" onClick={() => void refresh()}>Retry</button></p>}

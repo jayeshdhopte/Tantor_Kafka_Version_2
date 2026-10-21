@@ -19,6 +19,8 @@ import java.util.*;
 @Service
 @RequiredArgsConstructor
 public class TargetedConfigChangeService {
+    @org.springframework.beans.factory.annotation.Autowired private ExternalKafkaManagement externalKafka;
+    private java.util.Optional<Cluster> managedCluster(UUID id) { return externalKafka != null && externalKafka.external(id) ? java.util.Optional.of(externalKafka.resolve(id)) : clusters.findWithServicesById(id); }
     private static final Set<String> PROTECTED_KEYS = Set.of(
             "node.id", "broker.id", "process.roles", "log.dirs", "metadata.log.dir",
             "listeners", "advertised.listeners", "controller.quorum.voters",
@@ -60,7 +62,7 @@ public class TargetedConfigChangeService {
         if (targetNodeIds == null || targetNodeIds.isEmpty()) {
             throw new IllegalArgumentException("Select at least one node.");
         }
-        Cluster cluster = clusters.findWithServicesById(clusterId)
+        Cluster cluster = managedCluster(clusterId)
                 .orElseThrow(() -> new IllegalArgumentException("Managed cluster not found."));
         Map<Integer, UUID> tasks = new LinkedHashMap<>();
         for (Integer nodeId : new LinkedHashSet<>(targetNodeIds)) {
@@ -98,7 +100,7 @@ public class TargetedConfigChangeService {
         for (String key : request.getChanges().keySet()) {
             if (key == null || !normalized.add(key.trim())) throw new IllegalArgumentException("Duplicate or missing property name.");
         }
-        Cluster internal = clusters.findWithServicesById(clusterId).orElse(null);
+        Cluster internal = managedCluster(clusterId).orElse(null);
         Map<Integer, Map<String, Object>> live = kafka.getBrokerConfigs(clusterId);
         PreviewContext context = new PreviewContext(internal, live, new HashMap<>(), health.inspect(clusterId, live.size(), Set.of()));
         List<Map<String, Object>> properties = new ArrayList<>();
@@ -159,7 +161,7 @@ public class TargetedConfigChangeService {
             String key = raw == null ? "" : raw.trim();
             if (!KafkaPropertyCatalog.editableName(key) || !keys.add(key)) throw new IllegalArgumentException("Protected, sensitive, invalid or duplicate property cannot be removed: " + key);
         }
-        Cluster cluster = clusters.findWithServicesById(clusterId).orElseThrow(() -> new IllegalArgumentException("Property removal requires managed node agents."));
+        Cluster cluster = managedCluster(clusterId).orElseThrow(() -> new IllegalArgumentException("Property removal requires managed node agents."));
         Map<Integer, Map<String, Object>> live = kafka.getBrokerConfigs(clusterId);
         if (live.isEmpty()) throw new IllegalStateException("No live brokers are available.");
         List<Integer> eligible = cluster.getServices().stream().filter(service -> role.equalsIgnoreCase(service.getRole()))
@@ -222,7 +224,7 @@ public class TargetedConfigChangeService {
                                   Map<Integer, Map<String, String>> files, RollingRestartHealthService.HealthSnapshot health) {}
 
     private Map<String, Object> previewSingle(UUID clusterId, ChangeRequest request, boolean allowUnchanged, PreviewContext context) {
-        Cluster internal = context == null ? clusters.findWithServicesById(clusterId).orElse(null) : context.internal();
+        Cluster internal = context == null ? managedCluster(clusterId).orElse(null) : context.internal();
         if (internal == null && !externalClusters.existsById(clusterId)) {
             throw new IllegalArgumentException("Cluster not found.");
         }
@@ -371,7 +373,7 @@ public class TargetedConfigChangeService {
         List<Map<String, Object>> targets = (List<Map<String, Object>>) plan.get("targets");
         List<JobStep> steps = new ArrayList<>();
         boolean staticChange = "ROLLING_RESTART_REQUIRED".equals(plan.get("classification"));
-        Cluster internal = clusters.findWithServicesById(clusterId).orElseThrow(() -> new IllegalArgumentException("Configuration changes require a managed node agent for mandatory backups."));
+        Cluster internal = managedCluster(clusterId).orElseThrow(() -> new IllegalArgumentException("Configuration changes require a managed node agent for mandatory backups."));
         int brokerCount = kafka.getBrokerConfigs(clusterId).size();
         int order = 1;
         for (Map<String, Object> target : targets) {
@@ -426,6 +428,7 @@ public class TargetedConfigChangeService {
             hosts.findById(hostId).ifPresent(host -> {
                 identity.put("hostname", host.getHostname()); identity.put("ipAddress", host.getHostIp());
             });
+            if(externalKafka != null && externalKafka.target(hostId)){var node=externalKafka.node(hostId);identity.put("hostname",node.getHost());identity.put("ipAddress",node.getHost());}
             step.setPayload(json(identity));
             String hostname = Objects.toString(identity.get("hostname"), hostId);
             String ipAddress = Objects.toString(identity.get("ipAddress"), "IP not reported");
@@ -472,6 +475,7 @@ public class TargetedConfigChangeService {
     }
 
     private String configPath(Cluster cluster, ClusterServiceAssignment service, Map<String, Object> config) {
+        if(config.get("config_path") instanceof String path && !path.isBlank()) return path;
         String base = String.valueOf(config.getOrDefault("kafka_install_base_dir",
                 config.getOrDefault("kafka_install_dir", "/opt"))).replaceAll("/+$", "");
         if (base.isBlank()) base = "/opt";

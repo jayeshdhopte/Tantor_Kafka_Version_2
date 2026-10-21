@@ -25,7 +25,7 @@ public class ExternalDataServiceManager {
  static String value(Map<String,?> p,String k,String fallback) { Object v=p.get(k); return v==null||v.toString().isBlank()?fallback:v.toString().trim(); }
  static String blocked(DiscoveryAgent a) {
   if(a.getLastHeartbeat()==null || a.getLastHeartbeat().isBefore(OffsetDateTime.now().minusSeconds(120)) || !"ONLINE".equalsIgnoreCase(a.getStatus())) return "Discovery agent is offline or its heartbeat is stale.";
-  if(!Boolean.TRUE.equals(a.getCanDeployServices()) || a.getVersion()==null || !a.getVersion().startsWith("3.3.0-dataservices.")) return "Upgrade to Discovery 3.3.0-dataservices and enable service deployment as root.";
+  if(!Boolean.TRUE.equals(a.getCanDeployServices()) || a.getVersion()==null || !a.getVersion().startsWith("3.4.0-")) return "Upgrade to Discovery 3.4.0 and enable service deployment as root.";
   return "";
  }
  ExternalCluster requireCluster(UUID id) {
@@ -49,7 +49,7 @@ public class ExternalDataServiceManager {
     "deploymentWarning",!protocol.isBlank()&&!"PLAINTEXT".equalsIgnoreCase(protocol)?"Service deployment currently supports PLAINTEXT Kafka clusters only.":"");
  }
  @Transactional
- public Map<String,String> create(UUID id,Map<String,Map<String,Object>> request,String username) {
+ public Map<String,String> create(UUID id,Map<String,?> request,String username) {
   ExternalCluster c=clusters.findForServiceUpdate(id).orElseThrow(()->new ResponseStatusException(HttpStatus.NOT_FOUND));
   requireCluster(id);
   if(request==null || request.isEmpty() || !ROLES.containsAll(request.keySet())) throw new IllegalArgumentException("Select Schema Registry and/or Kafka Connect.");
@@ -59,11 +59,21 @@ public class ExternalDataServiceManager {
   List<ExternalDataService> additions=new ArrayList<>();
   for(String role:List.of("schema_registry","kafka_connect")) {
    if(!request.containsKey(role)) continue;
-   if(services.existsByClusterIdAndRole(id,role)) throw new ResponseStatusException(HttpStatus.CONFLICT,"Service already added; inspect or retry its existing job.");
-   Map<String,Object> input=request.get(role);
+   Object requested=request.get(role);
+   List<?> instances=requested instanceof List<?> list?list:List.of(requested);
+   if(instances.isEmpty()||instances.size()>20)throw new IllegalArgumentException("Select between 1 and 20 service instances");
+   for(Object raw:instances){
+   if(!(raw instanceof Map<?,?>))throw new IllegalArgumentException("Invalid service instance");
+   @SuppressWarnings("unchecked") Map<String,Object> input=(Map<String,Object>)raw;
    if(input==null) throw new IllegalArgumentException("Missing service configuration.");
    DiscoveryAgent agent=requireAgent(id,value(input,"host_id",""));
    Map<String,String> p=configuration(role,input);
+   p.put("service_name",role.replace('_','-')+"-"+UUID.randomUUID().toString().substring(0,8));
+   // Replicas of one logical service use the same group and compacted topics.
+   var logical=services.findByClusterId(id).stream().filter(existing->role.equals(existing.getRole())).findFirst();
+   if(logical.isPresent()) { var prior=read(logical.get().getConfigJson()); for(String key:List.of("group_id","schemas_topic","config_topic","offset_topic","status_topic"))if(prior.containsKey(key))p.put(key,prior.get(key)); }
+   else if(additions.stream().anyMatch(existing->role.equals(existing.getRole()))) { var prior=read(additions.stream().filter(existing->role.equals(existing.getRole())).findFirst().orElseThrow().getConfigJson());for(String key:List.of("group_id","schemas_topic","config_topic","offset_topic","status_topic"))if(prior.containsKey(key))p.put(key,prior.get(key)); }
+   else p.put("group_id","tantor-"+role.replace('_','-')+"-"+id);
    p.put("host_name",Objects.toString(agent.getHostname(),""));
    if(!p.get("host_name").matches("[a-zA-Z0-9.:-]+")) throw new IllegalArgumentException("Agent must advertise a valid reachable hostname.");
    p.put("bootstrap_servers",c.getBootstrapServers());
@@ -78,12 +88,13 @@ public class ExternalDataServiceManager {
     for(String a:paths(p)) for(String b:paths(op)) if(overlaps(a,b)) throw new IllegalArgumentException("Service directories overlap another service on this host.");
    }
    ExternalDataService s=new ExternalDataService(); s.setClusterId(id); s.setAgentId(agent.getId()); s.setRole(role); s.setStatus("PENDING"); s.setConfigJson(json(p)); additions.add(s);
+   }
   }
   List<JobStep> steps=new ArrayList<>();
   for(var s:additions) { services.saveAndFlush(s); for(String op:List.of("PRECHECK","TOPICS","INSTALL","SAVE")) {
    JobStep step=new JobStep(); step.setStepOrder(steps.size()+1); step.setTargetId(s.getAgentId()); step.setName(s.getRole()+": "+op); step.setPayload(json(Map.of("serviceId",s.getId().toString(),"operation",op))); steps.add(step);
   } }
-  Job job=new Job(); job.setType(JobType.EXTERNAL_SERVICES); job.setStatus(JobStatus.PENDING); job.setRollbackSupported(false); job.setRequestedBy(username); job.setResourceKey("external-services:"+id); job.setPayload(json(Map.of("clusterId",id.toString())));
+  Job job=new Job(); job.setType(JobType.EXTERNAL_SERVICES); job.setStatus(JobStatus.PENDING); job.setRollbackSupported(false); job.setRequestedBy(username); job.setResourceKey("cluster:"+id); job.setPayload(json(Map.of("clusterId",id.toString())));
   Job saved=jobs.createJob(job,steps);
   return Map.of("id",id.toString(),"jobId",saved.getId().toString());
  }

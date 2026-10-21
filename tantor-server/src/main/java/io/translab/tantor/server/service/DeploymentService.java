@@ -28,6 +28,7 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 @Slf4j
 public class DeploymentService {
+    @org.springframework.beans.factory.annotation.Autowired private ExternalKafkaManagement externalKafka;
 
     private final TaskRepository taskRepository;
     private final HostParcelRepository hostParcelRepository;
@@ -357,6 +358,7 @@ public class DeploymentService {
 
     @Transactional
     public UUID verifyKafkaService(UUID clusterId, String hostId, String serviceName) {
+        if(externalKafka != null && externalKafka.target(hostId)) return externalKafka.enqueue(clusterId,hostId,"VERIFY_KAFKA_SERVICE",Map.of());
         Task task = createTask(clusterId, hostId, "VERIFY_KAFKA_SERVICE");
         try { task.setParameters(objectMapper.writeValueAsString(Map.of("service_name", serviceName))); }
         catch (JsonProcessingException e) { throw new IllegalArgumentException("Cannot serialize service check", e); }
@@ -366,6 +368,7 @@ public class DeploymentService {
 
     @Transactional
     public UUID restartService(UUID clusterId, String hostId, String serviceName) {
+        if(externalKafka != null && externalKafka.target(hostId)) return externalKafka.enqueue(clusterId,hostId,"RESTART_SERVICE",Map.of());
         Task task = createTask(clusterId, hostId, "RESTART_SERVICE");
         
         try {
@@ -445,6 +448,7 @@ public class DeploymentService {
                                  String configJsonStr, String configPath,
                                  Map<String, Object> changes, Map<String, Object> expected,
                                  boolean restart, String version) {
+        if(externalKafka != null && externalKafka.target(hostId)) return externalKafka.enqueue(clusterId,hostId,"PATCH_KAFKA_CONFIG",Map.of("config_changes_json",externalKafka.json(changes),"expected_values_json",externalKafka.json(expected),"restart",String.valueOf(restart)));
         if (configPath == null || configPath.isBlank() || changes == null || changes.isEmpty()) {
             throw new IllegalArgumentException("A concrete config file and property changes are required.");
         }
@@ -473,12 +477,14 @@ public class DeploymentService {
     }
 
     public void requireConfigDeletionAgent(String hostId) {
+        if(externalKafka != null && externalKafka.target(hostId)) {externalKafka.require(hostId,true,true);return;}
         var host = hostRepository.findById(hostId).orElseThrow(() -> new IllegalArgumentException("Managed host is required for configuration removal."));
         var version = java.util.regex.Pattern.compile("-configchange\\.([0-9]{1,6})(?:$|[.-])").matcher(java.util.Objects.toString(host.getAgentVersion(), ""));
         if (!version.find() || Integer.parseInt(version.group(1)) < 7) throw new IllegalStateException("Update host " + hostId + " to internal agent configchange.7 or newer before deleting configuration properties.");
     }
 
     private void requireConfigBackupAgent(String hostId) {
+        if(externalKafka != null && externalKafka.target(hostId)) {externalKafka.require(hostId,true,false);return;}
         var host = hostRepository.findById(hostId).orElseThrow(() -> new IllegalArgumentException("Managed host is required for configuration backups."));
         var version = java.util.regex.Pattern.compile("-configchange\\.([0-9]{1,6})(?:$|[.-])").matcher(java.util.Objects.toString(host.getAgentVersion(), ""));
         if (!version.find() || Integer.parseInt(version.group(1)) < 4) {
@@ -490,6 +496,7 @@ public class DeploymentService {
     public UUID backupKafkaConfig(UUID clusterId, String hostId, String role, String nodeId,
                                   String configJsonStr, String configPath, String key,
                                   Map<String, Object> snapshot, String version) {
+        if(externalKafka != null && externalKafka.target(hostId)) return externalKafka.enqueue(clusterId,hostId,"BACKUP_KAFKA_CONFIG",Map.of("config_key",key,"dynamic_snapshot_json",externalKafka.json(snapshot)));
         requireConfigBackupAgent(hostId);
         if (configPath == null || configPath.isBlank()) throw new IllegalArgumentException("A concrete configuration file is required for backup.");
         Task task = createTask(clusterId, hostId, "BACKUP_KAFKA_CONFIG");
@@ -512,6 +519,7 @@ public class DeploymentService {
     @Transactional
     public UUID readKafkaProperty(UUID clusterId, String hostId, String role, String nodeId,
                                   String configJsonStr, String configPath, String key) {
+        if(externalKafka != null && externalKafka.target(hostId)) return externalKafka.enqueue(clusterId,hostId,"READ_KAFKA_PROPERTY",Map.of("config_key",key));
         if (configPath == null || configPath.isBlank() || key == null || key.isBlank()) {
             throw new IllegalArgumentException("A concrete config file and property are required.");
         }
@@ -535,6 +543,7 @@ public class DeploymentService {
     @Transactional
     public UUID readKafkaProperties(UUID clusterId, String hostId, String role, String nodeId,
                                     String configJsonStr, String configPath) {
+        if(externalKafka != null && externalKafka.target(hostId)) return externalKafka.enqueue(clusterId,hostId,"READ_KAFKA_PROPERTIES",Map.of());
         if (configPath == null || configPath.isBlank()) {
             throw new IllegalArgumentException("A concrete config file is required.");
         }

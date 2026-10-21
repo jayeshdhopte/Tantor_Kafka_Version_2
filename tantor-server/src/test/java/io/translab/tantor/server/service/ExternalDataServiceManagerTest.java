@@ -69,7 +69,7 @@ class ExternalDataServiceManagerTest {
         agent.setHostname("broker1.example");
         agent.setStatus("ONLINE");
         agent.setLastHeartbeat(OffsetDateTime.now());
-        agent.setVersion("3.3.0-dataservices.1");
+        agent.setVersion("3.4.0-dataservices.2-configchange.8-rollingrestart.2");
         agent.setCanDeployServices(true);
         when(agents.findById("agent-1")).thenReturn(Optional.of(agent));
         when(services.findByAgentId("agent-1")).thenReturn(List.of());

@@ -21,7 +21,7 @@ public class AgentTaskAwaiter {
     private long timeoutSeconds;
 
     public String status(UUID taskId) {
-        return jdbcTemplate.queryForObject("SELECT status FROM kf_tasks WHERE id = ?", String.class, taskId);
+        return jdbcTemplate.queryForObject("SELECT status FROM kf_tasks WHERE id = ? UNION ALL SELECT status FROM kf_external_kafka_tasks WHERE id = ?", String.class, taskId, taskId);
     }
 
     public Task await(UUID taskId) {
@@ -34,7 +34,7 @@ public class AgentTaskAwaiter {
             // A request-scoped JPA persistence context can retain the task's original
             // PENDING state while the agent reports SUCCESS in another request.
             List<Task> tasks = jdbcTemplate.query(
-                    "SELECT status, log_output, error_msg FROM kf_tasks WHERE id = ?",
+                    "SELECT status, log_output, error_msg FROM kf_tasks WHERE id = ? UNION ALL SELECT status, message AS log_output, message AS error_msg FROM kf_external_kafka_tasks WHERE id = ?",
                     (rs, rowNum) -> {
                         Task result = new Task();
                         result.setId(taskId);
@@ -42,7 +42,7 @@ public class AgentTaskAwaiter {
                         result.setLogOutput(rs.getString("log_output"));
                         result.setErrorMsg(rs.getString("error_msg"));
                         return result;
-                    }, taskId);
+                    }, taskId, taskId);
             Task task = tasks.stream().findFirst()
                     .orElseThrow(() -> new RuntimeException("Agent task not found: " + taskId));
             String status = String.valueOf(task.getStatus()).toUpperCase();

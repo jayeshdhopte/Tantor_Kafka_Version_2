@@ -148,9 +148,9 @@ Task permissions:
   --disable-tasks                  Explicitly keep backend task polling disabled.
   --enable-service-deployment      Permit Schema Registry and Kafka Connect
                                    deployment tasks. Requires --run-user root
-                                   and --enable-tasks. Kafka installation,
-                                   broker configuration, and broker service
-                                   lifecycle tasks remain unavailable.
+                                   and --enable-tasks. Kafka installation is
+                                   unavailable; config writes and Kafka restarts
+                                   require the separate permissions below.
   --enable-config-write            Allow updates/restores of the exact discovered
                                    Kafka config file. Disabled by default.
   --enable-service-restart         Allow restart of allowlisted discovered services.

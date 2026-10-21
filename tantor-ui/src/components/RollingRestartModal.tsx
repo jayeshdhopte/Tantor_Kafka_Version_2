@@ -4,7 +4,7 @@ import { Loader2, RefreshCw, X } from 'lucide-react';
 import './ConfigChangeEntryModal.css';
 import './RollingRestartModal.css';
 
-interface Target { key: string; hostId: string; role: string; nodeId: number }
+interface Target { blockedReason?: string; hostname?: string; key: string; hostId: string; role: string; nodeId: number }
 export function RollingRestartModal({ cluster, onClose, onStarted }: {
   cluster: { id: string; name?: string }; onClose: () => void; onStarted: (jobId: string) => void;
 }) {
@@ -74,15 +74,16 @@ export function RollingRestartModal({ cluster, onClose, onStarted }: {
         {loading && <p className="cc-entry-message">Loading topology…</p>}
         <div className="cc-entry-list">{(scope === 'SELECTED' ? targets : plan).map(target => <div key={target.key}>
           <span><label>{scope === 'SELECTED' && <input type="checkbox" aria-label={`Select ${target.role} ${target.nodeId} on ${target.hostId}`} disabled={starting} checked={selected.includes(target.key)} onChange={event => { setSelected(current => event.target.checked ? [...current, target.key] : current.filter(key => key !== target.key)); setCombinedConfirmed(false); }} />} Node {target.nodeId}</label></span>
-          <strong>{target.hostId}</strong><span>{target.role}</span></div>)}</div>
+          <strong>{target.hostname || target.hostId}</strong><span>{target.role}</span></div>)}</div>
         {!loading && plan.length === 0 && <p className="cc-entry-message" role="status">{scope === 'SELECTED' ? 'Select at least one Kafka process to continue.' : 'No Kafka processes are available for this scope.'}</p>}
         <p className="rolling-restart-note">Schema Registry, Kafka Connect and exporters are excluded. Health is checked before and after each restart; the active controller runs last among controller processes.</p>
         <p className="rolling-restart-note">You can keep viewing the cluster. Conflicting operations are locked while this job runs. If a node fails, the sequence stops and Retry / Resume keeps completed nodes.</p>
         {combined && <p><label><input type="checkbox" disabled={starting} checked={combinedConfirmed} onChange={event => setCombinedConfirmed(event.target.checked)} /> I understand combined processes restart both roles together.</label></p>}
         {single && <p><label><input type="checkbox" disabled={starting} checked={singleConfirmed} onChange={event => setSingleConfirmed(event.target.checked)} /> I accept interruption while this single-host cluster restarts.</label></p>}
+        {plan.some(target => target.blockedReason) && <p className="cc-entry-error" role="alert">{Array.from(new Set(plan.map(target => target.blockedReason).filter(Boolean))).join("; ")}</p>}
         {error && <p className="cc-entry-error" role="alert">{error}</p>}
       </div>
-      <footer className="cc-entry-footer"><button className="cc-entry-secondary" disabled={starting} onClick={onClose}>Cancel</button><button className="cc-entry-primary" disabled={loading || starting || plan.length === 0 || (combined && !combinedConfirmed) || (single && !singleConfirmed)} onClick={() => void start()}>{starting && <Loader2 size={16} className="spin" aria-hidden="true" />}{starting ? 'Starting…' : 'Start rolling restart'}</button></footer>
+      <footer className="cc-entry-footer"><button className="cc-entry-secondary" disabled={starting} onClick={onClose}>Cancel</button><button className="cc-entry-primary" disabled={loading || starting || plan.some(target => target.blockedReason) || plan.length === 0 || (combined && !combinedConfirmed) || (single && !singleConfirmed)} onClick={() => void start()}>{starting && <Loader2 size={16} className="spin" aria-hidden="true" />}{starting ? 'Starting…' : 'Start rolling restart'}</button></footer>
     </div>
   </div>, document.body);
 }

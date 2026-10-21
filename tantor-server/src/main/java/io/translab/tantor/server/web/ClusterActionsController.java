@@ -19,6 +19,8 @@ import java.util.UUID;
 @RequestMapping("/api/v1/clusters/{clusterId}/actions")
 @RequiredArgsConstructor
 public class ClusterActionsController {
+    @org.springframework.beans.factory.annotation.Autowired private io.translab.tantor.server.service.ExternalKafkaManagement externalKafka;
+    private Cluster managedCluster(UUID id){return externalKafka != null && externalKafka.external(id) ? externalKafka.resolve(id) : clusterRepository.findWithServicesById(id).orElseThrow(() -> new IllegalArgumentException("Cluster not found."));}
 
     private final DeploymentService deploymentService;
     private final ClusterRepository clusterRepository;
@@ -32,10 +34,15 @@ public class ClusterActionsController {
                                              @PathVariable UUID clusterId) {
         if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.ROLLING_RESTART))
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
-        Cluster cluster = clusterRepository.findWithServicesById(clusterId).orElseThrow(() -> new IllegalArgumentException("Cluster not found."));
-        return ResponseEntity.ok(io.translab.tantor.server.service.RollingRestartPlan.topology(cluster).stream().map(service -> Map.of(
-                "key", io.translab.tantor.server.service.RollingRestartPlan.key(service), "hostId", service.getHostId(),
-                "role", service.getRole(), "nodeId", service.getNodeId() == null ? 0 : service.getNodeId())).toList());
+        Cluster cluster = managedCluster(clusterId);
+        return ResponseEntity.ok(io.translab.tantor.server.service.RollingRestartPlan.topology(cluster).stream().map(service -> {
+            var row=new java.util.LinkedHashMap<String,Object>();
+            row.put("key",io.translab.tantor.server.service.RollingRestartPlan.key(service));row.put("hostId",service.getHostId());
+            row.put("serviceName",io.translab.tantor.server.service.RollingRestartPlan.unit(service));row.put("role",service.getRole());row.put("nodeId",service.getNodeId()==null?0:service.getNodeId());
+            row.put("hostname",externalKafka != null && externalKafka.target(service.getHostId())?externalKafka.node(service.getHostId()).getHost():service.getHostId());
+            if(externalKafka != null && externalKafka.target(service.getHostId())) {try{externalKafka.require(service.getHostId(),false,true);}catch(IllegalStateException reason){row.put("blockedReason",reason.getMessage());}}
+            return row;
+        }).toList());
     }
 
     @org.springframework.transaction.annotation.Transactional
@@ -46,7 +53,7 @@ public class ClusterActionsController {
             @RequestBody(required = false) RollingRestartRequest request) {
         if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.ROLLING_RESTART))
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Unauthorized"));
-        Cluster cluster = clusterRepository.findWithServicesById(clusterId).orElseThrow(() -> new IllegalArgumentException("Cluster not found."));
+        Cluster cluster = managedCluster(clusterId);
         if ("EXTERNAL".equalsIgnoreCase(cluster.getMode()))
             return ResponseEntity.badRequest().body(Map.of("error", "Managed rolling restart requires internal node agents."));
         if (!"SUCCESS".equalsIgnoreCase(cluster.getStatus()))
@@ -75,7 +82,7 @@ public class ClusterActionsController {
                 step.setTargetId(service.getHostId());
                 step.setName("Restart " + service.getRole() + " node " + service.getNodeId() + " on " + service.getHostId());
                 step.setPayload(objectMapper.writeValueAsString(Map.of("hostId", service.getHostId(), "role", service.getRole(),
-                        "nodeId", service.getNodeId() == null ? 0 : service.getNodeId())));
+                        "nodeId", service.getNodeId() == null ? 0 : service.getNodeId(), "serviceName", io.translab.tantor.server.service.RollingRestartPlan.unit(service))));
                 steps.add(step);
             }
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) { throw new IllegalStateException("Unable to save restart plan", e); }

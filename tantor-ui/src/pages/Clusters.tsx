@@ -494,7 +494,7 @@ export function Clusters() {
             <button role="menuitem" disabled={locked(servicesMenu.cluster.id)} autoFocus onClick={() => { setServicesCluster(servicesMenu.cluster); setServicesMenu(null); }}><Plus size={15} /> Add service</button>}
           {!['DELETED', 'DELETING'].includes(servicesMenu.cluster.status) &&
             <button role="menuitem" disabled={locked(servicesMenu.cluster.id)} onClick={() => { setConfigCluster(servicesMenu.cluster); setServicesMenu(null); }}><Settings size={15} /> Configuration change</button>}
-          {servicesMenu.cluster.status === 'SUCCESS' &&
+          {(servicesMenu.cluster.status === 'SUCCESS' || (servicesMenu.cluster.mode === 'EXTERNAL' && !['DELETED','DELETING'].includes(servicesMenu.cluster.status))) &&
             <button role="menuitem" disabled={activeJobs.some(job => job.clusterId === servicesMenu.cluster.id)} onClick={() => { setRestartCluster(servicesMenu.cluster); setServicesMenu(null); }}><RefreshCw size={15} /> Rolling restart</button>}
           <button role="menuitem" disabled={locked(servicesMenu.cluster.id)} className="danger" onClick={event => {
             const { id, name } = servicesMenu.cluster;
@@ -507,9 +507,8 @@ export function Clusters() {
       {servicesCluster && <AddClusterServicesModal cluster={servicesCluster} onClose={() => setServicesCluster(null)} />}
       {configCluster && <ConfigChangeEntryModal cluster={configCluster} onClose={() => setConfigCluster(null)} onContinue={() => {
         const clusterId = configCluster.id;
-        const external = configCluster.mode === 'EXTERNAL';
         setConfigCluster(null);
-        navigate(`/clusters/${clusterId}/${external ? 'config' : 'config-change'}`);
+        navigate(`/clusters/${clusterId}/config-change`);
       }} />}
       {showDeploymentModal && createPortal(
         <div className="cd-modal-overlay" onClick={() => setShowDeploymentModal(false)}>

@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-var buildVersion = "3.3.0-dataservices.1"
+var buildVersion = "3.4.0-dataservices.2-configchange.8-rollingrestart.2"
 var buildCommit = "unknown"
 
 func newLogger(level string) *slog.Logger {
@@ -97,6 +97,7 @@ func main() {
 
 	if cfg.EnableTasks {
 		go runTaskPoller(ctx, client, cfg, store, logger)
+		go runManagedPoller(ctx, client, cfg, store, logger)
 	}
 	go runMetricsLoop(ctx, client, cfg, store, logger)
 	if cfg.EnableServiceDeployment {

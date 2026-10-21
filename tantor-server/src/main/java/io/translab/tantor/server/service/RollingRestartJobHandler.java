@@ -16,6 +16,7 @@ import java.util.stream.Collectors;
 @Component
 @RequiredArgsConstructor
 public class RollingRestartJobHandler implements JobHandler {
+    @org.springframework.beans.factory.annotation.Autowired private ExternalKafkaManagement externalKafka;
     private final JobService jobService;
     private final DeploymentService deploymentService;
     private final AgentTaskAwaiter taskAwaiter;
@@ -34,7 +35,7 @@ public class RollingRestartJobHandler implements JobHandler {
     @Override public void execute(Job job) {
         var request = readMap(job.getPayload());
         UUID clusterId = UUID.fromString(String.valueOf(request.get("clusterId")));
-        Cluster cluster = clusterRepository.findWithServicesById(clusterId).orElseThrow(() -> new IllegalArgumentException("Cluster not found."));
+        Cluster cluster = externalKafka != null && externalKafka.external(clusterId) ? externalKafka.resolve(clusterId) : clusterRepository.findWithServicesById(clusterId).orElseThrow(() -> new IllegalArgumentException("Cluster not found."));
         if ("EXTERNAL".equalsIgnoreCase(cluster.getMode())) throw new IllegalArgumentException("Managed rolling restart requires internal node agents.");
         var topology = RollingRestartPlan.topology(cluster);
         int brokers = (int) topology.stream().filter(RollingRestartPlan::broker).count();
@@ -47,9 +48,10 @@ public class RollingRestartJobHandler implements JobHandler {
             var payload = readMap(step.getPayload());
             String role = String.valueOf(payload.get("role"));
             String host = String.valueOf(payload.get("hostId"));
-            if (!allowed.contains(host + ":" + RollingRestartPlan.unit(role)) || topology.stream().noneMatch(service -> host.equals(service.getHostId()) && role.equals(service.getRole()) && Objects.equals(service.getNodeId(), ((Number) payload.get("nodeId")).intValue()))) throw new IllegalStateException("Restart topology changed. Create a new restart plan.");
+            if (!allowed.contains(host + ":" + String.valueOf(payload.getOrDefault("serviceName",RollingRestartPlan.unit(role)))) || topology.stream().noneMatch(service -> host.equals(service.getHostId()) && role.equals(service.getRole()) && Objects.equals(service.getNodeId(), ((Number) payload.get("nodeId")).intValue()))) throw new IllegalStateException("Restart topology changed. Create a new restart plan.");
             controllers |= role.contains("controller");
-            if (step.getStatus() != JobStepStatus.SUCCESS) {
+            if (step.getStatus() != JobStepStatus.SUCCESS && externalKafka != null && externalKafka.target(host)) externalKafka.require(host,false,true);
+            else if (step.getStatus() != JobStepStatus.SUCCESS) {
                 var agent = hostRepository.findById(host).orElseThrow(() -> new IllegalStateException("Agent host missing: " + host));
                 if (agent.getAgentVersion() == null || !agent.getAgentVersion().contains("rollingrestart."))
                     throw new IllegalStateException("Update the internal agent on " + host + " to the rolling-restart release before starting.");
@@ -71,7 +73,7 @@ public class RollingRestartJobHandler implements JobHandler {
             if (step.getStatus() == JobStepStatus.SUCCESS) continue;
             var payload = readMap(step.getPayload());
             String host = String.valueOf(payload.get("hostId"));
-            String unit = RollingRestartPlan.unit(String.valueOf(payload.get("role")));
+            String unit = String.valueOf(payload.getOrDefault("serviceName",RollingRestartPlan.unit(String.valueOf(payload.get("role")))));
             jobService.startStep(step.getId());
             try {
                 boolean alreadyRestarted = false;

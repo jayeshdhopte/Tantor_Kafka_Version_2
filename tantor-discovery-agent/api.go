@@ -27,6 +27,10 @@ type ExternalClusterPayload struct {
 	IsRunning           bool    `json:"isRunning"`
 	InstallPath         string  `json:"installPath"`
 	ConfigFile          string  `json:"configFile"`
+	SystemdService      string  `json:"systemdService"`
+	CanManageKafka      bool    `json:"canManageKafka"`
+	CanWriteConfig      bool    `json:"canWriteConfig"`
+	CanRestart          bool    `json:"canRestart"`
 	DataDirs            string  `json:"dataDirs"`
 	LogDirs             string  `json:"logDirs"`
 	Hostname            string  `json:"hostname"`
@@ -85,21 +89,23 @@ func jmxMetricsURLForCluster(cfg RuntimeConfig, cluster DiscoveredCluster) strin
 
 func registerCluster(ctx context.Context, client *APIClient, cfg RuntimeConfig, c DiscoveredCluster, hostMetrics HostMetrics, logger *slog.Logger) bool {
 	payload := ExternalClusterPayload{
-		HostID:              cfg.HostID,
-		AgentName:           cfg.AgentName,
-		Name:                c.Name,
-		Environment:         c.Environment,
-		BootstrapServers:    c.BootstrapServers,
-		KafkaVersion:        c.KafkaVersion,
-		KafkaClusterID:      c.KafkaClusterID,
-		KafkaMode:           c.KafkaMode,
-		Security:            c.Security,
-		BrokerCount:         c.BrokerCount,
-		LocalBrokerCount:    c.BrokerCount,
-		NodeID:              c.NodeID,
-		IsRunning:           c.IsRunning,
-		InstallPath:         c.InstallPath,
-		ConfigFile:          c.PropsFile,
+		HostID:           cfg.HostID,
+		AgentName:        cfg.AgentName,
+		Name:             c.Name,
+		Environment:      c.Environment,
+		BootstrapServers: c.BootstrapServers,
+		KafkaVersion:     c.KafkaVersion,
+		KafkaClusterID:   c.KafkaClusterID,
+		KafkaMode:        c.KafkaMode,
+		Security:         c.Security,
+		BrokerCount:      c.BrokerCount,
+		LocalBrokerCount: c.BrokerCount,
+		NodeID:           c.NodeID,
+		IsRunning:        c.IsRunning,
+		InstallPath:      c.InstallPath,
+		ConfigFile:       c.PropsFile,
+		CanManageKafka:   cfg.EnableTasks && cfg.AuthType == "bearer",
+		SystemdService:   c.SystemdService, CanWriteConfig: cfg.AllowConfigWrite && os.Geteuid() == 0, CanRestart: cfg.AllowServiceRestart,
 		DataDirs:            firstNonBlank(c.DataDirs, c.LogDirs),
 		LogDirs:             c.LogDirs,
 		Hostname:            c.Hostname,

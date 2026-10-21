@@ -13,7 +13,7 @@ public class ExternalDataServiceController {
  @GetMapping("/api/v1/ui/external-clusters/{id}/services")
  public Map<String,Object> options(@PathVariable UUID id) { return manager.options(id); }
  @PostMapping("/api/v1/ui/external-clusters/{id}/services")
- public ResponseEntity<Map<String,String>> create(@RequestHeader(value="Authorization",required=false) String auth,@PathVariable UUID id,@RequestBody Map<String,Map<String,Object>> request) {
+ public ResponseEntity<Map<String,String>> create(@RequestHeader(value="Authorization",required=false) String auth,@PathVariable UUID id,@RequestBody Map<String,Object> request) {
   if(!roles.canAccess(auth,RoleAuthenticationUtil.ADD_NODE)) return ResponseEntity.status(403).body(Map.of("error","Not authorized to deploy services."));
   return ResponseEntity.ok(manager.create(id,request,roles.extractUsername(auth)));
  }

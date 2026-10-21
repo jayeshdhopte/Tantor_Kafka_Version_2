@@ -1590,6 +1590,8 @@ public class ExternalClusterService {
             node.setLogDirs(blankToDefault(report.getLogDirs(), node.getLogDirs()));
             node.setConfigFile(blankToDefault(report.getConfigFile(), node.getConfigFile()));
             node.setDataDirs(blankToDefault(report.getDataDirs(), blankToDefault(report.getLogDirs(), node.getDataDirs())));
+            node.setAgentId(agent.getId()); node.setSystemdService(report.getSystemdService());
+            node.setCanManageKafka(report.isCanManageKafka()); node.setCanWriteConfig(report.isCanWriteConfig()); node.setCanRestart(report.isCanRestart());
             externalClusterNodeRepository.save(node);
         }
 
@@ -1615,6 +1617,8 @@ public class ExternalClusterService {
             node.setLogDirs(blankToDefault(report.getLogDirs(), null));
             node.setConfigFile(blankToDefault(report.getConfigFile(), null));
             node.setDataDirs(blankToDefault(report.getDataDirs(), blankToDefault(report.getLogDirs(), null)));
+            node.setAgentId(agent.getId()); node.setSystemdService(report.getSystemdService());
+            node.setCanManageKafka(report.isCanManageKafka()); node.setCanWriteConfig(report.isCanWriteConfig()); node.setCanRestart(report.isCanRestart());
             externalClusterNodeRepository.save(node);
         }
     }
@@ -2129,6 +2133,10 @@ public class ExternalClusterService {
         private boolean canExecuteTasks;
         private String agentVersion;
         private boolean canDeployServices;
+        private String systemdService;
+        private boolean canManageKafka;
+        private boolean canWriteConfig;
+        private boolean canRestart;
         private String listeners;
         private String advertisedListeners;
         private String processRoles;

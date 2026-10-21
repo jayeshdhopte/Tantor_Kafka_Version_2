@@ -19,6 +19,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Slf4j
 public class RollingRestartHealthService {
+    @org.springframework.beans.factory.annotation.Autowired private ExternalKafkaManagement externalKafka;
     private final KafkaAdminService kafkaAdminService;
     private final HostRepository hostRepository;
 
@@ -141,6 +142,7 @@ public class RollingRestartHealthService {
         List<String> unavailable = new ArrayList<>();
         List<String> diskPressure = new ArrayList<>();
         for (String hostId : requiredHostIds) {
+            if(externalKafka != null && externalKafka.target(hostId)){externalKafka.inspectHosts(Set.of(hostId),failures,maxDiskUsedPercent,heartbeatTimeoutSeconds);continue;}
             Host host = hostRepository.findById(hostId).orElse(null);
             if (host == null || host.getLastHeartbeat() == null || host.getLastHeartbeat().isBefore(cutoff)
                     || (!"ONLINE".equalsIgnoreCase(host.getStatus())

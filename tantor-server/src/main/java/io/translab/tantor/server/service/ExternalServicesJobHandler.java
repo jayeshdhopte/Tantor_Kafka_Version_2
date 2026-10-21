@@ -37,7 +37,7 @@ public class ExternalServicesJobHandler implements JobHandler {
      }
      case "TOPICS" -> { ensureTopics(s,p); output="Kafka internal topics created or verified; existing broker configuration unchanged."; }
      case "SAVE" -> {
-      var req=new SaveConnectionRequest(); req.setConnectionName("Deployed "+s.getRole()); req.setProtocol("http"); req.setHost(p.get("host_name")); req.setPort(Integer.parseInt(p.get("rest_port"))); req.setIsDefault(true);
+      var req=new SaveConnectionRequest(); req.setConnectionName("Deployed "+s.getRole()+" on "+p.get("host_name")+":"+p.get("rest_port")); req.setProtocol("http"); req.setHost(p.get("host_name")); req.setPort(Integer.parseInt(p.get("rest_port"))); req.setIsDefault(true);
       var saved=connections.saveConnection(s.getClusterId(),s.getRole().toUpperCase(Locale.ROOT),req,job.getRequestedBy());
       if(!"ONLINE".equals(saved.getStatus())) throw new IllegalStateException("Service started but management-server REST verification failed: "+saved.getLastError());
       s.setStatus("ONLINE"); services.save(s); output="Service verified and connection associated with the external cluster.";

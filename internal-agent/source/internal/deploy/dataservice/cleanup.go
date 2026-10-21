@@ -23,7 +23,7 @@ func Clean(ctx context.Context, exec executor.Executor, kind string, task *api.T
 		schemaDeploymentLock.Lock()
 		defer schemaDeploymentLock.Unlock()
 	}
-	unitPath := "/etc/systemd/system/" + kind + ".service"
+	unitPath := "/etc/systemd/system/" + s.ServiceName + ".service"
 	if _, _, err := exec.RunSudo(ctx, "test", "-f", unitPath); err != nil {
 		return "[SKIP] " + kind + " unit is not installed\n", nil
 	}
@@ -50,7 +50,7 @@ func Clean(ctx context.Context, exec executor.Executor, kind string, task *api.T
 			return "", fmt.Errorf("refusing to remove redirected service path %s (%s): %v", dir, stderr, err)
 		}
 	}
-	unitName := kind + ".service"
+	unitName := s.ServiceName + ".service"
 	for _, action := range []string{"stop", "disable"} {
 		if out, stderr, err := exec.RunSudo(ctx, "systemctl", action, unitName); err != nil {
 			return "", fmt.Errorf("%s %s: %w (%s %s)", action, unitName, err, out, stderr)

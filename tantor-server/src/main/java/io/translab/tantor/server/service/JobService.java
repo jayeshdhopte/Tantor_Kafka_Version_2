@@ -18,6 +18,7 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class JobService {
+    @org.springframework.beans.factory.annotation.Autowired private ExternalKafkaManagement externalKafka;
 
     private final JobRepository jobRepository;
     private final JobStepRepository jobStepRepository;
@@ -191,7 +192,7 @@ public class JobService {
     @Transactional
     public void attachAgentTask(UUID stepId, UUID taskId) {
         JobStep step = getStep(stepId);
-        step.setAgentTaskId(taskId);
+        if(externalKafka != null && externalKafka.task(taskId)) { step.setAgentTaskId(null); step.setExternalKafkaTaskId(taskId); } else {step.setExternalKafkaTaskId(null);step.setAgentTaskId(taskId);}
         jobStepRepository.save(step);
     }
 
@@ -277,7 +278,7 @@ public class JobService {
             for (JobStep step : getSteps(id)) {
                 if (step.getStatus() != JobStepStatus.SUCCESS) {
                     step.setStatus(JobStepStatus.PENDING);
-                    if (job.getType() != JobType.ROLLING_RESTART && job.getType() != JobType.CLUSTER_DELETION) step.setAgentTaskId(null);
+                    if (job.getType() != JobType.ROLLING_RESTART && job.getType() != JobType.CLUSTER_DELETION) {step.setAgentTaskId(null);step.setExternalKafkaTaskId(null);}
                     step.setExternalServiceTaskId(null);
                     step.setStartTime(null);
                     step.setEndTime(null);

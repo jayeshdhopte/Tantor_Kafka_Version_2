@@ -70,6 +70,8 @@ func chooseTaskTarget(task AgentTask, records []DiscoveredCluster) *DiscoveredCl
 }
 
 func executePolledTask(ctx context.Context, client *APIClient, cfg RuntimeConfig, representative DiscoveredCluster, records []DiscoveredCluster, task AgentTask, logger *slog.Logger) {
+	managedMutationMu.Lock()
+	defer managedMutationMu.Unlock()
 	result := AgentTaskResult{TaskID: task.TaskID, Status: "SUCCESS", Data: make(map[string]string)}
 	target := chooseTaskTarget(task, records)
 	if strings.TrimSpace(task.TaskID) == "" {

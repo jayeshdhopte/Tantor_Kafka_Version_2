@@ -118,18 +118,18 @@ public class ConfigController {
         
         for (io.translab.tantor.server.domain.ExternalClusterNode node : nodes) {
             Map<String, Object> topoNode = new HashMap<>();
-            topoNode.put("hostId", node.getHost());
+            topoNode.put("hostId", "external:"+node.getId());
             topoNode.put("hostAddress", node.getHost());
             
-            String role = "Broker";
-            if (Boolean.TRUE.equals(node.getIsBroker()) && Boolean.TRUE.equals(node.getIsController())) role = "Broker + Controller";
-            else if (Boolean.TRUE.equals(node.getIsController())) role = "Controller";
+            String role = "broker";
+            if (Boolean.TRUE.equals(node.getIsBroker()) && Boolean.TRUE.equals(node.getIsController())) role = "broker_controller";
+            else if (Boolean.TRUE.equals(node.getIsController())) role = "controller";
             
             topoNode.put("role", role);
             topoNode.put("nodeId", node.getNodeId() != null ? node.getNodeId() : Math.abs(node.getHost().hashCode()));
             topoNode.put("isBroker", node.getIsBroker());
             topoNode.put("isController", node.getIsController());
-            topoNode.put("serviceName", "kafka.service"); // fallback, actual restart uses agent's discovered service
+            topoNode.put("serviceName", node.getSystemdService());
             String configPath = node.getConfigFile();
             topoNode.put("configPath", configPath);
             topoNode.put("configFilePath", configPath);

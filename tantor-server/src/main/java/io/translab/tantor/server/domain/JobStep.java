@@ -45,6 +45,10 @@ public class JobStep {
     @Column(name = "agent_task_id")
     private UUID agentTaskId;
 
+    @Column(name="external_kafka_task_id")
+    private UUID externalKafkaTaskId;
+    public UUID getAgentTaskId() { return agentTaskId == null ? externalKafkaTaskId : agentTaskId; }
+
     @Column(name = "external_service_task_id")
     private UUID externalServiceTaskId;
 

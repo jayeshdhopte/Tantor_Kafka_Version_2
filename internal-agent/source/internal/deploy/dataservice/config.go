@@ -18,12 +18,12 @@ const Schema = "schema-registry"
 const Connect = "kafka-connect"
 
 type Settings struct {
-	Kind, Install, Config, Log, Working, Plugin, HeapMin, HeapMax, User, Group, Host string
-	Port, Replication, MinDisk                                                       int
-	Bootstrap, KafkaBin, Compatibility, GroupID, SchemaTopic                         string
-	OffsetTopic, ConfigTopic, StatusTopic, HAPeers                                   string
-	Deferred, SharedConnect, SharedSchema                                            bool
-	Protected                                                                        []string
+	Kind, ServiceName, Install, Config, Log, Working, Plugin, HeapMin, HeapMax, User, Group, Host string
+	Port, Replication, MinDisk                                                                    int
+	Bootstrap, KafkaBin, Compatibility, GroupID, SchemaTopic                                      string
+	OffsetTopic, ConfigTopic, StatusTopic, HAPeers                                                string
+	Deferred, SharedConnect, SharedSchema                                                         bool
+	Protected                                                                                     []string
 }
 
 var heapPattern = regexp.MustCompile(`^[1-9][0-9]*[mMgG]$`)
@@ -57,6 +57,10 @@ func Parse(kind string, task *api.Task) (Settings, error) {
 		return s, fmt.Errorf("unsupported data service %q", kind)
 	}
 	p := task.Parameters
+	s.ServiceName = Value(p, "service_name", kind)
+	if !regexp.MustCompile(`^` + regexp.QuoteMeta(kind) + `(?:-[a-zA-Z0-9_-]{1,64})?$`).MatchString(s.ServiceName) {
+		return s, fmt.Errorf("invalid data service instance name")
+	}
 	kafkaInstall := Value(p, "kafka_install_dir", "/opt/kafka")
 	defaultInstall := kafkaInstall
 	s.Install = Value(p, "install_dir", defaultInstall)

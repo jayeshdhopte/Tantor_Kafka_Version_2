@@ -60,7 +60,7 @@ func Deploy(ctx context.Context, cfg *config.Config, download Downloader, exec e
 		}
 	}
 	// Never overwrite or stop an already running service during an installation retry.
-	if _, _, activeErr := exec.Run(ctx, "systemctl", "is-active", "--quiet", kind+".service"); activeErr == nil {
+	if _, _, activeErr := exec.Run(ctx, "systemctl", "is-active", "--quiet", s.ServiceName+".service"); activeErr == nil {
 		return logs.String(), fmt.Errorf("%s is already active; verify the existing deployment or use an explicit service upgrade procedure", kind)
 	}
 	if err = SafePath(cfg.Paths.ArtifactsDir); err != nil {
@@ -156,10 +156,10 @@ func Deploy(ctx context.Context, cfg *config.Config, download Downloader, exec e
 	if err = run("systemctl", "daemon-reload"); err != nil {
 		return logs.String(), err
 	}
-	if err = run("systemctl", "enable", kind+".service"); err != nil {
+	if err = run("systemctl", "enable", s.ServiceName+".service"); err != nil {
 		return logs.String(), err
 	}
-	if err = run("systemctl", "start", kind+".service"); err != nil {
+	if err = run("systemctl", "start", s.ServiceName+".service"); err != nil {
 		return logs.String(), err
 	}
 	health, err := Verify(ctx, kind, "http://"+net.JoinHostPort("127.0.0.1", strconv.Itoa(s.Port)))
@@ -251,5 +251,5 @@ StandardError=journal
 [Install]
 WantedBy=multi-user.target
 `, s.Kind, s.User, s.Group, javaHome, s.Log, heapVariable, s.HeapMin, s.HeapMax, logVariable, loggingPath, s.Working, s.Install, launcher, s.Config, propertyName)
-	return []ConfigFile{{s.Config + "/" + propertyName, properties}, {loggingPath, logging}, {"/etc/systemd/system/" + s.Kind + ".service", unit}}
+	return []ConfigFile{{s.Config + "/" + propertyName, properties}, {loggingPath, logging}, {"/etc/systemd/system/" + s.ServiceName + ".service", unit}}
 }

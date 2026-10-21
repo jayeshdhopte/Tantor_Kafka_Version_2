@@ -79,7 +79,7 @@ func reconfigurePorts(ctx context.Context, exec executor.Executor, s Settings, t
 	if err != nil {
 		return "", err
 	}
-	unit, _, err := exec.Run(ctx, "systemctl", "show", s.Kind+".service", "--property=ExecStart", "--value")
+	unit, _, err := exec.Run(ctx, "systemctl", "show", s.ServiceName+".service", "--property=ExecStart", "--value")
 	launcher := "connect-distributed.sh"
 	if s.Kind == Schema {
 		launcher = "schema-registry-start"
@@ -120,7 +120,7 @@ func reconfigurePorts(ctx context.Context, exec executor.Executor, s Settings, t
 	// never observe a partially written configuration.
 	_, detail, err = exec.RunSudo(ctx, "bash", "-c", `set -e; dst=$1; src=$2; tmp=$(mktemp "${dst}.port-update.XXXXXX"); trap 'rm -f -- "$tmp"' EXIT; cp -p -- "$dst" "$tmp"; cat -- "$src" > "$tmp"; mv -fT -- "$tmp" "$dst"`, "--", file.Path, tmp.Name())
 	if err == nil {
-		_, detail, err = exec.RunSudo(ctx, "systemctl", "restart", s.Kind+".service")
+		_, detail, err = exec.RunSudo(ctx, "systemctl", "restart", s.ServiceName+".service")
 	}
 	if err == nil {
 		var health string
@@ -133,7 +133,7 @@ func reconfigurePorts(ctx context.Context, exec executor.Executor, s Settings, t
 		_, _, restoreErr := exec.RunSudo(rollbackCtx, "cp", "-p", "--", backup, file.Path)
 		var restartErr error
 		if restoreErr == nil {
-			_, _, restartErr = exec.RunSudo(rollbackCtx, "systemctl", "restart", s.Kind+".service")
+			_, _, restartErr = exec.RunSudo(rollbackCtx, "systemctl", "restart", s.ServiceName+".service")
 		}
 		return logs, fmt.Errorf("port update failed: %w (%s); backup %s; rollback restore=%v restart=%v", err, detail, backup, restoreErr, restartErr)
 	}

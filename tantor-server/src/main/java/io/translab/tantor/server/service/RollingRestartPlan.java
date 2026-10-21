@@ -8,7 +8,11 @@ import java.util.*;
 public final class RollingRestartPlan {
     private RollingRestartPlan() {}
     public static String key(ClusterServiceAssignment service) {
-        return service.getHostId() + ":" + unit(service.getRole());
+        return service.getHostId() + ":" + unit(service);
+    }
+    public static String unit(ClusterServiceAssignment service) {
+        if(service.getHostId().startsWith("external:")) { try { return new com.fasterxml.jackson.databind.ObjectMapper().readTree(service.getConfigJson()).get("service_name").asText(); } catch(Exception e){throw new IllegalArgumentException("Discovered service name missing",e);} }
+        return unit(service.getRole());
     }
     public static String unit(String role) {
         return switch (role) {
