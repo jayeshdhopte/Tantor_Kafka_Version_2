@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 import org.apache.kafka.clients.admin.*;
 import org.apache.kafka.common.config.ConfigResource;
 import java.time.Instant;
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
@@ -73,10 +74,29 @@ public class ExternalServicesJobHandler implements JobHandler {
    try { admin.createTopics(List.of(new NewTopic(name,partitions,(short)rf).configs(Map.of("cleanup.policy","compact")))).all().get(60,TimeUnit.SECONDS); }
    catch(java.util.concurrent.ExecutionException e) { if(!(e.getCause() instanceof org.apache.kafka.common.errors.TopicExistsException)) throw e; }
   }
-  var description=admin.describeTopics(List.of(name)).allTopicNames().get(60,TimeUnit.SECONDS).get(name);
-  if(description.partitions().size()!=partitions || description.partitions().stream().anyMatch(p->p.replicas().size()!=rf)) throw new IllegalStateException("Existing internal topic "+name+" has incompatible partitions or replication; it will not be altered.");
-  var resource=new ConfigResource(ConfigResource.Type.TOPIC,name);
-  var entry=admin.describeConfigs(List.of(resource)).all().get(60,TimeUnit.SECONDS).get(resource).get("cleanup.policy");
-  if(entry==null||!"compact".equals(entry.value())) throw new IllegalStateException("Internal topic "+name+" must use cleanup.policy=compact.");
+  verifyTopic(admin,name,partitions,rf,Duration.ofSeconds(60),Duration.ofSeconds(1));
+ }
+ static void verifyTopic(AdminClient admin,String name,int partitions,int rf,Duration timeout,Duration poll) throws Exception {
+  long deadline=System.nanoTime()+timeout.toNanos();
+  Throwable last=null;
+  while(System.nanoTime()<deadline) {
+   try {
+    var description=admin.describeTopics(List.of(name)).allTopicNames().get(Math.max(1,deadline-System.nanoTime()),TimeUnit.NANOSECONDS).get(name);
+    if(description==null) throw new java.util.concurrent.ExecutionException(new org.apache.kafka.common.errors.UnknownTopicOrPartitionException("Topic metadata not yet available"));
+    if(description.partitions().size()!=partitions || description.partitions().stream().anyMatch(p->p.replicas().size()!=rf)) throw new IllegalStateException("Existing internal topic "+name+" has incompatible partitions or replication; it will not be altered.");
+    var resource=new ConfigResource(ConfigResource.Type.TOPIC,name);
+    var entry=admin.describeConfigs(List.of(resource)).all().get(Math.max(1,deadline-System.nanoTime()),TimeUnit.NANOSECONDS).get(resource).get("cleanup.policy");
+    if(entry==null||!"compact".equals(entry.value())) throw new IllegalStateException("Internal topic "+name+" must use cleanup.policy=compact.");
+    return;
+   } catch(java.util.concurrent.ExecutionException e) {
+    last=e.getCause();
+    if(!(last instanceof org.apache.kafka.common.errors.UnknownTopicOrPartitionException) && !(last instanceof org.apache.kafka.common.errors.LeaderNotAvailableException))
+     throw new IllegalStateException("Verification of internal topic "+name+" failed: "+last.getClass().getSimpleName()+": "+Objects.toString(last.getMessage(),""),e);
+   } catch(java.util.concurrent.TimeoutException e) { last=e; break; }
+   long remaining=deadline-System.nanoTime();
+   if(remaining<=0) break;
+   TimeUnit.NANOSECONDS.sleep(Math.min(remaining,poll.toNanos()));
+  }
+  throw new IllegalStateException("Timed out waiting for internal topic "+name+" metadata and compacted configuration to become available.",last);
  }
 }
