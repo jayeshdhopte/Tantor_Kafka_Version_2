@@ -1,6 +1,6 @@
 # External Kafka management release
 
-Version: `3.4.0-dataservices.2-configchange.8-rollingrestart.3`.
+Version: `3.4.0-dataservices.2-configchange.8-rollingrestart.4`.
 
 ## Included
 

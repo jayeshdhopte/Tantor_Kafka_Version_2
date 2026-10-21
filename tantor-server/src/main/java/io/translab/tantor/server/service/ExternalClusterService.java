@@ -1588,9 +1588,10 @@ public class ExternalClusterService {
             node.setLastSeen(seen);
             node.setInstallDir(blankToDefault(report.getInstallPath(), node.getInstallDir()));
             node.setLogDirs(blankToDefault(report.getLogDirs(), node.getLogDirs()));
+            updateDiscoveryServiceBinding(node, report, agent);
             node.setConfigFile(blankToDefault(report.getConfigFile(), node.getConfigFile()));
             node.setDataDirs(blankToDefault(report.getDataDirs(), blankToDefault(report.getLogDirs(), node.getDataDirs())));
-            node.setAgentId(agent.getId()); node.setSystemdService(report.getSystemdService());
+            node.setAgentId(agent.getId());
             node.setCanManageKafka(report.isCanManageKafka()); node.setCanWriteConfig(report.isCanWriteConfig()); node.setCanRestart(report.isCanRestart());
             externalClusterNodeRepository.save(node);
         }
@@ -1615,12 +1616,26 @@ public class ExternalClusterService {
             node.setLastSeen(seen);
             node.setInstallDir(blankToDefault(report.getInstallPath(), null));
             node.setLogDirs(blankToDefault(report.getLogDirs(), null));
+            updateDiscoveryServiceBinding(node, report, agent);
             node.setConfigFile(blankToDefault(report.getConfigFile(), null));
             node.setDataDirs(blankToDefault(report.getDataDirs(), blankToDefault(report.getLogDirs(), null)));
-            node.setAgentId(agent.getId()); node.setSystemdService(report.getSystemdService());
+            node.setAgentId(agent.getId());
             node.setCanManageKafka(report.isCanManageKafka()); node.setCanWriteConfig(report.isCanWriteConfig()); node.setCanRestart(report.isCanRestart());
             externalClusterNodeRepository.save(node);
         }
+    }
+
+    static void updateDiscoveryServiceBinding(io.translab.tantor.server.domain.ExternalClusterNode node,
+                                              ExternalDiscoveryReport report, DiscoveryAgent agent) {
+        if (report.getSystemdService() != null && !report.getSystemdService().isBlank()) {
+            node.setSystemdService(report.getSystemdService());
+        } else if ((report.getConfigFile() != null && !report.getConfigFile().isBlank()
+                    && !Objects.equals(node.getConfigFile(), report.getConfigFile()))
+                || (node.getAgentId() != null && !Objects.equals(node.getAgentId(), agent.getId()))) {
+            node.setSystemdService(null);
+        }
+        // A JVM may be visible while its systemd unit is still activating.
+        // Keep the confirmed binding only for this same agent and config file.
     }
 
     boolean matchesDiscoveryNode(

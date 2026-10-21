@@ -147,11 +147,12 @@ func getRunningKafkaPropsFiles() []ProcessInfo {
 			continue
 		}
 		info := ProcessInfo{
-			Cmdline:   cmdline,
-			Cwd:       cwd,
-			Pid:       pid,
-			PropsFile: props,
-			AppLogDir: extractKafkaAppLogDir(cmdline),
+			Cmdline:     cmdline,
+			Cwd:         cwd,
+			Pid:         pid,
+			SystemdUnit: readProcessSystemdUnit(pid),
+			PropsFile:   props,
+			AppLogDir:   extractKafkaAppLogDir(cmdline),
 		}
 		key := processKey(info)
 		if !seen[key] {
@@ -182,6 +183,30 @@ func readProcessCwd(pid string) string {
 		return cwd
 	}
 	return ""
+}
+
+func systemdUnitFromCgroup(content string) string {
+	for _, line := range strings.Split(content, "\n") {
+		parts := strings.SplitN(line, ":", 3)
+		if len(parts) != 3 {
+			continue
+		}
+		path := strings.Split(parts[2], "/")
+		for i := len(path) - 1; i >= 0; i-- {
+			if regexp.MustCompile(`^[A-Za-z0-9_.@:-]+\.service$`).MatchString(path[i]) {
+				return path[i]
+			}
+		}
+	}
+	return ""
+}
+
+func readProcessSystemdUnit(pid string) string {
+	data, err := os.ReadFile(filepath.Join("/proc", pid, "cgroup"))
+	if err != nil {
+		return ""
+	}
+	return systemdUnitFromCgroup(string(data))
 }
 
 func readProcessCmdline(pid string) string {

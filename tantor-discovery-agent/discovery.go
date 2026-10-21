@@ -55,6 +55,17 @@ func processInfoByConfig(processes []ProcessInfo) map[string]ProcessInfo {
 			continue
 		}
 		process.PropsFile = path
+		if previous, ok := out[path]; ok {
+			if process.SystemdUnit == "" {
+				process.SystemdUnit = previous.SystemdUnit
+			}
+			if process.Pid == "" {
+				process.Pid = previous.Pid
+			}
+			if process.AppLogDir == "" {
+				process.AppLogDir = previous.AppLogDir
+			}
+		}
 		out[path] = process
 	}
 	return out
