@@ -1,6 +1,6 @@
 # External service deployment
 
-This Discovery agent is `3.4.0-dataservices.2-configchange.8-rollingrestart.2`.
+This Discovery agent is `3.4.0-dataservices.2-configchange.8-rollingrestart.3`.
 It retains discovery and monitoring and adds managed Kafka configuration,
 rolling restart, and multiple Schema Registry / Connect instances when enabled.
 See [EXTERNAL_MANAGEMENT.md](EXTERNAL_MANAGEMENT.md) for setup and limitations.

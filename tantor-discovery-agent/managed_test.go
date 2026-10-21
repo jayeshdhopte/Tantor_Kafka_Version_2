@@ -10,6 +10,42 @@ import (
 	"testing"
 )
 
+func TestServiceConfigBindingAcceptsSymlinkButRejectsOtherFiles(t *testing.T) {
+	dir := t.TempDir()
+	realDir := filepath.Join(dir, "kafka_2.13-4.1.0")
+	if err := os.MkdirAll(filepath.Join(realDir, "config"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	expected := filepath.Join(realDir, "config", "broker.properties")
+	other := filepath.Join(realDir, "config", "controller.properties")
+	for _, path := range []string{expected, other} {
+		if err := os.WriteFile(path, []byte("node.id=1\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	alias := filepath.Join(dir, "kafka")
+	if err := os.Symlink(realDir, alias); err != nil {
+		t.Fatal(err)
+	}
+	command := "{ path=" + alias + "/bin/kafka-server-start.sh ; argv[]=" + alias + "/bin/kafka-server-start.sh " + alias + "/config/broker.properties ; ignore_errors=no ; }"
+	if !serviceConfigBindingMatches(command, "", expected) {
+		t.Fatal("same config through symlink rejected")
+	}
+	if !serviceConfigBindingMatches("java kafka.Kafka config/broker.properties", realDir, expected) {
+		t.Fatal("relative config with service working directory rejected")
+	}
+	for _, rejected := range []string{
+		"java kafka.Kafka " + other,
+		"java -Dexample=" + expected + " kafka.Kafka " + other,
+		"java unrelated.Main " + expected,
+		"java kafka.Kafka " + expected + ".missing",
+	} {
+		if serviceConfigBindingMatches(rejected, "", expected) {
+			t.Fatalf("unsafe service binding accepted: %s", rejected)
+		}
+	}
+}
+
 func managedFixture(t *testing.T) (DiscoveredCluster, RuntimeConfig, managedTask) {
 	t.Helper()
 	if os.Geteuid() != 0 {

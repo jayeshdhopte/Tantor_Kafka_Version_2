@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -75,6 +74,26 @@ func executeManagedTask(ctx context.Context, cfg RuntimeConfig, records []Discov
 	}
 	return serviceResult{"SUCCESS", output}
 }
+
+func serviceConfigBindingMatches(command, workingDirectory, expected string) bool {
+	if !isKafkaServerProcess(command) {
+		return false
+	}
+	if workingDirectory == "" {
+		workingDirectory = "/" // systemd's default for system services
+	}
+	actual := extractPropsPath(command, workingDirectory)
+	if actual == "" {
+		return false
+	}
+	actualPath, err := canonicalExistingPath(actual)
+	if err != nil {
+		return false
+	}
+	expectedPath, err := canonicalExistingPath(expected)
+	return err == nil && actualPath == expectedPath
+}
+
 func runManagedTask(ctx context.Context, cfg RuntimeConfig, r DiscoveredCluster, t managedTask) (string, error) {
 	p := t.Parameters
 	path, pathErr := canonicalExistingPath(r.PropsFile)
@@ -87,8 +106,8 @@ func runManagedTask(ctx context.Context, cfg RuntimeConfig, r DiscoveredCluster,
 			return "", err
 		}
 		binding, bindErr := exec.CommandContext(ctx, "systemctl", "show", unit, "--property=ExecStart", "--value").Output()
-		pattern := regexp.MustCompile(`(?:^|[\s="'])` + regexp.QuoteMeta(r.PropsFile) + `(?:[\s;"'}]|$)`)
-		if bindErr != nil || !pattern.Match(binding) {
+		cwd, cwdErr := exec.CommandContext(ctx, "systemctl", "show", unit, "--property=WorkingDirectory", "--value").Output()
+		if bindErr != nil || cwdErr != nil || !serviceConfigBindingMatches(string(binding), strings.TrimSpace(string(cwd)), r.PropsFile) {
 			return "", fmt.Errorf("service configuration binding changed; refresh discovery before restarting")
 		}
 

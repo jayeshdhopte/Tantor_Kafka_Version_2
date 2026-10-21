@@ -26,7 +26,7 @@ public class ExternalServicesJobHandler implements JobHandler {
    var s=services.findById(UUID.fromString(payload.get("serviceId"))).orElseThrow();
    jobs.startStep(step.getId());
    try {
-    manager.requireCluster(s.getClusterId()); manager.requireAgent(s.getClusterId(),s.getAgentId());
+    manager.requireCluster(s.getClusterId()); var agent=manager.requireAgent(s.getClusterId(),s.getAgentId());
     s.setStatus("DEPLOYING"); s.setLastError(null); services.save(s);
     var p=manager.read(s.getConfigJson()); String op=payload.get("operation"); String output;
     switch(op) {
@@ -37,7 +37,7 @@ public class ExternalServicesJobHandler implements JobHandler {
      }
      case "TOPICS" -> { ensureTopics(s,p); output="Kafka internal topics created or verified; existing broker configuration unchanged."; }
      case "SAVE" -> {
-      var req=new SaveConnectionRequest(); req.setConnectionName("Deployed "+s.getRole()+" on "+p.get("host_name")+":"+p.get("rest_port")); req.setProtocol("http"); req.setHost(p.get("host_name")); req.setPort(Integer.parseInt(p.get("rest_port"))); req.setIsDefault(true);
+      var req=new SaveConnectionRequest(); req.setConnectionName("Deployed "+s.getRole()+" on "+p.getOrDefault("host_display_name",p.get("host_name"))+":"+p.get("rest_port")); req.setProtocol("http"); req.setHost(manager.serviceHost(agent)); req.setPort(Integer.parseInt(p.get("rest_port"))); req.setIsDefault(true);
       var saved=connections.saveConnection(s.getClusterId(),s.getRole().toUpperCase(Locale.ROOT),req,job.getRequestedBy());
       if(!"ONLINE".equals(saved.getStatus())) throw new IllegalStateException("Service started but management-server REST verification failed: "+saved.getLastError());
       s.setStatus("ONLINE"); services.save(s); output="Service verified and connection associated with the external cluster.";

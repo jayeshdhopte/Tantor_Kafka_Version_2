@@ -74,8 +74,8 @@ public class ExternalDataServiceManager {
    if(logical.isPresent()) { var prior=read(logical.get().getConfigJson()); for(String key:List.of("group_id","schemas_topic","config_topic","offset_topic","status_topic"))if(prior.containsKey(key))p.put(key,prior.get(key)); }
    else if(additions.stream().anyMatch(existing->role.equals(existing.getRole()))) { var prior=read(additions.stream().filter(existing->role.equals(existing.getRole())).findFirst().orElseThrow().getConfigJson());for(String key:List.of("group_id","schemas_topic","config_topic","offset_topic","status_topic"))if(prior.containsKey(key))p.put(key,prior.get(key)); }
    else p.put("group_id","tantor-"+role.replace('_','-')+"-"+id);
-   p.put("host_name",Objects.toString(agent.getHostname(),""));
-   if(!p.get("host_name").matches("[a-zA-Z0-9.:-]+")) throw new IllegalArgumentException("Agent must advertise a valid reachable hostname.");
+   p.put("host_name",serviceHost(agent));
+   p.put("host_display_name",Objects.toString(agent.getHostname(),p.get("host_name")));
    p.put("bootstrap_servers",c.getBootstrapServers());
    p.put("kafka_cluster_id",Objects.toString(c.getKafkaClusterId(),""));
    p.put("replication_factor",String.valueOf(Math.max(1,Math.min(3,Objects.requireNonNullElse(c.getBrokerCount(),1)))));
@@ -127,6 +127,25 @@ public class ExternalDataServiceManager {
   catch(ArithmeticException | NumberFormatException ex) { return -1; }
  }
  public Map<String,String> read(String data) { try { return mapper.readValue(data,new TypeReference<>(){}); } catch(Exception e) { throw new IllegalStateException("Invalid persisted configuration",e); } }
+ String serviceHost(DiscoveryAgent agent) {
+  // Discovery reports the Kafka listener address, which is already reachable
+  // from the management server. A display hostname need not exist in its DNS.
+  if(agent.getIpAddresses()!=null&&!agent.getIpAddresses().isBlank()) {
+   try {
+    List<String> addresses=mapper.readValue(agent.getIpAddresses(),new TypeReference<List<String>>(){});
+    for(String address:addresses) {
+     if(address==null||!address.matches("(?:[0-9]{1,3}\\.){3}[0-9]{1,3}")) continue;
+     try {
+      var ip=java.net.InetAddress.getByName(address);
+      if(!ip.isAnyLocalAddress()&&!ip.isLoopbackAddress()&&!ip.isLinkLocalAddress()&&!ip.isMulticastAddress()) return ip.getHostAddress();
+     } catch(java.net.UnknownHostException ignored) { }
+    }
+   } catch(com.fasterxml.jackson.core.JsonProcessingException e) { throw new IllegalArgumentException("Invalid discovery addresses; refresh agent discovery.",e); }
+  }
+  String hostname=Objects.toString(agent.getHostname(),"");
+  if(!hostname.matches("[a-zA-Z0-9.:-]+")) throw new IllegalArgumentException("Agent must advertise a valid reachable address.");
+  return hostname;
+ }
  public String json(Object data) { try { return mapper.writeValueAsString(data); } catch(Exception e) { throw new IllegalStateException(e); } }
  @Transactional
  public ExternalServiceTask enqueue(ExternalDataService service,String command) {
