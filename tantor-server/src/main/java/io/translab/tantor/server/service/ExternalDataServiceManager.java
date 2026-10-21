@@ -163,6 +163,11 @@ public class ExternalDataServiceManager {
   var s=services.findById(t.getServiceId()).orElseThrow(); requireCluster(s.getClusterId()); requireAgent(s.getClusterId(),agentId);
   t.setStatus("IN_PROGRESS"); tasks.save(t);
   var p=read(s.getConfigJson());
+  // Existing queued jobs predate address selection by IP. Refresh their
+  // deployment/advertised address too, not just the later saved connection.
+  p.putIfAbsent("host_display_name",p.getOrDefault("host_name",Objects.toString(agent.getHostname(),"")));
+  p.put("host_name",serviceHost(agent));
+  s.setConfigJson(json(p)); services.save(s);
   return Map.of("id",t.getId(),"command",t.getCommand(),"kind",s.getRole().equals("schema_registry")?"schema-registry":"kafka-connect","parameters",p,"artifactId",p.get("artifact_id"),"checksum",p.get("checksum"));
  }
  @Transactional

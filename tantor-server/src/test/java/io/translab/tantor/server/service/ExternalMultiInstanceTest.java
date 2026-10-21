@@ -32,4 +32,19 @@ class ExternalMultiInstanceTest {
   agent.setIpAddresses("[]");assertThat(manager.serviceHost(agent)).isEqualTo("not-in-dns.example");
   agent.setIpAddresses("invalid");assertThatThrownBy(()->manager.serviceHost(agent)).hasMessageContaining("refresh agent discovery");
  }
+ @Test void existingQueuedInstallRefreshesItsAdvertisedAddressBeforeAgentExecution(){
+  var clusters=mock(ExternalClusterRepository.class);var agents=mock(DiscoveryAgentRepository.class);var services=mock(ExternalDataServiceRepository.class);var tasks=mock(ExternalServiceTaskRepository.class);
+  var manager=new ExternalDataServiceManager(clusters,agents,services,tasks,null,null,new ObjectMapper());
+  UUID cluster=UUID.randomUUID(),serviceId=UUID.randomUUID();
+  var external=new ExternalCluster();external.setId(cluster);external.setStatus("SUCCESS");when(clusters.findById(cluster)).thenReturn(Optional.of(external));
+  var agent=new DiscoveryAgent();agent.setId("agent");agent.setClusterId(cluster);agent.setVersion("3.4.0-dataservices.2");agent.setStatus("ONLINE");agent.setLastHeartbeat(OffsetDateTime.now());agent.setCanDeployServices(true);agent.setHostname("not-in-dns.example");agent.setIpAddresses("[\"192.168.3.174\"]");
+  when(agents.findById("agent")).thenReturn(Optional.of(agent));
+  var service=new ExternalDataService();service.setId(serviceId);service.setClusterId(cluster);service.setAgentId("agent");service.setRole("kafka_connect");service.setConfigJson("{\"host_name\":\"not-in-dns.example\",\"artifact_id\":\"artifact\",\"checksum\":\"checksum\"}");
+  var task=new ExternalServiceTask();task.setId(UUID.randomUUID());task.setServiceId(serviceId);task.setCommand("INSTALL");task.setDeadline(Instant.now().plusSeconds(60));
+  when(tasks.findFirstByAgentIdAndStatusInOrderByCreatedAtAsc(eq("agent"),any())).thenReturn(Optional.of(task));when(services.findById(serviceId)).thenReturn(Optional.of(service));
+  var claimed=manager.claim("agent");
+  assertThat(manager.read(service.getConfigJson())).containsEntry("host_name","192.168.3.174").containsEntry("host_display_name","not-in-dns.example");
+  assertThat((Map<?,?>)claimed.get("parameters")).isEqualTo(manager.read(service.getConfigJson()));
+  verify(services).save(service);
+ }
 }
