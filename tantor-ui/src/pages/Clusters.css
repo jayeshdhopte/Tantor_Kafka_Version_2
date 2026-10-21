@@ -2425,21 +2425,33 @@
 .clusters-surface .inventory-header {
   align-items: center;
   margin-top: 40px;
-  padding: 0;
+  padding: 18px 20px;
+  gap: 16px;
+  border: 1px solid #E1E7EC;
+  border-radius: 8px;
+  background: #F8FAFC;
 }
 
 .clusters-surface .inventory-header h3 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin: 0;
   color: #3E1363;
-  font-size: 18px;
-  font-weight: 500;
-  line-height: 25px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+  overflow-wrap: anywhere;
 }
+
+.clusters-surface .inventory-header h3 svg { flex: none; }
+.clusters-surface .inventory-header > div:first-child { min-width: 0; }
+.clusters-surface .inventory-header .inventory-total-badge { flex: none; }
 
 .clusters-surface .inventory-header > div:first-child > span {
   margin-top: 4px;
-  color: #3E1363;
-  font-size: 16px;
+  color: #667085;
+  font-size: 13px;
   font-weight: 400;
   line-height: 22px;
 }

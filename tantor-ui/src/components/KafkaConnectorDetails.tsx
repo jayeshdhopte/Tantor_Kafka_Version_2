@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, ArrowUpDown, ArrowUp, ArrowDown, MoreVertical, RefreshCw, RotateCw } from 'lucide-react';
+import { Activity, ArrowLeft, ArrowUpDown, ArrowUp, ArrowDown, Braces, CircleAlert, CirclePlay, MoreVertical, RefreshCw, RotateCw, Server, Users, Workflow } from 'lucide-react';
 import { AnchoredMenu } from './AnchoredMenu';
 import { ConnectorConfigPanel } from './ConnectorConfigPanel';
 import { confirmAction } from './confirmUtils';
@@ -81,20 +81,20 @@ export function KafkaConnectorDetails({ clusterId, connectionId, name, initial, 
     {loading && <p role="status">Loading current connector details...</p>}
     {data && <>
       <div className="ds-kc-detail-summary">
-        <div><span>Worker</span><strong>{data.worker || data.status?.connector?.worker_id || 'Unavailable'}</strong></div>
-        <div><span>Type</span><strong>{connectorType(data)}</strong></div>
-        <div className="ds-kc-summary-class"><span>Class</span><strong>{data.class || 'Unavailable'}</strong></div>
-        <div><span>State</span><strong><span className={connectorStatusClass(data.state)}>{data.state}</span></strong></div>
-        <div className="ds-kc-task-counter"><span>Tasks running</span><strong>{running}</strong></div><div className="ds-kc-task-counter"><span>Tasks failed</span><strong>{failed}</strong></div>
+        <div><span><Server size={15} aria-hidden="true" />Worker</span><strong>{data.worker || data.status?.connector?.worker_id || 'Unavailable'}</strong></div>
+        <div><span><Workflow size={15} aria-hidden="true" />Type</span><strong>{connectorType(data)}</strong></div>
+        <div className="ds-kc-summary-class"><span><Braces size={15} aria-hidden="true" />Class</span><strong>{data.class || 'Unavailable'}</strong></div>
+        <div><span><Activity size={15} aria-hidden="true" />State</span><strong><span className={connectorStatusClass(data.state)}>{data.state}</span></strong></div>
+        <div className="ds-kc-task-counter ds-kc-tasks-running"><span><CirclePlay size={17} aria-hidden="true" />Tasks running</span><strong>{running}</strong></div><div className={`ds-kc-task-counter${failed > 0 ? ' ds-kc-tasks-failed' : ''}`}><span><CircleAlert size={17} aria-hidden="true" />Tasks failed</span><strong>{failed}</strong></div>
 
-        {data.consumerGroup && <div className="ds-kc-summary-group"><span>Consumer group ({data.consumerGroupSource || 'configured'})</span><strong>{data.consumerGroup}</strong></div>}
+        {data.consumerGroup && <div className="ds-kc-summary-group"><span><Users size={15} aria-hidden="true" />Consumer group ({data.consumerGroupSource || 'configured'})</span><strong>{data.consumerGroup}</strong></div>}
       </div>
       {data.status?.connector?.trace && <details className="ds-kc-connector-trace"><summary>Connector error trace</summary><pre>{data.status.connector.trace}</pre></details>}
       <div className="ds-connector-detail-tabs" role="tablist" aria-label="Connector details">
         {(['tasks', 'config', 'topics'] as const).map(value => <button type="button" role="tab" id={`connector-tab-${value}`} aria-controls={`connector-panel-${value}`}
           aria-selected={tab === value} className={tab === value ? 'active' : ''} key={value} onClick={() => setTab(value)}>{value.charAt(0).toUpperCase() + value.slice(1)}</button>)}
       </div>
-      <div className="ds-kc-detail-panel" role="tabpanel" id={`connector-panel-${tab}`} aria-labelledby={`connector-tab-${tab}`}>
+      <div className={`ds-kc-detail-panel${tab === 'config' ? ' ds-kc-config-panel' : ''}`} role="tabpanel" id={`connector-panel-${tab}`} aria-labelledby={`connector-tab-${tab}`}>
         {tab === 'tasks' && <table className="ds-table ds-kc-table ds-kc-task-table"><thead><tr>{[['id', 'ID'], ['worker_id', 'Worker'], ['state', 'State'], ['trace', 'Trace']].map(([key, label]) =>
             <th key={key} aria-sort={taskSort.key === key ? taskSort.ascending ? 'ascending' : 'descending' : 'none'}><button className="ds-kc-sort" aria-label={`Sort tasks by ${label.toLowerCase()}`}
               onClick={() => setTaskSort(current => ({ key, ascending: current.key === key ? !current.ascending : true }))}>{label}{taskSort.key === key ? taskSort.ascending ? <ArrowUp size={14} /> : <ArrowDown size={14} /> : <ArrowUpDown size={14} />}</button></th>)}{canManage && <th>Actions</th>}</tr></thead>

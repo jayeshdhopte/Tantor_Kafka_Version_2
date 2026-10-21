@@ -19,6 +19,19 @@ test('theme uses the approved Overview colors and loads at app startup', () => {
   assert.match(main, /import '\.\/styles\/TableTheme\.css'/);
 });
 
+test('table containers do not reserve unused scrollbar space and keep scrolling page-owned', () => {
+  const rule = ruleFor('body :has(> table, > .figma-table)');
+  assert.ok(rule);
+  assert.deepEqual(rule.nodes.filter(node => node.type === 'decl').map(node => [node.prop, node.value]),
+    [['scrollbar-gutter', 'auto']]);
+  for (const container of ['overview-table-wrap', 'cluster-nodes-table-wrap', 'brokers-table-container',
+    'topics-table-card', 'consumer-table-scroll', 'ds-table-wrapper', 'ds-kc-list-scroll', 'table-container']) {
+    assert.ok(rule.selector.includes(`.${container}`), `Missing table container: ${container}`);
+  }
+  assert.ok(!rule.selector.includes('job-logs-container'));
+  assert.ok(!rule.selector.includes('ds-version-schema-code'));
+});
+
 test('native table headers, including portal dialogs, use layered theme overrides', () => {
   const rule = ruleFor('body table > thead > tr > :is(th, td)');
   assert.equal(rule.parent.name, 'layer');

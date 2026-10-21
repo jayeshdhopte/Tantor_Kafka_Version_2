@@ -42,7 +42,7 @@ export function ConnectorConfigPanel({ config, name, url, canManage, busy, onDir
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Unable to save configuration.'); }
     finally { setSaving(false); }
   };
-  return <>
+  return <div className="ds-kc-config-layout">
     <div className="ds-kc-config-toolbar"><div className="ds-inline-actions">
       <button className="ds-button outlined" aria-pressed={view === 'json'} onClick={() => setView('json')}>JSON</button>
       <button className="ds-button outlined" aria-pressed={view === 'properties'} onClick={() => setView('properties')}>Properties</button>
@@ -52,6 +52,7 @@ export function ConnectorConfigPanel({ config, name, url, canManage, busy, onDir
     </div></div>
     {error && <div className="ds-alert" role="alert">{error}</div>}
     {notice && <p role="status">{notice}</p>}
+    <div className="ds-kc-config-content">
     <div hidden={view !== 'json'}><Suspense fallback={<p>Loading JSON editor...</p>}><JsonEditor value={draft} readOnly={!canManage || saving || busy} onChange={setDraft} /></Suspense></div>
     {view === 'properties' && <table className="ds-table ds-kc-table"><thead><tr><th>Property</th><th>Value</th></tr></thead><tbody>{Object.entries(parsed || config).sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => <tr key={key}><td>{key}</td><td className="ds-kc-config-value">{value}</td></tr>)}</tbody></table>}
     <div className="ds-kc-editor-footer">
@@ -60,5 +61,6 @@ export function ConnectorConfigPanel({ config, name, url, canManage, busy, onDir
         if (await confirmAction('Discard unsaved configuration edits?', { title: 'Discard changes', confirmLabel: 'Discard' })) { setDraft(original); setError(''); }
       }}>Discard changes</button><button className="ds-button" disabled={!dirty || !!validation || saving || busy} onClick={() => void save()}>{saving ? 'Saving...' : 'Submit'}</button></div>}
     </div>
-  </>;
+    </div>
+  </div>;
 }

@@ -253,8 +253,8 @@ export function Hosts() {
                     <td>{ip}</td>
                     <td>
                       <div className="agent-kind-cell">
-                        <span>V{host.agentVersion || 'N/A'}</span>
-                        <small>{host.agentPath || 'Path unavailable'}</small>
+                        <span title={`V${host.agentVersion || 'N/A'}`}>V{host.agentVersion || 'N/A'}</span>
+                        <small title={host.agentPath || 'Path unavailable'}>{host.agentPath || 'Path unavailable'}</small>
                       </div>
                     </td>
                     <td>

@@ -682,6 +682,25 @@ body :is(.app-confirm-banner,
   overflow: visible;
 }
 
+/* Collection surfaces fit their content instead of filling the viewport. */
+body :is(.cluster-details-card,
+  .clusters-surface,
+  .clusters-surface .full-empty-card,
+  .artifacts-page,
+  .alerts-container,
+  .audit-page,
+  .hosts-page,
+  .jobs-list-page,
+  .monitoring-white-box,
+  .clusters-inventory,
+  .external-wrapper,
+  .clusters-table-wrap,
+  .overview-dashboard,
+  .brokers-dashboard,
+  .data-services-page .ds-fetch-prompt) {
+  min-height: 0;
+}
+
 /* Keep every section in the white surface's height calculation. */
 :where(.cluster-details-card,
   .artifacts-page,

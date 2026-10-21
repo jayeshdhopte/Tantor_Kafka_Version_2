@@ -537,10 +537,10 @@ export function Monitoring() {
 
             {/* Broker Details Header Card */}
             <div className="broker-details-card">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
-                <Server size={28} color="var(--accent-primary)" style={{ flexShrink: 0 }} />
+              <div className="monitoring-cluster-identity">
+                <Server size={20} className="monitoring-cluster-icon" aria-hidden="true" />
                 <div className="broker-info">
-                  <h2 style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <h2>
                     {clusterTitle}
                     <span className={`cluster-source-tag ${kafkaRunning ? 'state-positive' : 'state-negative'}`}>
                       {selectedType === 'INTERNAL' ? 'Internal' : 'External'}

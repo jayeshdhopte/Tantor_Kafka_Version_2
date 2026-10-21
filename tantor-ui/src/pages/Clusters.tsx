@@ -339,7 +339,7 @@ export function Clusters() {
           <>
             <div className="inventory-header">
               <div>
-                <h3>Cluster Inventory</h3>
+                <h3><Network size={20} aria-hidden="true" />Cluster Inventory</h3>
                 <span>Kafka Clusters</span>
               </div>
               <div className="inventory-total-badge">
