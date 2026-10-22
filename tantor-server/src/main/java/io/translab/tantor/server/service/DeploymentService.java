@@ -476,6 +476,43 @@ public class DeploymentService {
         return task.getId();
     }
 
+    @Transactional
+    public UUID rollbackKafkaConfig(UUID clusterId, String hostId, String role, String nodeId,
+                                    String configJson, String configPath, Map<String, Object> previous,
+                                    Map<String, Object> expected, String checkpointId) {
+        requireConfigRecoveryAgent(hostId, nodeId, configPath, configJson);
+        Map<String, Object> recovery = Map.of("config_changes_json", externalKafkaJson(previous),
+                "expected_values_json", externalKafkaJson(expected), "restart", "true", "config_recovery", "true", "checkpoint_id", checkpointId);
+        if (externalKafka != null && externalKafka.target(hostId)) return externalKafka.enqueue(clusterId, hostId, "PATCH_KAFKA_CONFIG", recovery);
+        UUID id = patchKafkaConfig(clusterId, hostId, role, nodeId, configJson, configPath, previous, expected, true, checkpointId);
+        Task task = taskRepository.findById(id).orElseThrow();
+        try {
+            Map<String, Object> parameters = objectMapper.readValue(task.getParameters(), new com.fasterxml.jackson.core.type.TypeReference<>() {});
+            parameters.putAll(recovery);
+            task.setParameters(objectMapper.writeValueAsString(parameters));
+        } catch (JsonProcessingException e) { throw new IllegalStateException("Cannot queue recovery task", e); }
+        taskRepository.save(task);
+        return id;
+    }
+
+    public void requireConfigRecoveryAgent(String hostId, String nodeId, String configPath, String configJson) {
+        String agentVersion;
+        if (externalKafka != null && externalKafka.target(hostId)) {
+            externalKafka.assertRecoveryBinding(hostId, nodeId, configPath, configJson);
+            agentVersion = externalKafka.agentVersion(hostId);
+        } else {
+            agentVersion = hostRepository.findById(hostId).orElseThrow().getAgentVersion();
+        }
+        var version = java.util.regex.Pattern.compile("-configchange\\.([0-9]{1,6})(?:$|[.-])").matcher(java.util.Objects.toString(agentVersion, ""));
+        if (!version.find() || Integer.parseInt(version.group(1)) < 9)
+            throw new IllegalStateException("Update the node to agent configchange.9 or newer before configuration rollback.");
+    }
+
+    private String externalKafkaJson(Object value) {
+        try { return objectMapper.writeValueAsString(value); }
+        catch (JsonProcessingException e) { throw new IllegalArgumentException("Invalid recovery values", e); }
+    }
+
     public void requireConfigDeletionAgent(String hostId) {
         if(externalKafka != null && externalKafka.target(hostId)) {externalKafka.require(hostId,true,true);return;}
         var host = hostRepository.findById(hostId).orElseThrow(() -> new IllegalArgumentException("Managed host is required for configuration removal."));

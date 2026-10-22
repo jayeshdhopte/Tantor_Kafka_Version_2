@@ -175,6 +175,22 @@ func runManagedTask(ctx context.Context, cfg RuntimeConfig, r DiscoveredCluster,
 		if json.Unmarshal([]byte(p["expected_values_json"]), &expected) != nil {
 			return "", fmt.Errorf("invalid expected values")
 		}
+		if err := kc.ValidateRecovery(p, changes, expected); err != nil {
+			return "", err
+		}
+		if p["config_recovery"] == "true" && p["restart"] == "true" {
+			if !cfg.AllowServiceRestart {
+				return "", fmt.Errorf("service restart capability is disabled on this agent")
+			}
+			if err := validateRestartServiceSafety(p["service_name"], r, cfg); err != nil {
+				return "", err
+			}
+			binding, bindErr := exec.CommandContext(ctx, "systemctl", "show", p["service_name"], "--property=ExecStart", "--value").Output()
+			cwd, cwdErr := exec.CommandContext(ctx, "systemctl", "show", p["service_name"], "--property=WorkingDirectory", "--value").Output()
+			if bindErr != nil || cwdErr != nil || !serviceConfigBindingMatches(string(binding), strings.TrimSpace(string(cwd)), r.PropsFile) {
+				return "", fmt.Errorf("service configuration binding changed; recovery stopped before writing")
+			}
+		}
 		for k, v := range changes {
 			if _, ok := expected[k]; !ok {
 				return "", fmt.Errorf("missing expected value for %s", k)
@@ -220,6 +236,9 @@ func runManagedTask(ctx context.Context, cfg RuntimeConfig, r DiscoveredCluster,
 		}
 	}
 	logs := "Configuration backup (7-day retention): " + backup
+	if p["config_recovery"] == "true" {
+		logs += "\nConfiguration recovery: " + p["checkpoint_id"]
+	}
 	if t.Command == "PATCH_KAFKA_CONFIG" && changed {
 		if err = kc.Write(path, []byte(updated)); err != nil {
 			return logs, err

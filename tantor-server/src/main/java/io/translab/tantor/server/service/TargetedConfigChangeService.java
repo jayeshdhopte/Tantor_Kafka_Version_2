@@ -442,7 +442,7 @@ public class TargetedConfigChangeService {
         job.setRequestedBy(requestedBy);
         job.setStatus(JobStatus.PENDING);
         job.setResourceKey("cluster:" + clusterId);
-        job.setRollbackSupported(false); // Explicit recovery after partial application.
+        job.setRollbackSupported(true); // Explicit recovery to this job's immutable per-node checkpoint.
         job.setPayload(json(Map.of("clusterId", clusterId.toString(), "role", plan.get("role"), "scope", plan.get("scope"),
                 "classification", plan.get("classification"), "key", plan.get("key"))));
         Job saved = jobService.createJob(job, steps);

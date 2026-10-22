@@ -31,6 +31,10 @@ class TargetedConfigChangeJobHandlerTest {
 
     @BeforeEach
     void setup() throws Exception {
+        when(jobs.queueConfigMutation(any(), anyBoolean(), any())).thenAnswer(invocation -> {
+            java.util.function.Supplier<UUID> enqueue = invocation.getArgument(2);
+            return enqueue.get();
+        });
         job.setId(UUID.randomUUID());
         job.setPayload(mapper.writeValueAsString(Map.of("clusterId", clusterId.toString())));
         step.setId(UUID.randomUUID());

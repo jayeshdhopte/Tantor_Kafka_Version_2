@@ -225,6 +225,15 @@ public class ConfigVersionService {
         }
         stepPayload.put("changes", changes);
         stepPayload.put("expected", expected);
+        boolean checkpointRecovery = "patch_service".equals(stepPayload.get("operation"));
+        if (checkpointRecovery) {
+            stepPayload.put("checkpointRecovery", true);
+            stepPayload.put("expectedValues", expected);
+            stepPayload.put("nodeId", service.getNodeId() == null ? 1 : service.getNodeId());
+            stepPayload.put("expectedBrokerCount", Math.max(1, cluster.getServices() == null ? 0 : (int) cluster.getServices().stream()
+                    .filter(s -> s.getRole() != null && s.getRole().toLowerCase(java.util.Locale.ROOT).contains("broker")).count()));
+            stepPayload.put("removal", changes.values().stream().anyMatch(Objects::isNull));
+        }
 
         JobStep step = new JobStep();
         step.setStepOrder(1);
@@ -240,6 +249,7 @@ public class ConfigVersionService {
         job.setPayload(writeJson(Map.of(
                 "clusterId", clusterId.toString(),
                 "configVersionId", version.getId().toString(),
+                "checkpointRecovery", checkpointRecovery,
                 "activeServiceConfigJson", writeJson(activeServiceConfig)
         )));
         Job saved = jobService.createJob(job, List.of(step));

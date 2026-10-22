@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-var buildVersion = "3.4.0-dataservices.2-configchange.8-rollingrestart.4"
+var buildVersion = "3.4.0-dataservices.2-configchange.9-rollingrestart.4"
 var buildCommit = "unknown"
 
 func newLogger(level string) *slog.Logger {

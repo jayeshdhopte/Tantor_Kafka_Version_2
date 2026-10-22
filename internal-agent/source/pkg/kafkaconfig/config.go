@@ -12,6 +12,9 @@ import (
 func Patch(content string, changes, expected map[string]*string) (string, bool, error) {
 	return kafka.ApplyPropertyPatch(content, changes, expected)
 }
+func ValidateRecovery(parameters map[string]string, changes, expected map[string]*string) error {
+	return kafka.ValidateConfigRecovery(parameters, changes, expected)
+}
 func Read(content string) (map[string]string, error) { return kafka.ReadableProperties(content) }
 func Write(path string, content []byte) error        { return kafka.WritePropertyPatch(path, content) }
 func Reserve(directory, path string, now time.Time) (string, error) {

@@ -42,6 +42,9 @@ func (d *Deployer) PatchConfig(ctx context.Context, task *api.Task) (string, err
 	if err := json.Unmarshal([]byte(task.Parameters["expected_values_json"]), &expected); err != nil {
 		return "", fmt.Errorf("invalid expected_values_json: %w", err)
 	}
+	if err := ValidateConfigRecovery(task.Parameters, changes, expected); err != nil {
+		return "", err
+	}
 	for key, value := range changes {
 		if err := validatePatchKey(key); err != nil {
 			return "", err
@@ -57,11 +60,17 @@ func (d *Deployer) PatchConfig(ctx context.Context, task *api.Task) (string, err
 	if err != nil {
 		return "", fmt.Errorf("read active config: %w", err)
 	}
+	if err := validateRecoveryNode(task.Parameters, string(original)); err != nil {
+		return "", err
+	}
 	updated, changed, err := patchProperties(string(original), changes, expected)
 	if err != nil {
 		return "", err
 	}
 	var logs strings.Builder
+	if task.Parameters["config_recovery"] == "true" {
+		logs.WriteString("Configuration recovery: " + task.Parameters["checkpoint_id"] + "\n")
+	}
 	backup, err := d.backupConfig(ctx, task, configPath)
 	if err != nil {
 		return "", err

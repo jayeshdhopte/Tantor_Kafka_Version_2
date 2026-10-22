@@ -84,6 +84,30 @@ func TestManagedPatchBacksUpBeforeAtomicDeletion(t *testing.T) {
 		t.Fatal("file permissions changed")
 	}
 }
+
+func TestManagedJobRecoveryRestoresPropertiesAndKeepsBackup(t *testing.T) {
+	r, cfg, task := managedFixture(t)
+	forward := executeManagedTask(context.Background(), cfg, []DiscoveredCluster{r}, task)
+	if forward.Status != "SUCCESS" {
+		t.Fatal(forward.Message)
+	}
+	task.Parameters["config_recovery"] = "true"
+	task.Parameters["checkpoint_id"] = "rollback-12345678-1234-1234-1234-123456789abc"
+	task.Parameters["config_changes_json"] = `{"log.retention.hours":"48","num.io.threads":"8"}`
+	task.Parameters["expected_values_json"] = `{"log.retention.hours":null,"num.io.threads":"12"}`
+	result := executeManagedTask(context.Background(), cfg, []DiscoveredCluster{r}, task)
+	if result.Status != "SUCCESS" || !strings.Contains(result.Message, "Configuration recovery: rollback-") {
+		t.Fatal(result.Message)
+	}
+	data, _ := os.ReadFile(r.PropsFile)
+	if !strings.Contains(string(data), "log.retention.hours=48") || !strings.Contains(string(data), "num.io.threads=8") || !strings.Contains(string(data), "node.id=7") {
+		t.Fatal(string(data))
+	}
+	backups, _ := filepath.Glob(filepath.Join(filepath.Dir(r.PropsFile), "config-backup", "broker.properties", "*.bak.*"))
+	if len(backups) != 2 {
+		t.Fatalf("expected original and pre-recovery backups, got %v", backups)
+	}
+}
 func TestManagedRejectsStaleValuesAndUnknownIdentity(t *testing.T) {
 	r, cfg, task := managedFixture(t)
 	task.Parameters["expected_values_json"] = `{"log.retention.hours":"100","num.io.threads":"8"}`

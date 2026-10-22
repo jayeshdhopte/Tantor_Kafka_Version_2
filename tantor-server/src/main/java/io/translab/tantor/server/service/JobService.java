@@ -218,6 +218,49 @@ public class JobService {
         jobStepRepository.save(step);
     }
 
+    /** Immutable per-job recovery state; never replace it on Retry / Resume. */
+    @Transactional
+    public void checkpointConfigChange(UUID stepId, Map<String, Object> checkpoint) {
+        JobStep step = getStep(stepId);
+        Map<String, Object> payload = configPayload(step);
+        payload.putIfAbsent("recoveryCheckpoint", checkpoint);
+        saveConfigPayload(step, payload);
+    }
+
+    @Transactional
+    public UUID queueConfigMutation(UUID stepId, boolean rollback, java.util.function.Supplier<UUID> enqueue) {
+        JobStep step = getStep(stepId);
+        Map<String, Object> payload = configPayload(step);
+        if (!payload.containsKey("recoveryCheckpoint")) throw new IllegalStateException("Configuration recovery checkpoint is missing.");
+        UUID task = enqueue.get(); // Task and its job binding commit together.
+        payload.put(rollback ? "recoveryTaskId" : "configMutationTaskId", task.toString());
+        if (!rollback) payload.put("configMutationStarted", true);
+        saveConfigPayload(step, payload);
+        step.setAgentTaskId(task);
+        jobStepRepository.save(step);
+        return task;
+    }
+
+    @Transactional
+    public void markConfigMutation(UUID stepId) {
+        JobStep step = getStep(stepId);
+        Map<String, Object> payload = configPayload(step);
+        if (!payload.containsKey("recoveryCheckpoint")) throw new IllegalStateException("Configuration recovery checkpoint is missing.");
+        payload.put("configMutationStarted", true);
+        saveConfigPayload(step, payload);
+    }
+
+    private Map<String, Object> configPayload(JobStep step) {
+        if (step.getJob().getType() != JobType.TARGETED_CONFIG_CHANGE && step.getJob().getType() != JobType.CONFIG_CHANGE) throw new IllegalArgumentException("Configuration job required.");
+        try { return objectMapper.readValue(step.getPayload(), new com.fasterxml.jackson.core.type.TypeReference<java.util.LinkedHashMap<String, Object>>() {}); }
+        catch (Exception e) { throw new IllegalStateException("Invalid configuration recovery payload", e); }
+    }
+
+    private void saveConfigPayload(JobStep step, Map<String, Object> payload) {
+        try { step.setPayload(objectMapper.writeValueAsString(payload)); jobStepRepository.saveAndFlush(step); }
+        catch (com.fasterxml.jackson.core.JsonProcessingException e) { throw new IllegalStateException("Cannot persist configuration recovery state", e); }
+    }
+
     @Transactional
     public void recordRollingRestartBaseline(UUID stepId, UUID taskId, Map<String, Object> baseline) {
         JobStep step = getStep(stepId);
@@ -308,9 +351,11 @@ public class JobService {
                 && job.getStatus() != JobStatus.PARTIAL_SUCCESS) {
             throw new RuntimeException("Rollback can only be requested for a completed or failed job.");
         }
+        if ((job.getType() == JobType.TARGETED_CONFIG_CHANGE || job.getType() == JobType.CONFIG_CHANGE) && job.getStatus() == JobStatus.SUCCESS)
+            throw new IllegalArgumentException("Use configuration version restore for a successful change.");
         job.setStatus(JobStatus.ROLLBACK_PENDING);
         job.setEndTime(null);
-        appendLog(id, "Rollback requested.");
+        appendLog(id, "Rollback requested by " + currentRequester() + "; restoring this job's pre-change checkpoint.");
         return jobRepository.save(job);
     }
 

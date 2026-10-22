@@ -26,6 +26,7 @@ public class ConfigChangeJobHandler implements JobHandler {
     private final ExternalClusterService externalClusterService;
     private final ObjectMapper objectMapper;
     private final RollingRestartHealthService health;
+    private final TargetedConfigChangeJobHandler targetedChanges;
 
     @Override
     public boolean supports(JobType type) {
@@ -42,6 +43,13 @@ public class ConfigChangeJobHandler implements JobHandler {
             if (step.getStatus() == JobStepStatus.SUCCESS) continue;
             Map<String, Object> payload = readMap(step.getPayload());
             try {
+                if (Boolean.TRUE.equals(payload.get("checkpointRecovery"))) {
+                    String role = required(payload, "role");
+                    if (!Set.of("broker", "controller").contains(role.toLowerCase(java.util.Locale.ROOT)))
+                        throw new IllegalStateException("Versioned file changes require a dedicated broker or controller.");
+                    targetedChanges.executeStatic(clusterId, step, payload);
+                    continue;
+                }
                 if (step.getStatus() == JobStepStatus.IN_PROGRESS && step.getAgentTaskId() != null) {
                     Task completed = taskAwaiter.await(step.getAgentTaskId());
                     if ("patch_service".equals(payload.get("operation"))) {
@@ -77,6 +85,11 @@ public class ConfigChangeJobHandler implements JobHandler {
         UUID clusterId = UUID.fromString(String.valueOf(jobPayload.get("clusterId")));
         Object versionValue = jobPayload.get("configVersionId");
         UUID versionId = versionValue == null ? null : UUID.fromString(String.valueOf(versionValue));
+        if (Boolean.TRUE.equals(jobPayload.get("checkpointRecovery"))) {
+            targetedChanges.rollback(job);
+            if (versionId != null) configVersionService.markJobRolledBack(versionId);
+            return;
+        }
         List<JobStep> steps = new java.util.ArrayList<>(jobService.getSteps(job.getId()));
         java.util.Collections.reverse(steps);
         for (JobStep step : steps) {

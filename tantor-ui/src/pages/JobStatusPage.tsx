@@ -165,7 +165,9 @@ export function JobStatusPage() {
   };
 
   const handleRollback = async () => {
-    if (!(await confirmAction('Rollback all successfully completed steps for this job?'))) return;
+    if (!(await confirmAction(['TARGETED_CONFIG_CHANGE', 'CONFIG_CHANGE'].includes(job?.type || '')
+      ? 'Restore the pre-job configuration on affected nodes? This recovers the failed node first, then restores completed nodes. Unrelated settings are preserved. Restarts run with health checks.'
+      : 'Rollback all successfully completed steps for this job?'))) return;
     try {
       const res = await fetch(`/api/v1/ui/jobs/${id}/rollback`, { method: 'POST' });
       if (res.ok) fetchJob();
@@ -352,14 +354,14 @@ export function JobStatusPage() {
           </div>
         </div>
         <div className="action-buttons">
-          {canManage && (job.status === 'FAILED' || job.status === 'PARTIAL_SUCCESS') && (
+          {canManage && ['FAILED', 'PARTIAL_SUCCESS', 'ROLLBACK_FAILED'].includes(job.status) && (
             <button className="btn btn-outline-primary" onClick={handleRetry}>
-              <RefreshCw size={14} style={{ marginRight: '6px' }} /> {job.type === 'ROLLING_RESTART' ? 'Retry / Resume' : 'Retry Job'}
+              <RefreshCw size={14} style={{ marginRight: '6px' }} /> {job.status === 'ROLLBACK_FAILED' ? 'Retry rollback' : ['ROLLING_RESTART', 'TARGETED_CONFIG_CHANGE', 'CONFIG_CHANGE'].includes(job.type) ? 'Retry / Resume' : 'Retry Job'}
             </button>
           )}
-          {canManage && job.type !== 'ROLLING_RESTART' && job.rollbackSupported && ['SUCCESS', 'FAILED', 'PARTIAL_SUCCESS'].includes(job.status) && (
+          {canManage && job.type !== 'ROLLING_RESTART' && job.rollbackSupported && (['TARGETED_CONFIG_CHANGE', 'CONFIG_CHANGE'].includes(job.type) ? ['FAILED', 'PARTIAL_SUCCESS'] : ['SUCCESS', 'FAILED', 'PARTIAL_SUCCESS']).includes(job.status) && (
             <button className="btn btn-outline-primary" onClick={handleRollback}>
-              <Undo2 size={14} style={{ marginRight: '6px' }} /> Rollback
+              <Undo2 size={14} style={{ marginRight: '6px' }} /> {['TARGETED_CONFIG_CHANGE', 'CONFIG_CHANGE'].includes(job.type) ? 'Roll back this change' : 'Rollback'}
             </button>
           )}
         </div>

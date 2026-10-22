@@ -38,6 +38,7 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
         for (JobStep step : jobs.getSteps(job.getId())) {
             if (step.getStatus() == JobStepStatus.SUCCESS) continue;
             Map<String, Object> payload = read(step.getPayload());
+            ensureTaskSettled(payload.get("configMutationTaskId"));
             if ("STATIC".equals(payload.get("operation"))) {
                 executeStatic(clusterId, step, payload);
                 continue;
@@ -80,7 +81,13 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
                 Map<?, ?> latestEntry = currentEntry(clusterId, brokerId, key);
                 String latest = latestEntry.get("value") == null ? null : String.valueOf(latestEntry.get("value"));
                 if (!java.util.Objects.equals(observed, latestEntry)) throw new IllegalStateException("Broker " + brokerId + " value changed while backing up; refresh the plan.");
-                if (!desired.equals(latest)) kafka.alterBrokerConfig(clusterId, brokerId, key, desired);
+                if (!desired.equals(latest)) {
+                    jobs.checkpointConfigChange(step.getId(), Map.of("dynamic", Map.of(key, observed)));
+                    jobs.markConfigMutation(step.getId());
+                    kafka.alterBrokerConfig(clusterId, brokerId, key, desired);
+                } else {
+                    jobs.checkpointConfigChange(step.getId(), Map.of("untouched", true));
+                }
                 verifyDynamic(clusterId, brokerId, key, desired);
                 jobs.completeStep(step.getId(), "Verified " + key + " on broker " + brokerId + ".\n" + backup.getLogOutput());
             } catch (Exception e) {
@@ -120,7 +127,11 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
                 }
                 if (Thread.currentThread().isInterrupted()) throw new IllegalStateException("Interrupted before configuration change");
                 if (!observed.equals(batchEntries(clusterId, brokerId, changes.keySet()))) throw new IllegalStateException("Broker values changed while backing up; refresh the plan.");
+                jobs.checkpointConfigChange(step.getId(), Map.of("dynamic", observed));
+                jobs.markConfigMutation(step.getId());
                 kafka.alterBrokerConfigs(clusterId, brokerId, pending);
+            } else {
+                jobs.checkpointConfigChange(step.getId(), Map.of("untouched", true));
             }
             for (var entry : changes.entrySet()) verifyDynamic(clusterId, brokerId, entry.getKey(), entry.getValue());
             jobs.completeStep(step.getId(), "Verified " + changes.size() + " properties on broker " + brokerId + ".\n" + checkpoint);
@@ -206,7 +217,8 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
                 + lastObservation + ". The change may already be applied; refresh the broker configuration before retrying.");
     }
 
-    private void executeStatic(UUID clusterId, JobStep step, Map<String, Object> payload) {
+    void executeStatic(UUID clusterId, JobStep step, Map<String, Object> payload) {
+        ensureTaskSettled(payload.get("configMutationTaskId"));
         int nodeId = ((Number) payload.get("nodeId")).intValue();
         String hostId = String.valueOf(payload.get("hostId"));
         String role = String.valueOf(payload.get("role"));
@@ -227,6 +239,13 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
                 if (entry.getValue() == null && !Boolean.TRUE.equals(payload.get("removal")))
                     throw new IllegalArgumentException("Missing configuration value; use an explicit property deletion request.");
             }
+            if (payload.get("configMutationTaskId") != null
+                    && "SUCCESS".equals(taskAwaiter.status(UUID.fromString(String.valueOf(payload.get("configMutationTaskId")))))) {
+                verifyStatic(clusterId, hostId, role, nodeId, change, expectedBrokers);
+                if (Boolean.TRUE.equals(payload.get("removal"))) verifyRemovedFile(clusterId, payload, change);
+                jobs.completeStep(step.getId(), "Existing agent mutation succeeded; recovery verified without repeating the restart.");
+                return;
+            }
             if (step.getStatus() == JobStepStatus.IN_PROGRESS && step.getAgentTaskId() != null) {
                 Task completed = taskAwaiter.await(step.getAgentTaskId());
                 verifyStatic(clusterId, hostId, role, nodeId, change, expectedBrokers);
@@ -238,10 +257,12 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
             checkHealth(clusterId, expectedBrokers, hostId);
             if ("controller".equalsIgnoreCase(role)) checkQuorum(clusterId, nodeId);
             else health.assertBrokerCanStop(clusterId, nodeId);
+            jobs.checkpointConfigChange(step.getId(), Map.of("file", expected,
+                    "dynamic", payload.getOrDefault("dynamicRemovalExpected", Map.of())));
             if (Boolean.TRUE.equals(payload.get("removal"))) prepareRemoval(clusterId, step, payload, change, expected);
-            UUID taskId = deployment.patchKafkaConfig(clusterId, hostId, role, String.valueOf(nodeId),
+            UUID taskId = jobs.queueConfigMutation(step.getId(), false, () -> deployment.patchKafkaConfig(clusterId, hostId, role, String.valueOf(nodeId),
                     String.valueOf(payload.get("configJson")), String.valueOf(payload.get("configPath")),
-                    change, expected, true, "targeted-" + step.getId());
+                    change, expected, true, "targeted-" + step.getId()));
             jobs.attachAgentTask(step.getId(), taskId);
             Task completed = taskAwaiter.await(taskId);
             verifyStatic(clusterId, hostId, role, nodeId, change, expectedBrokers);
@@ -283,6 +304,7 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
         }
         if (Thread.currentThread().isInterrupted()) throw new IllegalStateException("Interrupted before configuration deletion");
         if (!observed.equals(batchEntries(clusterId, id, observed.keySet()))) throw new IllegalStateException("Dynamic override changed while backing up; refresh the plan.");
+        jobs.markConfigMutation(step.getId());
         kafka.removeBrokerConfigs(clusterId, id, pending.keySet(), false);
     }
 
@@ -297,6 +319,7 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
 
     private void verifyStatic(UUID clusterId, String hostId, String role, int nodeId, Map<String, Object> changes, int expectedBrokers) {
         String lastFailure = "Kafka did not recover after restart";
+        int stableSamples = 0;
         for (int attempt = 0; attempt < 45; attempt++) {
             try {
                 checkHealth(clusterId, expectedBrokers, hostId);
@@ -312,8 +335,11 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
                         } else if (!java.util.Objects.equals(entry.getValue(), actual)) throw new IllegalStateException("Kafka reports " + entry.getKey() + "=" + actual + " after restart");
                     }
                 }
-                return;
+                if (++stableSamples >= 2) return;
+                try { Thread.sleep(2000); }
+                catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new IllegalStateException("Health verification interrupted", e); }
             } catch (Exception e) {
+                stableSamples = 0;
                 lastFailure = e.getMessage();
                 try { Thread.sleep(2000); }
                 catch (InterruptedException interrupted) {
@@ -332,22 +358,171 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
 
     private void checkQuorum(UUID clusterId, int nodeId) {
         try {
-            var quorum = kafka.getAdminClient(clusterId).describeMetadataQuorum().quorumInfo().get();
-            if (quorum.leaderId() < 0 || quorum.voters().size() < 3
+            var quorum = kafka.getAdminClient(clusterId).describeMetadataQuorum().quorumInfo().get(15, TimeUnit.SECONDS);
+            if (!RollingRestartQuorumHealth.healthy(quorum, false)
                     || quorum.voters().stream().noneMatch(voter -> voter.replicaId() == nodeId)) {
                 throw new IllegalStateException("KRaft quorum or selected controller voter is unavailable");
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Interrupted during KRaft quorum check", e);
-        } catch (java.util.concurrent.ExecutionException e) {
+        } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException e) {
             throw new IllegalStateException("KRaft quorum check failed", e);
         }
     }
 
     @Override
     public void rollback(Job job) {
-        throw new UnsupportedOperationException("Automatic rollback is unavailable; review partial results and create an explicit new change.");
+        UUID clusterId = UUID.fromString(String.valueOf(read(job.getPayload()).get("clusterId")));
+        var steps = new java.util.ArrayList<>(jobs.getSteps(job.getId()));
+        // Recover the failed node first, then undo completed nodes in reverse order.
+        steps.sort(java.util.Comparator.comparingInt((JobStep s) -> s.getStatus() == JobStepStatus.SUCCESS ? 1 : 0)
+                .thenComparing(java.util.Comparator.comparingInt(JobStep::getStepOrder).reversed()));
+        for (JobStep step : steps) {
+            if (step.getStatus() == JobStepStatus.ROLLED_BACK) continue;
+            Map<String, Object> payload = read(step.getPayload());
+            if (!Boolean.TRUE.equals(payload.get("configMutationStarted"))) {
+                if (step.getStatus() == JobStepStatus.SUCCESS && !payload.containsKey("recoveryCheckpoint"))
+                    throw new IllegalStateException("This legacy step has no recovery checkpoint; use an explicit reviewed configuration change.");
+                jobs.rolledBackStep(step.getId(), "No configuration mutation was dispatched; node left unchanged.");
+                continue;
+            }
+            try {
+                ensureTaskSettled(payload.get("configMutationTaskId"));
+                ensureTaskSettled(payload.get("recoveryTaskId"));
+                Map<String, Object> checkpoint = objectMap(payload.get("recoveryCheckpoint"));
+                if (checkpoint.isEmpty()) throw new IllegalStateException("Pre-job checkpoint missing; recovery stopped.");
+                jobs.startStep(step.getId());
+                jobs.appendStepLog(step.getId(), "Restoring this job's pre-change values; unrelated settings are preserved.");
+                if ("STATIC".equals(payload.get("operation")) || "patch_service".equals(payload.get("operation"))) rollbackStatic(clusterId, step, payload, checkpoint);
+                else rollbackDynamic(clusterId, step, payload, objectMap(checkpoint.get("dynamic")), false);
+                jobs.rolledBackStep(step.getId(), "Pre-job configuration restored and cluster health verified.");
+            } catch (RuntimeException e) {
+                jobs.rollbackFailedStep(step.getId(), e.getMessage());
+                throw e;
+            }
+        }
+    }
+
+    private void ensureTaskSettled(Object task) {
+        if (task == null) return;
+        String status = taskAwaiter.status(UUID.fromString(String.valueOf(task)));
+        if (!Set.of("SUCCESS", "FAILED", "CANCELLED").contains(status))
+            throw new IllegalStateException("Agent task is still running or its outcome is unknown; wait for it to finish before recovery.");
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> objectMap(Object value) {
+        return value instanceof Map<?, ?> ? new java.util.LinkedHashMap<>((Map<String, Object>) value) : new java.util.LinkedHashMap<>();
+    }
+
+    private Map<String, Object> requestedChanges(Map<String, Object> payload) {
+        if (payload.get("changes") instanceof Map<?, ?>) return objectMap(payload.get("changes"));
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put(String.valueOf(payload.get("key")), payload.get("value"));
+        return result;
+    }
+
+    private void rollbackStatic(UUID clusterId, JobStep step, Map<String, Object> payload, Map<String, Object> checkpoint) {
+        int nodeId = ((Number) payload.get("nodeId")).intValue();
+        int brokers = ((Number) payload.get("expectedBrokerCount")).intValue();
+        String host = String.valueOf(payload.get("hostId")), role = String.valueOf(payload.get("role"));
+        deployment.requireConfigRecoveryAgent(host, String.valueOf(nodeId), String.valueOf(payload.get("configPath")), String.valueOf(payload.get("configJson")));
+        Map<String, Object> previous = objectMap(checkpoint.get("file"));
+        if (previous.isEmpty()) throw new IllegalStateException("File checkpoint is missing.");
+        Task activeFile = taskAwaiter.await(deployment.readKafkaProperties(clusterId, host, role, String.valueOf(nodeId),
+                String.valueOf(payload.get("configJson")), String.valueOf(payload.get("configPath"))), 90);
+        Map<String, Object> current = objectMap(read(activeFile.getLogOutput()).get("properties"));
+        Map<String, Object> expected = new java.util.LinkedHashMap<>();
+        Map<String, Object> forward = requestedChanges(payload);
+        for (String key : previous.keySet()) {
+            Object value = current.get(key);
+            if (!java.util.Objects.equals(value, previous.get(key)) && !java.util.Objects.equals(value, forward.get(key)))
+                throw new IllegalStateException("Property " + key + " changed outside this job; refresh and review before recovery.");
+            expected.put(key, value);
+        }
+        boolean recoveredTaskSucceeded = payload.get("recoveryTaskId") != null
+                && "SUCCESS".equals(taskAwaiter.status(UUID.fromString(String.valueOf(payload.get("recoveryTaskId")))));
+        if (recoveredTaskSucceeded && previous.entrySet().stream().allMatch(e -> java.util.Objects.equals(e.getValue(), current.get(e.getKey())))) {
+            Map<String, Object> dynamic = objectMap(checkpoint.get("dynamic"));
+            if (!dynamic.isEmpty()) rollbackDynamic(clusterId, step, payload, dynamic, true);
+            verifyStatic(clusterId, host, role, nodeId, Map.of(), brokers);
+            return;
+        }
+        Task service = taskAwaiter.await(deployment.verifyKafkaService(clusterId, host, "controller".equalsIgnoreCase(role) ? "controller.service" : "broker_controller".equalsIgnoreCase(role) ? "kafka.service" : "broker.service"), 90);
+        String state = String.valueOf(read(service.getLogOutput()).get("state"));
+        if ("active".equals(state)) {
+            checkHealth(clusterId, brokers, host);
+            if ("controller".equalsIgnoreCase(role)) checkQuorum(clusterId, nodeId);
+            else health.assertBrokerCanStop(clusterId, nodeId);
+        } else if (!Set.of("failed", "inactive").contains(state)) {
+            throw new IllegalStateException("Service is transitioning or its state is unknown; wait before recovery.");
+        }
+        // Only this job's already-stopped node may bypass the healthy-cluster precheck.
+        // Recovery must bring it back before any other node can be restarted.
+        Map<String, Object> dynamic = objectMap(checkpoint.get("dynamic"));
+        UUID task = jobs.queueConfigMutation(step.getId(), true, () -> deployment.rollbackKafkaConfig(clusterId, host, role,
+                String.valueOf(nodeId), String.valueOf(payload.get("configJson")), String.valueOf(payload.get("configPath")),
+                previous, expected, "rollback-" + step.getId()));
+        taskAwaiter.await(task);
+        if (!dynamic.isEmpty()) rollbackDynamic(clusterId, step, payload, dynamic, true);
+        Task restored = taskAwaiter.await(deployment.readKafkaProperties(clusterId, host, role, String.valueOf(nodeId),
+                String.valueOf(payload.get("configJson")), String.valueOf(payload.get("configPath"))), 90);
+        Map<String, Object> file = objectMap(read(restored.getLogOutput()).get("properties"));
+        for (var entry : previous.entrySet())
+            if (!java.util.Objects.equals(entry.getValue(), file.get(entry.getKey()))) throw new IllegalStateException("Restored file verification failed for " + entry.getKey());
+        // File absence is valid; effective Kafka defaults need not equal null.
+        verifyStatic(clusterId, host, role, nodeId, Map.of(), brokers);
+    }
+
+    private void rollbackDynamic(UUID clusterId, JobStep step, Map<String, Object> payload, Map<String, Object> previous, boolean deletion) {
+        int id = ((Number) payload.getOrDefault("brokerId", payload.get("nodeId"))).intValue();
+        deployment.requireConfigRecoveryAgent(String.valueOf(payload.get("hostId")), String.valueOf(id), String.valueOf(payload.get("configPath")), String.valueOf(payload.get("configJson")));
+        if (!deletion) checkHealth(clusterId, ((Number) payload.get("expectedBrokerCount")).intValue(), String.valueOf(payload.get("hostId")));
+        Map<String, Object> observed = batchEntries(clusterId, id, previous.keySet());
+        Map<String, Object> forward = requestedChanges(payload);
+        Map<String, String> sets = new java.util.LinkedHashMap<>();
+        Set<String> removals = new java.util.LinkedHashSet<>();
+        for (String key : previous.keySet()) {
+            Map<String, Object> before = objectMap(previous.get(key)), now = objectMap(observed.get(key));
+            if (before.isEmpty() || now.isEmpty()) throw new IllegalStateException("Dynamic configuration checkpoint is incomplete for " + key);
+            if (sameDynamicOverride(before, now)) continue;
+            boolean ownChange = deletion ? !"DYNAMIC_BROKER_CONFIG".equals(now.get("source"))
+                    : "DYNAMIC_BROKER_CONFIG".equals(now.get("source")) && java.util.Objects.equals(now.get("value"), forward.get(key));
+            if (!ownChange) throw new IllegalStateException("Dynamic override " + key + " changed outside this job; recovery stopped.");
+            if ("DYNAMIC_BROKER_CONFIG".equals(before.get("source"))) sets.put(key, String.valueOf(before.get("value")));
+            else removals.add(key);
+        }
+        if (!sets.isEmpty()) kafka.validateBrokerConfigs(clusterId, id, sets);
+        if (!removals.isEmpty()) kafka.removeBrokerConfigs(clusterId, id, removals, true);
+        if (!sets.isEmpty() || !removals.isEmpty()) {
+            Map<String, String> recoveryChanges = new java.util.LinkedHashMap<>(sets);
+            removals.forEach(key -> recoveryChanges.put(key, null));
+            for (var snapshot : dynamicSnapshots(clusterId, id, observed, recoveryChanges)) {
+                taskAwaiter.await(deployment.backupKafkaConfig(clusterId, String.valueOf(payload.get("hostId")), String.valueOf(payload.get("role")),
+                        String.valueOf(id), String.valueOf(payload.get("configJson")), String.valueOf(payload.get("configPath")), "batch", snapshot, "rollback-" + step.getId()));
+            }
+            if (!observed.equals(batchEntries(clusterId, id, previous.keySet()))) throw new IllegalStateException("Dynamic values changed during recovery backup.");
+            if (!sets.isEmpty()) kafka.alterBrokerConfigs(clusterId, id, sets);
+            if (!removals.isEmpty()) kafka.removeBrokerConfigs(clusterId, id, removals, false);
+        }
+        for (int attempt = 0; attempt < 30; attempt++) {
+            Map<String, Object> live = batchEntries(clusterId, id, previous.keySet());
+            if (previous.keySet().stream().allMatch(k -> sameDynamicOverride(objectMap(previous.get(k)), objectMap(live.get(k))))) {
+                if (!deletion) checkHealth(clusterId, ((Number) payload.get("expectedBrokerCount")).intValue(), String.valueOf(payload.get("hostId")));
+                return;
+            }
+            try { Thread.sleep(1000); }
+            catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new IllegalStateException("Recovery verification interrupted", e); }
+        }
+        throw new IllegalStateException("Kafka has not verified the restored dynamic overrides; recovery stopped.");
+    }
+
+    private boolean sameDynamicOverride(Map<String, Object> previous, Map<String, Object> current) {
+        boolean priorOverride = "DYNAMIC_BROKER_CONFIG".equals(previous.get("source"));
+        boolean currentOverride = "DYNAMIC_BROKER_CONFIG".equals(current.get("source"));
+        return priorOverride == currentOverride && java.util.Objects.equals(previous.get("source"), current.get("source"))
+                && java.util.Objects.equals(previous.get("value"), current.get("value"));
     }
 
     private String currentValue(UUID clusterId, int brokerId, String key) {

@@ -17,6 +17,14 @@ public class ExternalKafkaManagement {
  private final JdbcTemplate jdbc;
  private final ObjectMapper mapper;
  public boolean external(UUID id){return clusters.existsById(id);}
+ public String agentVersion(String target){return agents.findById(node(target).getAgentId()).orElseThrow().getVersion();}
+ public void assertRecoveryBinding(String target,String nodeId,String path,String configJson){
+  var n=node(target);var original=read(configJson);
+  if(!Objects.equals(String.valueOf(n.getNodeId()),nodeId)||!Objects.equals(n.getConfigFile(),path)
+    ||!Objects.equals(n.getSystemdService(),original.get("service_name"))
+    ||!Objects.equals(n.getAgentId(),original.get("agent_id")))
+   throw new IllegalStateException("The discovered node, agent, service or configuration path changed since this job; review discovery before recovery.");
+ }
  public boolean target(String host){return host!=null&&host.startsWith("external:");}
  public boolean task(UUID id){return Boolean.TRUE.equals(jdbc.queryForObject("select exists(select 1 from kf_external_kafka_tasks where id=?)",Boolean.class,id));}
  public ExternalClusterNode node(String target){if(!target(target))throw new IllegalArgumentException("External node target required");return nodes.findById(UUID.fromString(target.substring(9))).orElseThrow(()->new IllegalArgumentException("Discovered node missing"));}
@@ -29,7 +37,7 @@ public class ExternalKafkaManagement {
    if(n.getNodeId()==null||n.getConfigFile()==null||n.getAgentId()==null||n.getSystemdService()==null)throw new IllegalStateException("Upgrade all discovery agents and refresh discovery to report service names and active config paths");
    var s=new ClusterServiceAssignment();s.setId(n.getId());s.setHostId("external:"+n.getId());s.setNodeId(n.getNodeId());s.setCluster(result);
    s.setRole(Boolean.TRUE.equals(n.getIsBroker())?Boolean.TRUE.equals(n.getIsController())?"broker_controller":"broker":"controller");
-   s.setConfigJson(json(Map.of("config_path",n.getConfigFile(),"service_name",n.getSystemdService(),"hostname",n.getHost(),"kafka_install_dir",Objects.toString(n.getInstallDir(),""))));services.add(s);
+   s.setConfigJson(json(Map.of("config_path",n.getConfigFile(),"service_name",n.getSystemdService(),"agent_id",n.getAgentId(),"hostname",n.getHost(),"kafka_install_dir",Objects.toString(n.getInstallDir(),""))));services.add(s);
   }
   if(services.isEmpty())throw new IllegalStateException("Upgrade discovery agents and refresh discovery to report service names and active config paths");
   result.setServices(services);return result;
