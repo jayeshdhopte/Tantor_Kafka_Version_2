@@ -500,6 +500,76 @@ public class DataServicesController {
                 body, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
     }
 
+    /** Recover the original contents of one soft-deleted version through normal registration. */
+    @PostMapping("/schema-registry/subjects/{subject}/versions/{version}/recover")
+    public ResponseEntity<?> recoverSchemaVersion(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable UUID clusterId, @PathVariable String subject, @PathVariable String version,
+            @RequestHeader(value = "X-Custom-Certificate", required = false) String encodedCert,
+            @RequestParam(required = false) String protocol, @RequestParam(required = false) String ip,
+            @RequestParam(required = false) Integer port, @RequestParam(required = false) UUID connectionId) {
+        if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.SCHEMA_REGISTRY_CHANGE)) return unauthorized();
+        if (!version.matches("[1-9][0-9]*")) throw new IllegalArgumentException("A numbered schema version is required for recovery.");
+        Map<String, Object> audit = new LinkedHashMap<>();
+        audit.put("subject", subject); audit.put("sourceVersion", version);
+        if (connectionId != null) audit.put("connectionId", connectionId.toString());
+        String resource = subject + "/" + version;
+        try {
+            String baseUrl = customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.SCHEMA_REGISTRY, connectionId);
+            String subjectPath = "/subjects/" + pathSeg(subject);
+            JsonNode original = requestJson(baseUrl, "GET", subjectPath + "/versions/" + version + "?deleted=true",
+                    null, encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
+            if (original.path("id").isIntegralNumber()) audit.put("sourceSchemaId", original.path("id").asInt());
+            try {
+                JsonNode active = requestJson(baseUrl, "GET", subjectPath + "/versions", null,
+                        encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
+                for (JsonNode candidate : active) if (version.equals(candidate.asText())) {
+                    audit.put("reason", "VERSION_ALREADY_ACTIVE");
+                    recordOperationAudit("SCHEMA_REGISTRY_VERSION_RECOVER", "SCHEMA_VERSION", clusterId, resource, "FAILED", audit);
+                    return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "This schema version is already active. Refresh the version list."));
+                }
+            } catch (DataServiceException failure) {
+                if (failure.statusCode() != 404) throw failure;
+            }
+            if (!original.path("schema").isTextual() || original.path("schema").asText().isBlank())
+                throw new IllegalArgumentException("The original schema definition is unavailable; recovery cannot continue.");
+            var registration = objectMapper.createObjectNode();
+            registration.set("schema", original.get("schema"));
+            for (String key : List.of("schemaType", "references", "metadata", "ruleSet"))
+                if (original.hasNonNull(key)) registration.set(key, original.get(key));
+            // Never submit the old version or ID, change registry modes, or rewrite schema contents.
+            JsonNode registered = requestJson(baseUrl, "POST", subjectPath + "/versions", registration,
+                    encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("subject", subject); result.put("sourceVersion", version);
+            if (registered.path("id").isIntegralNumber()) result.put("id", registered.path("id").asInt());
+            result.put("verified", false);
+            try {
+                // Lookup the exact registered schema, not 'latest', which can change concurrently.
+                JsonNode recovered = requestJson(baseUrl, "POST", subjectPath, registration,
+                        encodedCert, clusterId, "SCHEMA_REGISTRY", connectionId);
+                if (result.containsKey("id") && recovered.path("version").asInt() > 0 && recovered.path("id").asInt(-1) == registered.path("id").asInt()) {
+                    result.put("version", recovered.path("version").asInt()); result.put("verified", true);
+                    audit.put("recoveredVersion", recovered.path("version").asInt());
+                }
+            } catch (RuntimeException verificationFailure) {
+                // The registration succeeded. Do not report it as failed or encourage a duplicate retry.
+                log.warn("Schema recovery registration succeeded but version lookup failed ({})", verificationFailure.getClass().getSimpleName());
+            }
+            result.put("message", Boolean.TRUE.equals(result.get("verified")) ? "Schema recovered successfully."
+                    : "Schema registration succeeded, but the resulting version could not be verified. Refresh the version list before retrying.");
+            if (result.containsKey("id")) audit.put("schemaId", result.get("id"));
+            audit.put("verified", result.get("verified"));
+            recordOperationAudit("SCHEMA_REGISTRY_VERSION_RECOVER", "SCHEMA_VERSION", clusterId, resource, "SUCCESS", audit);
+            return ResponseEntity.ok(result);
+        } catch (RuntimeException failure) {
+            audit.put("errorType", failure.getClass().getSimpleName());
+            if (failure instanceof DataServiceException upstream) audit.put("httpStatus", upstream.statusCode());
+            recordOperationAudit("SCHEMA_REGISTRY_VERSION_RECOVER", "SCHEMA_VERSION", clusterId, resource, "FAILED", audit);
+            throw failure;
+        }
+    }
+
     /** Delete a subject and all its versions. */
     @DeleteMapping("/schema-registry/subjects/{subject}")
     public ResponseEntity<?> deleteSubject(

@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams } from 'react-router-dom';
-import { AlertOctagon, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardPaste, Copy, Edit3, Info, FileText, GitCompare, MoreVertical, Paperclip, Plus, RefreshCw, Search, Settings, Trash2, X } from 'lucide-react';
+import { AlertOctagon, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardPaste, Copy, Edit3, Info, FileText, GitCompare, MoreVertical, Paperclip, Plus, RefreshCw, RotateCcw, Search, Settings, Trash2, X } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { KafkaGroupPanel } from '../components/KafkaGroupPanel';
 import orangeBanner from '../assets/orange.png';
@@ -349,6 +349,9 @@ export function SchemaRegistry() {
   const [subjectModeState, setSubjectModeState] = useState<{ context: string; value: string | null; error: string | null }>({ context: '', value: null, error: null });
   const [showConnection, setShowConnection] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [pendingRecovery, setPendingRecovery] = useState<{ subject: string; version: SchemaVersion; connectionId: string | null } | null>(null);
+  const recoveryInFlight = useRef(false);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PendingSchemaDelete | null>(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
   const [showDeletedSubjects, setShowDeletedSubjects] = useState(false);
@@ -1001,6 +1004,30 @@ export function SchemaRegistry() {
     }
   };
 
+  const confirmSchemaRecovery = async () => {
+    if (!canManage || !pendingRecovery || saving || recoveryInFlight.current) return;
+    recoveryInFlight.current = true;
+    const { subject, version, connectionId } = pendingRecovery;
+    setSaving(true); setRecoveryError(null); setError(null); setSuccess(null);
+    try {
+      const response = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(subject)}/versions/${version.version}/recover`, connectionId), { method: 'POST' });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(schemaSubmissionError(result, 'Failed to recover schema.'));
+      setPendingRecovery(null);
+      setSuccess(result.verified
+        ? `Subject ${subject}: version ${version.version} recovered as version ${result.version}; Schema ID ${result.id}.`
+        : result.message || 'Schema registered. Refresh the version list to verify the resulting version.');
+      setShowDeletedSubjects(false);
+      await load(connectionId, undefined, false);
+      if (selected?.subject === subject) {
+        await openSubject({ ...selected, deleted: false });
+        setShowDeletedVersions(true);
+      }
+    } catch (failure: unknown) {
+      setRecoveryError(errorMessage(failure, 'Failed to recover schema.'));
+    } finally { recoveryInFlight.current = false; setSaving(false); }
+  };
+
   const requestSchemaDelete = (subject: string, permanent: boolean, version?: number) => {
     if (!canManage) return;
     setError(null);
@@ -1285,6 +1312,9 @@ export function SchemaRegistry() {
                         {canManage && (
                           <td>
                             <div className="ds-inline-actions" onClick={e => e.stopPropagation()}>
+                              {item.deleted && <button type="button" className="ds-button outlined" disabled={saving} onClick={() => openSubject(item)}>
+                                <RotateCcw size={14} /> View / recover
+                              </button>}
                               <button className="ds-table-delete-btn" onClick={() => requestSchemaDelete(item.subject, Boolean(item.deleted))} disabled={saving}>
                                 <Trash2 size={14} /> {item.deleted ? 'Permanently delete' : 'Soft delete'}
                               </button>
@@ -1432,6 +1462,10 @@ export function SchemaRegistry() {
                       <td>{version.schemaType}</td>
                       <td>{version.deleted ? 'Soft-deleted' : 'Active'}</td>
                       {canManage && <td onClick={event => event.stopPropagation()}>
+                        {version.deleted && <button type="button" className="ds-button outlined" disabled={saving}
+                          onClick={() => { setRecoveryError(null); setPendingRecovery({ subject: selected.subject, version, connectionId: selectedConnectionId }); }}>
+                          <RotateCcw size={14} /> Recover
+                        </button>}
                         <button type="button" className="ds-table-delete-btn" disabled={saving}
                           onClick={() => requestSchemaDelete(selected.subject, Boolean(version.deleted), version.version)}>
                           <Trash2 size={14} /> {version.deleted ? 'Permanently delete' : 'Soft delete'}
@@ -1913,6 +1947,25 @@ export function SchemaRegistry() {
       )}
 
       {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Custom Delete Subject Confirmation Modal ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
+      {pendingRecovery && createPortal(
+        <div className="ds-modal-backdrop ds-delete-backdrop" role="dialog" aria-modal="true" aria-labelledby="schema-recovery-title">
+          <div className="ds-delete-confirm-modal">
+            <div className="ds-delete-confirm-content">
+              <div className="ds-delete-confirm-title-row"><RotateCcw size={24} /><h2 id="schema-recovery-title">Recover schema version</h2></div>
+              <p className="ds-delete-confirm-desc">Subject: <strong>{pendingRecovery.subject}</strong></p>
+              <p className="ds-delete-confirm-desc">Original version: {pendingRecovery.version.version} · Schema ID: {pendingRecovery.version.id ?? 'Unavailable'} · Type: {pendingRecovery.version.schemaType}</p>
+              <p className="ds-delete-confirm-desc">Re-register the original schema and its references. The registry assigns the resulting version. Only this schema is recovered; other deleted versions remain unchanged.</p>
+              <pre className="ds-version-schema-code" style={{ maxHeight: 220, overflow: 'auto', whiteSpace: 'pre-wrap' }}>{formatSchema(pendingRecovery.version.schema, pendingRecovery.version.schemaType)}</pre>
+              {recoveryError && <p className="ds-alert" role="alert">{recoveryError}</p>}
+              <div className="ds-delete-modal-footer">
+                <button type="button" className="ds-button outlined" disabled={saving} onClick={() => setPendingRecovery(null)}>Cancel</button>
+                <button type="button" className="ds-button primary" disabled={saving} onClick={confirmSchemaRecovery}>{saving ? 'Recovering...' : 'Recover schema'}</button>
+              </div>
+            </div>
+          </div>
+        </div>, document.body
+      )}
+
       {pendingDelete && createPortal(
         <div className="ds-modal-backdrop ds-delete-backdrop" role="dialog" aria-modal="true">
           <div className="ds-delete-confirm-modal animate-fade-in">
@@ -1929,8 +1982,8 @@ export function SchemaRegistry() {
                 {pendingDelete.subject}{pendingDelete.version ? ` / version ${pendingDelete.version}` : ' / all versions'}
               </p>
               <p className="ds-delete-confirm-desc">{pendingDelete.permanent
-                ? 'This permanently removes Schema Registry metadata and cannot be undone. Kafka records are not deleted.'
-                : 'This hides the schema from normal views. Schema Registry keeps its metadata and schema ID; an admin can permanently delete it later.'}</p>
+                ? 'This permanently removes Schema Registry metadata and cannot be undone. Kafka records remain, but reading them may fail if they require this schema.'
+                : 'This hides the schema from normal views. Schema Registry keeps its metadata and schema ID. You can recover it later, or permanently delete it.'}</p>
               {pendingDelete.permanent && <label className="ds-delete-confirm-field">
                 Type <strong>{pendingDelete.version ? `${pendingDelete.subject}/${pendingDelete.version}` : pendingDelete.subject}</strong> to confirm
                 <input value={deleteConfirmation} onChange={event => setDeleteConfirmation(event.target.value)} autoComplete="off" />
