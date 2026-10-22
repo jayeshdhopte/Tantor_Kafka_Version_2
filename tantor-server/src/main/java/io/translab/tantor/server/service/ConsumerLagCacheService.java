@@ -28,6 +28,8 @@ public class ConsumerLagCacheService {
     private final ClusterRepository clusterRepository;
     private final KafkaAdminService kafkaAdminService;
     private final TransactionTemplate transactionTemplate;
+    private final KafkaGroupInventoryService groupInventory;
+    private final io.translab.tantor.server.repository.ExternalClusterRepository externalClusters;
 
     // Cache: ClusterID -> List of Summaries
     private final Map<UUID, List<ConsumerGroupSummaryDto>> summaryCache = new ConcurrentHashMap<>();
@@ -37,18 +39,21 @@ public class ConsumerLagCacheService {
 
     @Scheduled(fixedDelay = 10000)
     public void refreshCaches() {
-        List<Cluster> activeClusters = clusterRepository.findByStatusNot("DELETED");
-        for (Cluster cluster : activeClusters) {
-            if ("SUCCESS".equals(cluster.getStatus()) || "EXTERNAL".equals(cluster.getMode())) {
+        Set<UUID> activeIds = new LinkedHashSet<>();
+        for (Cluster cluster : clusterRepository.findByStatusNot("DELETED"))
+            if ("SUCCESS".equals(cluster.getStatus()) || "EXTERNAL".equals(cluster.getMode())) activeIds.add(cluster.getId());
+        externalClusters.findByStatusNot("DELETED").forEach(cluster -> activeIds.add(cluster.getId()));
+        summaryCache.keySet().retainAll(activeIds);
+        detailCache.keySet().retainAll(activeIds);
+        for (UUID clusterId : activeIds) {
                 transactionTemplate.execute(status -> {
                     try {
-                        refreshConsumerGroups(cluster.getId());
+                        refreshConsumerGroups(clusterId);
                     } catch (Exception e) {
-                        log.warn("Failed to refresh consumer lag cache for cluster {}: {}", cluster.getId(), e.getMessage());
+                        log.warn("Failed to refresh consumer lag cache for cluster {}: {}", clusterId, e.getMessage());
                     }
                     return null;
                 });
-            }
         }
     }
 
@@ -56,8 +61,9 @@ public class ConsumerLagCacheService {
         AdminClient client = kafkaAdminService.getAdminClient(clusterId);
         
         // 1. Fetch all Group IDs
-        Collection<ConsumerGroupListing> listings = client.listConsumerGroups().all().get();
-        List<String> groupIds = listings.stream().map(ConsumerGroupListing::groupId).collect(Collectors.toList());
+        List<KafkaGroupInventoryService.Group> inventory = groupInventory.list(clusterId);
+        List<String> groupIds = inventory.stream().filter(group -> "CONSUMER".equals(group.classification()))
+                .map(KafkaGroupInventoryService.Group::groupId).toList();
         
         if (groupIds.isEmpty()) {
             summaryCache.put(clusterId, Collections.emptyList());
@@ -66,18 +72,27 @@ public class ConsumerLagCacheService {
         }
 
         // 2. Describe all Groups
-        Map<String, ConsumerGroupDescription> descriptions = client.describeConsumerGroups(groupIds).all().get();
+        Map<String, ConsumerGroupDescription> descriptions = new LinkedHashMap<>();
+        var futures = client.describeConsumerGroups(groupIds).describedGroups();
+        for (String groupId : groupIds) {
+            try { descriptions.put(groupId, futures.get(groupId).get(15, java.util.concurrent.TimeUnit.SECONDS)); }
+            catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw interrupted; }
+            catch (Exception failure) { log.warn("Consumer metadata unavailable for group {}", groupId); }
+        }
 
         // 3. Fetch Offsets for all Groups
         Map<String, Map<TopicPartition, OffsetAndMetadata>> allGroupOffsets = new HashMap<>();
         Set<TopicPartition> allPartitions = new HashSet<>();
+        Set<String> offsetFailures = new HashSet<>();
         
-        for (String groupId : groupIds) {
+        for (String groupId : descriptions.keySet()) {
             try {
                 Map<TopicPartition, OffsetAndMetadata> offsets = client.listConsumerGroupOffsets(groupId).partitionsToOffsetAndMetadata().get();
                 allGroupOffsets.put(groupId, offsets);
                 allPartitions.addAll(offsets.keySet());
+            } catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw interrupted;
             } catch (Exception e) {
+                offsetFailures.add(groupId);
                 log.warn("Failed to fetch offsets for group {}: {}", groupId, e.getMessage());
                 allGroupOffsets.put(groupId, Collections.emptyMap());
             }
@@ -91,7 +106,7 @@ public class ConsumerLagCacheService {
         
         Map<TopicPartition, ListOffsetsResult.ListOffsetsResultInfo> latestOffsets = new HashMap<>();
         try {
-            latestOffsets = client.listOffsets(latestSpecs).all().get();
+            if (!latestSpecs.isEmpty()) latestOffsets = client.listOffsets(latestSpecs).all().get();
         } catch (Exception e) {
             log.warn("Failed to fetch latest offsets. Some partitions may be offline: {}", e.getMessage());
             // Fallback: fetch one by one to isolate offline partitions
@@ -108,6 +123,15 @@ public class ConsumerLagCacheService {
         long now = System.currentTimeMillis();
         List<ConsumerGroupSummaryDto> summaries = new ArrayList<>();
         Map<String, ConsumerGroupDetailDto> details = new HashMap<>();
+        Map<String, KafkaGroupInventoryService.Group> groupMetadata = inventory.stream()
+                .collect(Collectors.toMap(KafkaGroupInventoryService.Group::groupId, group -> group));
+        for (String groupId : groupIds) if (!descriptions.containsKey(groupId)) {
+            var unavailable = new ConsumerGroupSummaryDto(groupId, "Metadata unavailable", -1, -1, "UNKNOWN", now);
+            unavailable.setMetadataStatus("UNAVAILABLE");
+            unavailable.setProtocol(groupMetadata.get(groupId).protocol());
+            unavailable.setGroupType(groupMetadata.get(groupId).groupType());
+            summaries.add(unavailable);
+        }
 
         for (Map.Entry<String, ConsumerGroupDescription> entry : descriptions.entrySet()) {
             String groupId = entry.getKey();
@@ -115,7 +139,7 @@ public class ConsumerLagCacheService {
             Map<TopicPartition, OffsetAndMetadata> groupOffsets = allGroupOffsets.getOrDefault(groupId, Collections.emptyMap());
 
             long totalLag = 0;
-            boolean hasOfflinePartitions = false;
+            boolean hasOfflinePartitions = offsetFailures.contains(groupId);
             
             List<MemberAssignmentDto> memberDtos = new ArrayList<>();
             
@@ -182,6 +206,9 @@ public class ConsumerLagCacheService {
                 now
             );
             summary.setCoordinatorId(coordinatorId);
+            summary.setProtocol(groupMetadata.get(groupId).protocol());
+            summary.setGroupType(groupMetadata.get(groupId).groupType());
+            if (hasOfflinePartitions) { summary.setTotalLag(-1); summary.setMetadataStatus("PARTIAL"); }
             summaries.add(summary);
             
             ConsumerGroupDetailDto detail = new ConsumerGroupDetailDto(groupId, desc.state().toString(), memberDtos);
@@ -194,6 +221,7 @@ public class ConsumerLagCacheService {
     }
 
     public PaginatedResponse<ConsumerGroupSummaryDto> getPaginatedSummaries(UUID clusterId, int page, int size, String search, String sortBy) {
+        size = Math.max(1, Math.min(500, size));
         List<ConsumerGroupSummaryDto> allCached = summaryCache.getOrDefault(clusterId, Collections.emptyList());
 
         List<ConsumerGroupSummaryDto> filtered = allCached.stream()

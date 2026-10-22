@@ -23,6 +23,10 @@ class ExternalMultiInstanceTest {
   assertThat(saved).hasSize(2);var a=manager.read(saved.get(0).getConfigJson());var b=manager.read(saved.get(1).getConfigJson());
   assertThat(a.get("group_id")).isEqualTo(b.get("group_id"));assertThat(a.get("service_name")).isNotEqualTo(b.get("service_name"));assertThat(a.get("install_dir")).isNotEqualTo(b.get("install_dir"));
   assertThat(a).containsEntry("host_name","192.168.3.174").containsEntry("host_display_name","broker.example");
+  assertThat(a).containsEntry("service_name","kafka-connect");
+  assertThat(b).containsEntry("service_name","kafka-connect-2");
+  assertThat(manager.availableServiceName("schema_registry","agent",saved)).isEqualTo("schema-registry");
+  assertThat(manager.availableServiceName("kafka_connect","another-host",saved)).isEqualTo("kafka-connect");
   verify(jobs).createJob(argThat(j->j.getResourceKey().equals("cluster:"+cluster.getId())),argThat(steps->steps.size()==8));
  }
  @Test void serviceAddressPrefersReportedIpWithoutRequiringDisplayHostnameDns(){

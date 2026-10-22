@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useParams } from 'react-router-dom';
 import { Users, Search, ChevronLeft, ChevronRight, X, ArrowUp, RefreshCw } from 'lucide-react';
 import './Consumers.css';
+import { KafkaGroupPanel } from '../components/KafkaGroupPanel';
 
 interface ConsumerGroupSummaryDto {
   groupId: string;
@@ -169,6 +170,7 @@ export function Consumers() {
         </div>
       </div>
 
+      <KafkaGroupPanel clusterId={id} kind="other" />
       {error && (
         <div className="error-alert" style={{ marginBottom: '1rem' }}>
           {error}
@@ -215,8 +217,8 @@ export function Consumers() {
                     <tr key={g.groupId} className="consumer-group-row" onClick={() => handleRowClick(g.groupId)}>
                       <td className="consumer-group-id" title={g.groupId}>{g.groupId}</td>
                       <td>{g.state}</td>
-                      <td>{g.membersCount}</td>
-                      <td>{g.totalLag}</td>
+                      <td>{g.membersCount < 0 ? '—' : g.membersCount}</td>
+                      <td>{g.totalLag < 0 ? 'Unavailable' : g.totalLag}</td>
                       <td>{g.coordinatorId ?? 'Unavailable'}</td>
                       <td className="consumer-last-updated">
                         {new Date(g.lastUpdated).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}

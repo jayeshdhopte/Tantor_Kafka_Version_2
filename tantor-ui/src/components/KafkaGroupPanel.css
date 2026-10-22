@@ -1,0 +1,9 @@
+.kafka-group-panel { margin: 16px 0; border: 1px solid var(--border-color, #ddd); border-radius: 10px; background: white; color: var(--text-primary); }
+.kafka-group-panel > summary { padding: 14px 18px; cursor: pointer; font-weight: 600; }
+.kafka-group-panel-body { padding: 0 18px 16px; }
+.kafka-group-panel-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.kafka-group-panel-toolbar p { font-size: 14px; color: var(--text-secondary); }
+.kafka-group-panel-toolbar button { display: flex; gap: 6px; align-items: center; border: 1px solid var(--button-primary-active, #401568); border-radius: 8px; padding: 8px 12px; background: white; color: inherit; }
+.kafka-group-panel-scroll { overflow-x: auto; }
+.kafka-group-panel table { width: 100%; border-collapse: collapse; text-align: left; }
+.kafka-group-panel th, .kafka-group-panel td { padding: 10px; border-bottom: 1px solid var(--border-color, #ddd); overflow-wrap: anywhere; }

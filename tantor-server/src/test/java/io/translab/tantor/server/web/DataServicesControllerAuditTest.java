@@ -151,7 +151,36 @@ class DataServicesControllerAuditTest {
         verify(f.audit, times(2)).record(eq("CLUSTER_CHANGE"), anyString(), anyString(), anyString(), eq(f.clusterId), eq("FAILED"), isNull(), isNull(), isNull(), any());
     }
 
+    @Test
+    void recordsConnectorCreationAndConfigUpdateWithoutSecretPayloads() throws Exception {
+        server = serverReturning(200, "{}"); Fixture f = fixture(); int port=server.getAddress().getPort();
+        var body=f.objectMapper.readTree("{\"name\":\"test-source\",\"config\":{\"password\":\"must-not-be-audited\"}}");
+        f.controller.createConnector("Bearer token",f.clusterId,null,"http","127.0.0.1",port,f.connectionId,body);
+        f.controller.updateConnectorConfig("Bearer token",f.clusterId,"test-source",null,"http","127.0.0.1",port,f.connectionId,body);
+        @SuppressWarnings({"unchecked", "rawtypes"}) ArgumentCaptor<Map<String,Object>> details=ArgumentCaptor.forClass((Class)Map.class);
+        verify(f.audit,times(2)).record(eq("CLUSTER_CHANGE"),anyString(),eq("KAFKA_CONNECT_CONNECTOR"),eq("test-source"),eq(f.clusterId),eq("SUCCESS"),isNull(),isNull(),isNull(),details.capture());
+        assertThat(details.getAllValues().toString()).doesNotContain("must-not-be-audited", "Bearer token", "password");
+    }
+
+    @Test
+    void recordsFailedModeChangeWithoutUpstreamSecretMessages() throws Exception {
+        server = serverReturning(500, "{\"message\":\"secret-message\"}"); Fixture f=fixture();
+        assertThatThrownBy(()->f.controller.updateSchemaRegistryMode("Bearer token",f.clusterId,null,null,"http","127.0.0.1",server.getAddress().getPort(),f.connectionId,f.objectMapper.createObjectNode().put("mode","READONLY"))).isInstanceOf(RuntimeException.class);
+        verify(f.audit).record(eq("CLUSTER_CHANGE"),eq("SCHEMA_REGISTRY_GLOBAL_MODE_UPDATE"),eq("SCHEMA_GLOBAL"),eq("Global"),eq(f.clusterId),eq("FAILED"),isNull(),isNull(),isNull(),any());
+    }
+
     private Fixture fixture() { return fixture(mock(AuditService.class)); }
+
+    @Test
+    void recordsSchemaSettingsAndRegistrationAsSchemaOperations() throws Exception {
+        server=serverReturning(200,"{}"); Fixture f=fixture();int port=server.getAddress().getPort();
+        f.controller.updateGlobalCompatibility("Bearer token",f.clusterId,null,"http","127.0.0.1",port,f.connectionId,f.objectMapper.createObjectNode().put("compatibility","FULL"));
+        f.controller.updateSubjectCompatibility("Bearer token",f.clusterId,"orders-value",null,"http","127.0.0.1",port,f.connectionId,f.objectMapper.createObjectNode().put("compatibility","BACKWARD"));
+        f.controller.createSchemaVersion("Bearer token",f.clusterId,"orders-value",null,"http","127.0.0.1",port,f.connectionId,f.objectMapper.createObjectNode().put("schema","do-not-copy-body"));
+        verify(f.audit).record(eq("CLUSTER_CHANGE"),eq("SCHEMA_REGISTRY_GLOBAL_COMPATIBILITY_UPDATE"),eq("SCHEMA_GLOBAL"),eq("Global"),eq(f.clusterId),eq("SUCCESS"),isNull(),isNull(),isNull(),any());
+        verify(f.audit).record(eq("CLUSTER_CHANGE"),eq("SCHEMA_REGISTRY_SUBJECT_COMPATIBILITY_UPDATE"),eq("SCHEMA_SUBJECT"),eq("orders-value"),eq(f.clusterId),eq("SUCCESS"),isNull(),isNull(),isNull(),any());
+        verify(f.audit).record(eq("CLUSTER_CHANGE"),eq("SCHEMA_REGISTRY_VERSION_REGISTER"),eq("SCHEMA_SUBJECT"),eq("orders-value"),eq(f.clusterId),eq("SUCCESS"),isNull(),isNull(),isNull(),argThat(details->!details.toString().contains("do-not-copy-body")));
+    }
 
     private Fixture fixture(AuditService audit) {
         ClusterRepository clusters = mock(ClusterRepository.class);

@@ -81,18 +81,8 @@ const normalized = (value?: string) => (value || '').toUpperCase();
 const isHostOnboardingEvent = (event: AuditEvent) => {
   const action = normalized(event.action);
   const category = normalized(event.category);
-  return action.includes('ONBOARDING') || action.includes('REGISTER') || category === 'AGENT';
-};
-
-const isNoisyAuditEvent = (event: AuditEvent) => {
-  const action = normalized(event.action);
-  const resourceType = normalized(event.resourceType);
-  return resourceType === 'JOB'
-    || action === 'CLUSTER_CREATED'
-    || action === 'CLUSTER_STATUS_CHANGED'
-    || action === 'KAFKA_NODE_DEPLOYED'
-    || action === 'KAFKA_NODE_DEPLOYMENT_FAILED'
-    || action.endsWith('_REQUESTED');
+  return action.includes('ONBOARDING') || category === 'AGENT'
+    || (['HOST', 'AGENT'].includes(normalized(event.resourceType)) && action.includes('REGISTER'));
 };
 
 const actionLabel = (event: AuditEvent) => {
@@ -181,6 +171,8 @@ export function AuditLogs() {
   const [search, setSearch] = useState('');
   const [resourceId, setResourceId] = useState('');
   const [category, setCategory] = useState('ALL');
+  const [action, setAction] = useState('ALL');
+  const [resourceType, setResourceType] = useState('ALL');
   const [status, setStatus] = useState('ALL');
   const [actor, setActor] = useState('ALL');
   const [from, setFrom] = useState('');
@@ -188,7 +180,7 @@ export function AuditLogs() {
 
   // Applied filter state
   const [appliedFilters, setAppliedFilters] = useState({
-    search: '', resourceId: '', category: 'ALL', status: 'ALL', actor: 'ALL', from: '', to: ''
+    search: '', resourceId: '', category: 'ALL', action: 'ALL', resourceType: 'ALL', status: 'ALL', actor: 'ALL', from: '', to: ''
   });
 
   // Pagination state
@@ -206,7 +198,6 @@ export function AuditLogs() {
         }),
       ]);
       const combined = results.flatMap(result => result.status === 'fulfilled' ? result.value.events || [] : [])
-        .filter(event => !isNoisyAuditEvent(event))
         .sort((left, right) => new Date(timeOf(right)).getTime() - new Date(timeOf(left)).getTime());
       setEvents(combined);
       const failures = results.filter(result => result.status === 'rejected').length;
@@ -223,10 +214,14 @@ export function AuditLogs() {
   useEffect(() => { void (async () => { await fetchLogs(); })(); }, [fetchLogs]);
 
   const categories = useMemo(() => Array.from(new Set(events.map(event => event.category))).sort(), [events]);
+  const actions = useMemo(() => Array.from(new Set(events.map(event => event.action))).sort(), [events]);
+  const resourceTypes = useMemo(() => Array.from(new Set(events.map(event => event.resourceType))).sort(), [events]);
   const actors = useMemo(() => Array.from(new Set(events.map(actorOf).filter(Boolean))).sort(), [events]);
 
   const filtered = useMemo(() => events.filter(event => {
     if (appliedFilters.category !== 'ALL' && event.category !== appliedFilters.category) return false;
+    if (appliedFilters.action !== 'ALL' && event.action !== appliedFilters.action) return false;
+    if (appliedFilters.resourceType !== 'ALL' && event.resourceType !== appliedFilters.resourceType) return false;
     if (appliedFilters.status !== 'ALL' && event.status !== appliedFilters.status) return false;
     if (appliedFilters.actor !== 'ALL' && actorOf(event) !== appliedFilters.actor) return false;
     if (appliedFilters.resourceId.trim()) {
@@ -237,8 +232,8 @@ export function AuditLogs() {
       if (!resourceHaystack.includes(needle)) return false;
     }
     const created = new Date(timeOf(event)).getTime();
-    if (appliedFilters.from && created < new Date(appliedFilters.from).getTime()) return false;
-    if (appliedFilters.to && created > new Date(appliedFilters.to).getTime()) return false;
+    if (appliedFilters.from && created < new Date(`${appliedFilters.from}T00:00:00`).getTime()) return false;
+    if (appliedFilters.to && created > new Date(`${appliedFilters.to}T23:59:59.999`).getTime()) return false;
     const haystack = [event.action, actionLabel(event), actorOf(event), event.resourceType, event.displayResourceId, event.kafkaClusterId, event.resourceId, event.resource, event.hostName, event.clusterId, detailLabel(event)].join(' ').toLowerCase();
     return !appliedFilters.search.trim() || haystack.includes(appliedFilters.search.trim().toLowerCase());
   }), [events, appliedFilters]);
@@ -254,12 +249,13 @@ export function AuditLogs() {
   }, [filtered, currentPage, pageSize]);
 
   const applyFilters = () => {
-    setAppliedFilters({ search, resourceId, category, status, actor, from, to });
+    setAppliedFilters({ search, resourceId, category, action, resourceType, status, actor, from, to });
+    setCurrentPage(1);
   };
 
   const resetFilters = () => {
-    setSearch(''); setResourceId(''); setCategory('ALL'); setStatus('ALL'); setActor('ALL'); setFrom(''); setTo('');
-    setAppliedFilters({ search: '', resourceId: '', category: 'ALL', status: 'ALL', actor: 'ALL', from: '', to: '' });
+    setSearch(''); setResourceId(''); setCategory('ALL'); setAction('ALL'); setResourceType('ALL'); setStatus('ALL'); setActor('ALL'); setFrom(''); setTo('');
+    setAppliedFilters({ search: '', resourceId: '', category: 'ALL', action: 'ALL', resourceType: 'ALL', status: 'ALL', actor: 'ALL', from: '', to: '' });
   };
 
   const summary = useMemo(() => ({
@@ -337,6 +333,8 @@ export function AuditLogs() {
         </div>
       </div>
       <div className="audit-filters-row-2">
+        <div className="filter-group"><label>Operation</label><CustomDropdown value={action} options={[{ label: 'All operations', value: 'ALL' }, ...actions.map(item => ({ label: title(item), value: item }))]} onChange={setAction} /></div>
+        <div className="filter-group"><label>Resource type</label><CustomDropdown value={resourceType} options={[{ label: 'All resources', value: 'ALL' }, ...resourceTypes.map(item => ({ label: title(item), value: item }))]} onChange={setResourceType} /></div>
         <div className="filter-group">
           <label>Event</label>
           <CustomDropdown

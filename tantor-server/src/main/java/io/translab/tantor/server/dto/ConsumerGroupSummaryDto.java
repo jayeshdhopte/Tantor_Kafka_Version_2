@@ -2,6 +2,15 @@ package io.translab.tantor.server.dto;
 
 public class ConsumerGroupSummaryDto {
     private String groupId;
+    private String protocol;
+    private String groupType;
+    private String metadataStatus = "AVAILABLE";
+    public String getProtocol() { return protocol; }
+    public void setProtocol(String value) { protocol = value; }
+    public String getGroupType() { return groupType; }
+    public void setGroupType(String value) { groupType = value; }
+    public String getMetadataStatus() { return metadataStatus; }
+    public void setMetadataStatus(String value) { metadataStatus = value; }
     private String state;
     private Integer coordinatorId;
     private int membersCount;

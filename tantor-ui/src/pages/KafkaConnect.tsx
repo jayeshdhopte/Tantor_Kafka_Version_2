@@ -11,6 +11,7 @@ import { KafkaConnectorDetails } from '../components/KafkaConnectorDetails';
 import { KafkaConnectorsTable } from '../components/KafkaConnectorsTable';
 import { type ConnectorRow } from '../utils/kafkaConnect';
 import './DataServiceTabs.css';
+import { KafkaGroupPanel } from '../components/KafkaGroupPanel';
 
 interface ConnectorPlugin {
   class: string;
@@ -577,6 +578,7 @@ export function KafkaConnect() {
         onBack={() => { setSelectedConnectorName(null); setActiveTab('connectors'); }} onChanged={() => void load()}
         onDeleted={() => { setSelectedConnectorName(null); setActiveTab('connectors'); setSuccessMessage('Connector deleted.'); }} />}
       <div hidden={Boolean(selectedConnectorName)}>
+      <KafkaGroupPanel clusterId={id} kind="connect" />
       <div className="ds-header ds-sr-header" style={{ width: '100%' }}>
         <div className="ds-actions" style={{ width: '100%', display: 'flex', justifyContent: hasFetched ? 'space-between' : 'flex-end', alignItems: 'flex-end', marginBottom: hasFetched ? '0' : '24px' }}>
           

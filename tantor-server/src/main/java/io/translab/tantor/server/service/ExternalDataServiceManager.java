@@ -68,7 +68,9 @@ public class ExternalDataServiceManager {
    if(input==null) throw new IllegalArgumentException("Missing service configuration.");
    DiscoveryAgent agent=requireAgent(id,value(input,"host_id",""));
    Map<String,String> p=configuration(role,input);
-   p.put("service_name",role.replace('_','-')+"-"+UUID.randomUUID().toString().substring(0,8));
+   List<ExternalDataService> hostServices=new ArrayList<>(services.findByAgentId(agent.getId()));
+   hostServices.addAll(additions);
+   p.put("service_name",availableServiceName(role,agent.getId(),hostServices));
    // Replicas of one logical service use the same group and compacted topics.
    var logical=services.findByClusterId(id).stream().filter(existing->role.equals(existing.getRole())).findFirst();
    if(logical.isPresent()) { var prior=read(logical.get().getConfigJson()); for(String key:List.of("group_id","schemas_topic","config_topic","offset_topic","status_topic"))if(prior.containsKey(key))p.put(key,prior.get(key)); }
@@ -99,6 +101,15 @@ public class ExternalDataServiceManager {
   return Map.of("id",id.toString(),"jobId",saved.getId().toString());
  }
  static List<String> paths(Map<String,String> p) { return List.of("install_dir","config_dir","log_dir","working_dir","plugin_dir").stream().map(p::get).filter(Objects::nonNull).filter(v->!v.isBlank()).toList(); }
+ String availableServiceName(String role,String agentId,List<ExternalDataService> existing) {
+  String base=role.replace('_','-');Set<String> names=new HashSet<>();
+  for(var service:existing) if(agentId.equals(service.getAgentId()) && !"DELETED".equalsIgnoreCase(service.getStatus())) {
+   names.add(read(service.getConfigJson()).getOrDefault("service_name",service.getRole().replace('_','-')));
+  }
+  if(!names.contains(base)) return base;
+  for(int index=2;index<=1000;index++) if(!names.contains(base+"-"+index)) return base+"-"+index;
+  throw new IllegalArgumentException("Too many service instances on this host.");
+ }
  static boolean overlaps(String a,String b) { return a.equals(b)||a.startsWith(b+"/")||b.startsWith(a+"/"); }
  static Map<String,String> configuration(String role,Map<String,Object> in) {
   String kind=role.equals("schema_registry")?"schema-registry":"kafka-connect";

@@ -888,31 +888,49 @@ public class DataServicesController {
         try {
             ResponseEntity<?> response = operation.get();
             details.put("httpStatus", response.getStatusCode().value());
-            recordDeletionAudit(action, resourceType, clusterId, name, response.getStatusCode().is2xxSuccessful() ? "SUCCESS" : "FAILED", details);
+            recordOperationAudit(action, resourceType, clusterId, name, response.getStatusCode().is2xxSuccessful() ? "SUCCESS" : "FAILED", details);
             return response;
         } catch (RuntimeException failure) {
             details.put("errorType", failure.getClass().getSimpleName());
             if (failure instanceof DataServiceException upstream) details.put("httpStatus", upstream.statusCode());
-            recordDeletionAudit(action, resourceType, clusterId, name, "FAILED", details);
+            recordOperationAudit(action, resourceType, clusterId, name, "FAILED", details);
             throw failure;
         }
     }
 
-    private void recordDeletionAudit(String action, String resourceType, UUID clusterId,
+    private void recordOperationAudit(String action, String resourceType, UUID clusterId,
             String resource, String status, Map<String, Object> details) {
         try {
             auditService.record("CLUSTER_CHANGE", action, resourceType, resource, clusterId, status,
                     null, null, null, details);
         } catch (RuntimeException failure) {
-            // A completed deletion must not appear to fail because audit storage is unavailable.
-            log.error("Unable to persist data service deletion audit event ({})", failure.getClass().getSimpleName());
+            // A completed operation must not appear to fail because audit storage is unavailable.
+            log.error("Unable to persist data service audit event ({})", failure.getClass().getSimpleName());
         }
     }
 
     private ResponseEntity<?> forwardJson(String baseUrl, String method, String path,
                                            JsonNode body, String encodedCert,
                                            UUID clusterId, String serviceType, UUID connectionId) {
-        return ResponseEntity.ok(requestJson(baseUrl, method, path, body, encodedCert, clusterId, serviceType, connectionId));
+        var operation = DataServiceAuditOperation.identify(serviceType, method, path, body);
+        if (operation == null) return ResponseEntity.ok(requestJson(baseUrl, method, path, body, encodedCert, clusterId, serviceType, connectionId));
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("operation", method); details.put("service", serviceType);
+        if (connectionId != null) details.put("connectionId", connectionId.toString());
+        // Only these non-secret scalar settings are safe to include. Never record full connector configs/schema bodies.
+        if (body != null) for (String key : List.of("mode", "compatibility", "schemaType"))
+            if (body.has(key) && body.get(key).isTextual()) details.put(key, body.get(key).asText());
+        try {
+            JsonNode result = requestJson(baseUrl, method, path, body, encodedCert, clusterId, serviceType, connectionId);
+            details.put("httpStatus", 200);
+            recordOperationAudit(operation.action(), operation.resourceType(), clusterId, operation.resource(), "SUCCESS", details);
+            return ResponseEntity.ok(result);
+        } catch (RuntimeException failure) {
+            details.put("errorType", failure.getClass().getSimpleName());
+            if (failure instanceof DataServiceException upstream) details.put("httpStatus", upstream.statusCode());
+            recordOperationAudit(operation.action(), operation.resourceType(), clusterId, operation.resource(), "FAILED", details);
+            throw failure;
+        }
     }
 
     private JsonNode requestJson(String baseUrl, String method, String path, JsonNode body,
