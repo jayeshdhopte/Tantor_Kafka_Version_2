@@ -61,6 +61,7 @@ public class HostController {
     public ResponseEntity<List<Map<String, Object>>> getAllHosts() {
         Map<String, Map<String, Object>> hostsByIdentity = new LinkedHashMap<>();
         hostRepository.findAll().stream()
+                .filter(hostStatusService::isInfrastructureHost)
                 .map(this::hostSummary)
                 .forEach(host -> hostsByIdentity.merge(hostIdentity(host), host, this::preferredHostSummary));
         return ResponseEntity.ok(List.copyOf(hostsByIdentity.values()));
@@ -370,6 +371,10 @@ public class HostController {
         }
         Host host = hostRepository.findById(id).orElse(null);
         if (host == null) return ResponseEntity.notFound().build();
+        if (hostStatusService.isDiscoveryAgent(host)) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message",
+                    "External agents are managed through External Clusters, not host onboarding."));
+        }
         if (!"PENDING".equalsIgnoreCase(host.getStatus())) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "Host is already connected or occupied."));
         }
@@ -542,18 +547,6 @@ public class HostController {
             summary.put("clusterName", extClusterName);
             if (extClusterId != null) {
                 summary.put("clusterId", extClusterId.toString());
-                
-                // Override agent details with Discovery Agent if it exists for this cluster
-                List<io.translab.tantor.server.domain.DiscoveryAgent> discAgents = discoveryAgentRepository.findByClusterId(extClusterId);
-                if (discAgents != null && !discAgents.isEmpty()) {
-                    io.translab.tantor.server.domain.DiscoveryAgent discAgent = discAgents.get(0);
-                    summary.put("agentName", discAgent.getAgentName() == null || discAgent.getAgentName().isBlank()
-                            ? discAgent.getHostname() : discAgent.getAgentName());
-                    summary.put("agentStatus", discAgent.getStatus());
-                    summary.put("agentType", "KAFKA_DISCOVERY");
-                    summary.put("agentVersion", discAgent.getVersion());
-                    summary.put("agentPath", "/srv/tantor-agent/tantor-discovery-agent-linux");
-                }
             }
         } else if ("PENDING".equalsIgnoreCase(effectiveStatus)) {
             // Host is awaiting approval — keep it in the modal, not the main table

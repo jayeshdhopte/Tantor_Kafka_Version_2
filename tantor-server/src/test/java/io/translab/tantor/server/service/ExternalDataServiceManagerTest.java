@@ -72,7 +72,12 @@ class ExternalDataServiceManagerTest {
         agent.setVersion("3.4.0-dataservices.2-configchange.8-rollingrestart.2");
         agent.setCanDeployServices(true);
         when(agents.findById("agent-1")).thenReturn(Optional.of(agent));
+        when(agents.findByClusterId(clusterId)).thenReturn(List.of(agent));
         when(services.findByAgentId("agent-1")).thenReturn(List.of());
+        @SuppressWarnings("unchecked")
+        var defaults = (Map<String, Map<String, String>>) manager.options(clusterId).get("pathDefaults");
+        assertThat(defaults.get("schema_registry")).containsEntry("install_dir", "/opt/tantor/schema-registry");
+        assertThat(defaults.get("kafka_connect")).containsEntry("install_dir", "/opt/tantor/kafka-connect");
         when(services.saveAndFlush(any())).thenAnswer(invocation -> {
             ExternalDataService service = invocation.getArgument(0);
             service.setId(UUID.randomUUID());

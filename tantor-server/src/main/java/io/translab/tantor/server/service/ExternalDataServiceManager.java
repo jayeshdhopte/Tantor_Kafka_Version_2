@@ -44,9 +44,12 @@ public class ExternalDataServiceManager {
   List<Map<String,Object>> hosts=new ArrayList<>();
   for(var a:agents.findByClusterId(id)) hosts.add(Map.of("hostId",a.getId(),"hostname",Objects.toString(a.getHostname(),a.getId()),"canDeployServices",blocked(a).isEmpty(),"reason",blocked(a)));
   var existing=services.findByClusterId(id);
+  var hostServices=agents.findByClusterId(id).stream().flatMap(a->services.findByAgentId(a.getId()).stream()).toList();
+  Map<String,Object> pathDefaults=new LinkedHashMap<>();
+  for(String role:List.of("schema_registry","kafka_connect")) pathDefaults.put(role,availablePaths(role,hostServices));
   String protocol=Objects.toString(c.getSecurityProtocol(),Objects.toString(c.getSecurity(),"PLAINTEXT"));
   return Map.of("hosts",hosts,"serviceRoles",existing.stream().map(ExternalDataService::getRole).toList(),"services",existing,
-    "deploymentWarning",!protocol.isBlank()&&!"PLAINTEXT".equalsIgnoreCase(protocol)?"Service deployment currently supports PLAINTEXT Kafka clusters only.":"");
+    "pathDefaults",pathDefaults,"deploymentWarning",!protocol.isBlank()&&!"PLAINTEXT".equalsIgnoreCase(protocol)?"Service deployment currently supports PLAINTEXT Kafka clusters only.":"");
  }
  @Transactional
  public Map<String,String> create(UUID id,Map<String,?> request,String username) {
@@ -67,9 +70,12 @@ public class ExternalDataServiceManager {
    @SuppressWarnings("unchecked") Map<String,Object> input=(Map<String,Object>)raw;
    if(input==null) throw new IllegalArgumentException("Missing service configuration.");
    DiscoveryAgent agent=requireAgent(id,value(input,"host_id",""));
-   Map<String,String> p=configuration(role,input);
    List<ExternalDataService> hostServices=new ArrayList<>(services.findByAgentId(agent.getId()));
    hostServices.addAll(additions);
+   Map<String,Object> configured=new LinkedHashMap<>(input);
+   availablePaths(role,hostServices.stream().filter(s->agent.getId().equals(s.getAgentId())).toList())
+     .forEach((key,path)->{if(Set.of("install_dir","log_dir","working_dir").contains(key) && value(input,key,"").isBlank())configured.put(key,path);});
+   Map<String,String> p=configuration(role,configured);
    p.put("service_name",availableServiceName(role,agent.getId(),hostServices));
    // Replicas of one logical service use the same group and compacted topics.
    var logical=services.findByClusterId(id).stream().filter(existing->role.equals(existing.getRole())).findFirst();
@@ -84,7 +90,7 @@ public class ExternalDataServiceManager {
    UUID artifact=UUID.fromString(value(input,"artifact_id",""));
    p.put("artifact_id",artifact.toString()); p.put("checksum",artifacts.verifiedChecksum(artifact,role));
    List<ExternalDataService> neighbours=new ArrayList<>(services.findByAgentId(agent.getId())); neighbours.addAll(additions);
-   for(var other:neighbours) if(agent.getId().equals(other.getAgentId())) {
+   for(var other:neighbours) if(agent.getId().equals(other.getAgentId()) && !"DELETED".equalsIgnoreCase(other.getStatus())) {
     var op=read(other.getConfigJson());
     if(p.get("rest_port").equals(op.get("rest_port"))) throw new IllegalArgumentException("REST port conflicts with another service on this host.");
     for(String a:paths(p)) for(String b:paths(op)) if(overlaps(a,b)) throw new IllegalArgumentException("Service directories overlap another service on this host.");
@@ -111,6 +117,26 @@ public class ExternalDataServiceManager {
   throw new IllegalArgumentException("Too many service instances on this host.");
  }
  static boolean overlaps(String a,String b) { return a.equals(b)||a.startsWith(b+"/")||b.startsWith(a+"/"); }
+ Map<String,String> availablePaths(String role,List<ExternalDataService> existing) {
+  List<String> occupied=existing.stream().filter(s->!"DELETED".equalsIgnoreCase(s.getStatus()))
+    .flatMap(s->paths(read(s.getConfigJson())).stream()).toList();
+  String base=role.replace('_','-');
+  for(int index=1;index<=1000;index++) {
+   var candidate=defaultPaths(role,base+(index==1?"":"-"+index));
+   if(paths(candidate).stream().noneMatch(a->occupied.stream().anyMatch(b->overlaps(a,b)))) return candidate;
+  }
+  throw new IllegalArgumentException("No available default service directories; choose custom paths.");
+ }
+ static Map<String,String> defaultPaths(String role,String directory) {
+  String install="/opt/tantor/"+directory;
+  Map<String,String> p=new LinkedHashMap<>();
+  p.put("install_dir",install);
+  p.put("config_dir",install+(role.equals("schema_registry")?"/etc/schema-registry":"/config"));
+  p.put("log_dir","/var/log/tantor/"+directory);
+  p.put("working_dir","/var/lib/tantor/"+directory);
+  if(role.equals("kafka_connect")) p.put("plugin_dir",install+"/plugins");
+  return p;
+ }
  static Map<String,String> configuration(String role,Map<String,Object> in) {
   String kind=role.equals("schema_registry")?"schema-registry":"kafka-connect";
   Map<String,String> p=new LinkedHashMap<>();

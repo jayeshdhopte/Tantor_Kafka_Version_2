@@ -8,6 +8,22 @@ import java.util.*;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 class ExternalMultiInstanceTest {
+ @Test void defaultsArePredictableAndAvoidExistingDirectoriesWithoutMovingThem(){
+  var manager=new ExternalDataServiceManager(null,null,null,null,null,null,new ObjectMapper());
+  assertThat(manager.availablePaths("schema_registry",List.of()))
+    .containsEntry("install_dir","/opt/tantor/schema-registry")
+    .containsEntry("config_dir","/opt/tantor/schema-registry/etc/schema-registry");
+  var existing=new ExternalDataService();existing.setStatus("ACTIVE");
+  existing.setConfigJson("{\"install_dir\":\"/opt/tantor/kafka-connect\",\"log_dir\":\"/var/log/tantor/kafka-connect\"}");
+  var before=existing.getConfigJson();
+  assertThat(manager.availablePaths("kafka_connect",List.of(existing)))
+    .containsEntry("install_dir","/opt/tantor/kafka-connect-2")
+    .containsEntry("plugin_dir","/opt/tantor/kafka-connect-2/plugins")
+    .containsEntry("log_dir","/var/log/tantor/kafka-connect-2");
+  assertThat(existing.getConfigJson()).isEqualTo(before);
+  existing.setStatus("DELETED");
+  assertThat(manager.availablePaths("kafka_connect",List.of(existing))).containsEntry("install_dir","/opt/tantor/kafka-connect");
+ }
  @Test void multipleWorkersShareGroupButHaveDistinctUnitsAndPaths(){
   var clusters=mock(ExternalClusterRepository.class);var agents=mock(DiscoveryAgentRepository.class);var services=mock(ExternalDataServiceRepository.class);var tasks=mock(ExternalServiceTaskRepository.class);var jobs=mock(JobService.class);var artifacts=mock(ExternalServiceArtifacts.class);
   var manager=new ExternalDataServiceManager(clusters,agents,services,tasks,jobs,artifacts,new ObjectMapper());

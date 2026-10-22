@@ -28,9 +28,8 @@ export function AddClusterServicesModal({ cluster, onClose }: { cluster: Cluster
   const dialog = useRef<HTMLDivElement>(null);
   const [selected, setSelected] = useState<Role[]>([]);
   const [view, setView] = useState<'selection' | 'configuration' | 'prechecks'>('selection');
-  const [instanceDirectory] = useState(() => `instance-${Date.now().toString(36)}`);
-  const [schema, setSchema] = useState(() => {const cfg=defaultSchemaRegistryConfig(cluster.mode !== 'EXTERNAL');return cluster.mode !== 'EXTERNAL'?cfg:{...cfg,installDir:`/opt/tantor/schema-registry/${instanceDirectory}`,configDir:`/opt/tantor/schema-registry/${instanceDirectory}/etc/schema-registry`,logDir:`/var/log/tantor/schema-registry/${instanceDirectory}`,workingDir:`/var/lib/tantor/schema-registry/${instanceDirectory}`}});
-  const [connect, setConnect] = useState(() => cluster.mode === 'EXTERNAL' ? { ...defaultKafkaConnectConfig(), installDir: `/opt/tantor/kafka-connect/${instanceDirectory}`, configDir: `/opt/tantor/kafka-connect/${instanceDirectory}/config`, pluginDir: `/opt/tantor/kafka-connect/${instanceDirectory}/plugins`, logDir: `/var/log/tantor/kafka-connect/${instanceDirectory}`, workingDir: `/var/lib/tantor/kafka-connect/${instanceDirectory}` } : defaultKafkaConnectConfig());
+  const [schema, setSchema] = useState(() => defaultSchemaRegistryConfig(cluster.mode !== 'EXTERNAL'));
+  const [connect, setConnect] = useState(() => defaultKafkaConnectConfig());
   const [hostIds, setHostIds] = useState<Record<Role, string[]>>({ schema_registry: [], kafka_connect: [] });
   const [hosts, setHosts] = useState<Host[]>([]);
   const [artifacts, setArtifacts] = useState<ServiceArtifact[]>([]);
@@ -59,6 +58,16 @@ export function AddClusterServicesModal({ cluster, onClose }: { cluster: Cluster
       if (!external) setDetails(details as ClusterDetails);
       setWarning(details.deploymentWarning || '');
       setServiceStates(details.services || []);
+      if (external) {
+        const schemaPaths = details.pathDefaults?.schema_registry;
+        const connectPaths = details.pathDefaults?.kafka_connect;
+        if (!schemaPaths || !connectPaths) throw new Error('Could not load default service directories. Close and reopen to retry.');
+        setSchema(current => ({ ...current, installDir: schemaPaths.install_dir, configDir: schemaPaths.config_dir,
+          logDir: schemaPaths.log_dir, workingDir: schemaPaths.working_dir }));
+        setConnect(current => ({ ...current, installDir: connectPaths.install_dir, configDir: connectPaths.config_dir,
+          logDir: connectPaths.log_dir, workingDir: connectPaths.working_dir, pluginDir: connectPaths.plugin_dir }));
+      }
+
       const inventory: Host[] = details.hosts || cluster.hosts || [];
       setAgentIssues(external ? inventory.filter(host => !host.canDeployServices).map(host => `${host.hostname || host.hostId}: ${host.reason || 'Service deployment is unavailable.'}`) : []);
       const eligible = inventory.filter(host => host.hostId && (!external || host.canDeployServices) && (!host.role || !['schema_registry', 'kafka_connect'].includes(host.role)));
