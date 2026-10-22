@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.translab.tantor.server.domain.*;
 import io.translab.tantor.server.repository.*;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 import java.util.*;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -39,5 +40,30 @@ class ConfigRecoveryCheckpointTest {
         var step=step();
         assertThatThrownBy(()->service.queueConfigMutation(step.getId(),false,UUID::randomUUID)).hasMessageContaining("checkpoint is missing");
         verify(steps,never()).save(step);
+    }
+    @Test void externalForwardAndRollbackTasksBindOnlyToExternalForeignKeyBeforeFlush() {
+        var step=step();var external=mock(ExternalKafkaManagement.class);
+        ReflectionTestUtils.setField(service,"externalKafka",external);
+        UUID forward=UUID.randomUUID(),rollback=UUID.randomUUID();
+        when(external.task(forward)).thenReturn(true);when(external.task(rollback)).thenReturn(true);
+        service.checkpointConfigChange(step.getId(),Map.of("file",Map.of("num.io.threads","8")));
+        doAnswer(invocation->{
+            JobStep saved=invocation.getArgument(0);
+            assertThat(ReflectionTestUtils.getField(saved,"agentTaskId")).as("internal FK must never contain an external task").isNull();
+            assertThat(saved.getExternalKafkaTaskId()).isIn(forward,rollback);
+            return saved;
+        }).when(steps).saveAndFlush(step);
+        service.queueConfigMutation(step.getId(),false,()->forward);
+        assertThat(step.getExternalKafkaTaskId()).isEqualTo(forward);
+        service.queueConfigMutation(step.getId(),true,()->rollback);
+        assertThat(step.getExternalKafkaTaskId()).isEqualTo(rollback);
+    }
+    @Test void internalMutationClearsAnyOldExternalBindingBeforeFlush() {
+        var step=step();step.setExternalKafkaTaskId(UUID.randomUUID());
+        service.checkpointConfigChange(step.getId(),Map.of("file",Map.of("num.io.threads","8")));
+        UUID task=UUID.randomUUID();
+        service.queueConfigMutation(step.getId(),false,()->task);
+        assertThat(step.getAgentTaskId()).isEqualTo(task);
+        assertThat(step.getExternalKafkaTaskId()).isNull();
     }
 }

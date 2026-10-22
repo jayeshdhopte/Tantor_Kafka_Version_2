@@ -192,8 +192,18 @@ public class JobService {
     @Transactional
     public void attachAgentTask(UUID stepId, UUID taskId) {
         JobStep step = getStep(stepId);
-        if(externalKafka != null && externalKafka.task(taskId)) { step.setAgentTaskId(null); step.setExternalKafkaTaskId(taskId); } else {step.setExternalKafkaTaskId(null);step.setAgentTaskId(taskId);}
+        bindKafkaTask(step, taskId);
         jobStepRepository.save(step);
+    }
+
+    private void bindKafkaTask(JobStep step, UUID taskId) {
+        if (externalKafka != null && externalKafka.task(taskId)) {
+            step.setAgentTaskId(null);
+            step.setExternalKafkaTaskId(taskId);
+        } else {
+            step.setExternalKafkaTaskId(null);
+            step.setAgentTaskId(taskId);
+        }
     }
 
     @Transactional
@@ -235,9 +245,8 @@ public class JobService {
         UUID task = enqueue.get(); // Task and its job binding commit together.
         payload.put(rollback ? "recoveryTaskId" : "configMutationTaskId", task.toString());
         if (!rollback) payload.put("configMutationStarted", true);
+        bindKafkaTask(step, task);
         saveConfigPayload(step, payload);
-        step.setAgentTaskId(task);
-        jobStepRepository.save(step);
         return task;
     }
 
