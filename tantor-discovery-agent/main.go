@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
+	"io.translab/tantor-agent/pkg/logrotation"
 	"log/slog"
 	"net/url"
 	"os"
@@ -12,10 +14,13 @@ import (
 	"time"
 )
 
-var buildVersion = "3.4.0-dataservices.2-configchange.9-rollingrestart.4"
+var buildVersion = "3.4.0-dataservices.2-configchange.9-rollingrestart.4-logging.1"
 var buildCommit = "unknown"
 
 func newLogger(level string) *slog.Logger {
+	return newLoggerOutput(level, os.Stdout)
+}
+func newLoggerOutput(level string, output io.Writer) *slog.Logger {
 	var slogLevel slog.Level
 	switch strings.ToLower(level) {
 	case "debug":
@@ -27,10 +32,17 @@ func newLogger(level string) *slog.Logger {
 	default:
 		slogLevel = slog.LevelInfo
 	}
-	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slogLevel}))
+	return slog.New(slog.NewJSONHandler(output, &slog.HandlerOptions{Level: slogLevel}))
 }
 
 func main() {
+	if handled, err := logrotation.PruneCommand(os.Args[1:], env("TANTOR_AGENT_LOG_DIR", "/var/log/tantor/discovery-agent"), "tantor-discovery-agent.log"); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	for _, arg := range os.Args[1:] {
 		if arg == "--version" || arg == "-version" {
 			fmt.Printf("tantor-discovery-agent %s commit=%s\n", buildVersion, buildCommit)
@@ -52,7 +64,13 @@ func main() {
 		return
 	}
 
-	logger := newLogger(cfg.LogLevel)
+	logFile, err := logrotation.New(cfg.LogDir, "tantor-discovery-agent.log")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "agent log initialization:", err)
+		os.Exit(2)
+	}
+	defer logFile.Close()
+	logger := newLoggerOutput(cfg.LogLevel, logFile)
 	if cfg.EnableServiceDeployment && os.Geteuid() != 0 {
 		logger.Error("service deployment requires a root-run Discovery agent; monitoring-only use remains supported")
 		os.Exit(2)
@@ -75,6 +93,10 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	logFile.Start(ctx)
+	if err := logrotation.InstallRetention(ctx, cfg.LogDir, "tantor-discovery-agent.log", "tantor-discovery-agent"); err != nil {
+		logger.Warn("Log retention timer installation failed; in-process rotation remains active", "error", err)
+	}
 	store := &ClusterStore{}
 
 	logger.Info("Tantor discovery agent starting",

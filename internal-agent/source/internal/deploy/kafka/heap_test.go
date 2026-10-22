@@ -32,6 +32,7 @@ func TestServiceTemplatesUseSeparateHeapBounds(t *testing.T) {
 	props := struct {
 		User, Group, JavaHome, InstallDir, HeapXms, HeapXmx         string
 		JmxAgentPath, JmxPort, JmxConfigPath, AppLogDir, ConfigPath string
+		LoggingOptions                                              string
 	}{HeapXms: "4G", HeapXmx: "6G"}
 	for _, source := range []string{SystemdTemplate, ZooKeeperSystemdTemplate} {
 		var output bytes.Buffer

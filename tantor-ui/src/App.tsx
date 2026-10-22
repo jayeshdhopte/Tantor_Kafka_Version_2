@@ -21,7 +21,6 @@ const Topics = React.lazy(() => import('./pages/Topics').then(m => ({ default: m
 const TopicDetails = React.lazy(() => import('./pages/TopicDetails').then(m => ({ default: m.TopicDetails })));
 const TopicEditSettings = React.lazy(() => import('./pages/TopicEditSettings').then(m => ({ default: m.TopicEditSettings })));
 const Consumers = React.lazy(() => import('./pages/Consumers').then(m => ({ default: m.Consumers })));
-const ConfigEditor = React.lazy(() => import('./pages/ConfigEditor').then(m => ({ default: m.ConfigEditor })));
 const ConfigChange = React.lazy(() => import('./pages/ConfigChange').then(m => ({ default: m.ConfigChange })));
 const Partitions = React.lazy(() => import('./pages/Partitions').then(m => ({ default: m.Partitions })));
 const ClusterActions = React.lazy(() => import('./pages/ClusterActions').then(m => ({ default: m.ClusterActions })));
@@ -94,7 +93,7 @@ function App() {
                     <Route path="topics/:topicName" element={<TopicDetails />} />
                     <Route path="topics/:topicName/edit" element={<TopicEditSettings />} />
                     <Route path="consumers" element={<Consumers />} />
-                    <Route path="config" element={<ConfigEditor />} />
+                    <Route path="config" element={<Navigate to="../config-change" replace />} />
                     <Route path="config-change" element={<ConfigChange />} />
                     <Route path="actions" element={<ClusterActions />} />
                     <Route path="logs" element={<DeploymentLogsGuard />} />

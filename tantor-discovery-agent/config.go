@@ -56,6 +56,7 @@ type RuntimeConfig struct {
 	PrecheckJSON            bool
 	Once                    bool
 	LogLevel                string
+	LogDir                  string
 }
 
 func env(key, fallback string) string {
@@ -212,6 +213,7 @@ func LoadRuntimeConfig(args []string) (RuntimeConfig, error) {
 	precheckJSON := fs.Bool("precheck-json", false, "Print precheck JSON and exit")
 	once := fs.Bool("once", false, "Run one discovery cycle and exit")
 	logLevel := fs.String("log-level", env("TANTOR_AGENT_LOG_LEVEL", "info"), "Log level: debug, info, warn, error")
+	logDir := fs.String("log-dir", env("TANTOR_AGENT_LOG_DIR", "/var/log/tantor/discovery-agent"), "Directory for daily compressed agent logs")
 
 	if err := fs.Parse(args); err != nil {
 		return RuntimeConfig{}, err
@@ -258,6 +260,7 @@ func LoadRuntimeConfig(args []string) (RuntimeConfig, error) {
 		PrecheckJSON:            *precheckJSON,
 		Once:                    *once,
 		LogLevel:                strings.ToLower(strings.TrimSpace(*logLevel)),
+		LogDir:                  strings.TrimSpace(*logDir),
 	}
 
 	if cfg.NodeName == "" {

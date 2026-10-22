@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { AgentConnectivityModal } from '../components/AgentConnectivityModal';
 import { runtimeConfig } from '../config/runtimeConfig';
+import { brandedKafkaInstallBase } from '../lib/deploymentPaths';
 import { usePermissions } from '../hooks/usePermissions';
 import './ClusterDeployment.css';
 
@@ -441,7 +442,8 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
   const [clusterConfigMode, setClusterConfigMode] = useState<ConfigMode>('default');
   const [customImportSummary, setCustomImportSummary] = useState('');
   const [deploymentMode, setDeploymentMode] = useState<DeploymentMode>('kraft');
-  const [installDir, setInstallDir] = useState('/opt');
+  const [installDir, setInstallDir] = useState('/opt/tantor');
+  const kafkaInstallBase = brandedKafkaInstallBase(installDir);
   const [dataDir, setDataDir] = useState('/data/kafka');
   const [logDir, setLogDir] = useState('/var/log/kafka');
   const [artifactLoadDir, setArtifactLoadDir] = useState('/srv/tantor-agent/artifacts');
@@ -1192,8 +1194,8 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
       } : undefined,
       config: {
         configuration_mode: clusterConfigMode,
-        kafka_install_dir: installDir.trim(),
-        kafka_install_base_dir: installDir.trim(),
+        kafka_install_dir: kafkaInstallBase,
+        kafka_install_base_dir: kafkaInstallBase,
         kafka_data_dir: dataDir.trim(),
         kafka_app_log_dir: logDir.trim(),
         artifact_load_dir: artifactLoadDir.trim(),
@@ -1489,7 +1491,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
     if (!cfg.artifactId) return;
     const artifact = schemaArtifacts.find(item => item.id === cfg.artifactId);
     const kafkaArtifact = versions.find(item => item.version === kafkaVersion);
-    const kafkaVersionedInstallDir = `${installDir.replace(/\/$/, '')}/kafka_${kafkaArtifact?.scala_version || '2.13'}-${kafkaVersion}`;
+    const kafkaVersionedInstallDir = `${kafkaInstallBase}/kafka_${kafkaArtifact?.scala_version || '2.13'}-${kafkaVersion}`;
     setSchemaChecksByHost(prev => ({ ...prev, [hostId]: { status: 'RUNNING', logOutput: 'Running Schema Registry pre-check...', errorMsg: '' } }));
     try {
       const res = await fetch(`/api/v1/ui/hosts/${hostId}/precheck-schema`, {
@@ -1553,7 +1555,7 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
           heap_size: cfg.heapSize, heap_xms: cfg.heapMin, heap_xmx: cfg.heapSize,
           group_id: cfg.groupId, plugin_dir: cfg.pluginDir,
           kafka_version: kafkaVersion, min_free_disk_mb: 5120,
-          kafka_install_dir: `${installDir.replace(/\/$/, '')}/kafka`,
+          kafka_install_dir: `${kafkaInstallBase}/kafka`,
           bootstrap_servers: plannedBootstrapServers(),
           allow_deferred_kafka: true,
           ...dataServiceSafetyParameters(hostId, 'kafka_connect'),
@@ -2103,7 +2105,8 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
               <div className="cd-grid-2">
                 <label className="cd-field">
                   <span>Install directory</span>
-                  <input value={installDir} onChange={e => setInstallDir(e.target.value)} placeholder="/opt" />
+                  <input value={installDir} onChange={e => setInstallDir(e.target.value)} placeholder="/approved-mount/tantor" />
+                  <small>Kafka installation: {kafkaInstallBase}/kafka. Tantor naming is added beneath your selected mount.</small>
                 </label>
                 <label className="cd-field">
                   <span>Data directory</span>

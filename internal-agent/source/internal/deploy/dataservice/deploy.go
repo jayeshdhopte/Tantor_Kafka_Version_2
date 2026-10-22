@@ -14,6 +14,7 @@ import (
 	"io.translab/tantor-agent/internal/executor"
 	"io.translab/tantor-agent/pkg/api"
 	"io.translab/tantor-agent/pkg/checksum"
+	"io.translab/tantor-agent/pkg/logrotation"
 )
 
 type Downloader interface {
@@ -153,6 +154,9 @@ func Deploy(ctx context.Context, cfg *config.Config, download Downloader, exec e
 	if err = run("chown", append([]string{"-R", "--", s.User + ":" + s.Group}, s.Directories()...)...); err != nil {
 		return logs.String(), err
 	}
+	if err = logrotation.RegisterApplicationRetention(ctx, exec, s.Log, s.ServiceName+".log", "tantor-"+s.ServiceName); err != nil {
+		return logs.String(), err
+	}
 	if err = run("systemctl", "daemon-reload"); err != nil {
 		return logs.String(), err
 	}
@@ -212,6 +216,10 @@ kafkastore.topic=%s
 kafkastore.topic.replication.factor=%d
 schema.registry.group.id=%s
 schema.compatibility.level=%s
+# Basic Schema Registry profile: no encryption/DEK/security extensions.
+resource.extension.class=
+init.resource.extension.class=
+schema.registry.resource.extension.class=
 `, s.Port, s.Host, strings.Join(endpoints, ","), s.SchemaTopic, s.Replication, s.GroupID, s.Compatibility)
 	}
 	loggingPath := s.Config + "/log4j2.xml"
@@ -220,10 +228,7 @@ schema.compatibility.level=%s
 	} else if s.SharedSchema {
 		loggingPath = s.Config + "/tantor-schema-registry-log4j2.xml"
 	}
-	// Journald handles retention; avoid sharing Kafka's log config or JVM options.
-	logging := `<?xml version="1.0" encoding="UTF-8"?>
-<Configuration status="WARN"><Appenders><Console name="Console" target="SYSTEM_OUT"><PatternLayout pattern="%d{ISO8601} %-5p %c - %m%n"/></Console></Appenders><Loggers><Root level="info"><AppenderRef ref="Console"/></Root></Loggers></Configuration>
-`
+	logging := logrotation.Log4j2(s.Log, s.ServiceName+".log")
 	unit := fmt.Sprintf(`[Unit]
 Description=Tantor %s
 Wants=network-online.target
@@ -251,5 +256,8 @@ StandardError=journal
 [Install]
 WantedBy=multi-user.target
 `, s.Kind, s.User, s.Group, javaHome, s.Log, heapVariable, s.HeapMin, s.HeapMax, logVariable, loggingPath, s.Working, s.Install, launcher, s.Config, propertyName)
+	if s.Kind == Schema {
+		unit = strings.Replace(unit, "WorkingDirectory=", "UnsetEnvironment=METADATA_ENCODER_SECRET METADATA_ENCODER_OLD_SECRET\nWorkingDirectory=", 1)
+	}
 	return []ConfigFile{{s.Config + "/" + propertyName, properties}, {loggingPath, logging}, {"/etc/systemd/system/" + s.ServiceName + ".service", unit}}
 }

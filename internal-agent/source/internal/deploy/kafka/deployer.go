@@ -23,6 +23,7 @@ import (
 	"io.translab/tantor-agent/internal/taskvalidate"
 	"io.translab/tantor-agent/pkg/api"
 	"io.translab/tantor-agent/pkg/checksum"
+	"io.translab/tantor-agent/pkg/logrotation"
 )
 
 type Deployer struct {
@@ -2190,17 +2191,18 @@ func (d *Deployer) createSystemdService(ctx context.Context, user, installDir st
 	}
 
 	props := struct {
-		User          string
-		Group         string
-		JavaHome      string
-		InstallDir    string
-		HeapXms       string
-		HeapXmx       string
-		JmxPort       string
-		JmxAgentPath  string
-		JmxConfigPath string
-		AppLogDir     string
-		ConfigPath    string
+		User           string
+		Group          string
+		JavaHome       string
+		InstallDir     string
+		HeapXms        string
+		HeapXmx        string
+		JmxPort        string
+		JmxAgentPath   string
+		JmxConfigPath  string
+		AppLogDir      string
+		LoggingOptions string
+		ConfigPath     string
 	}{
 		User:          user,
 		Group:         user,
@@ -2213,6 +2215,36 @@ func (d *Deployer) createSystemdService(ctx context.Context, user, installDir st
 		JmxConfigPath: jmxConfigPath,
 		AppLogDir:     paths.AppLogDir,
 		ConfigPath:    configPathForTask(installDir, t),
+	}
+	// Kafka 4 distributions use Log4j2. Keep legacy Log4j1 distributions on
+	// their original configuration rather than passing incompatible JVM options.
+	major, _ := strconv.Atoi(strings.Split(strings.TrimPrefix(firstNonBlank(t.Parameters["version"], t.Parameters["target_version"]), "v"), ".")[0])
+	if serviceName != "zookeeper" && major >= 4 && paths.AppLogDir != "" {
+		loggingPath := filepath.Join(installDir, "config", "tantor-"+serviceName+"-log4j2.xml")
+		body := logrotation.Log4j2(paths.AppLogDir, serviceName+".log")
+		tmp, err := os.CreateTemp("", "tantor-kafka-log4j2-")
+		if err != nil {
+			return err
+		}
+		_, err = tmp.WriteString(body)
+		closeErr := tmp.Close()
+		if err == nil {
+			err = closeErr
+		}
+		if err == nil {
+			_, detail, e := d.exec.RunSudo(ctx, "install", "-m", "0644", "--", tmp.Name(), loggingPath)
+			if e != nil {
+				err = fmt.Errorf("install Kafka log policy: %w: %s", e, detail)
+			}
+		}
+		os.Remove(tmp.Name())
+		if err != nil {
+			return err
+		}
+		props.LoggingOptions = "-Dlog4j2.configurationFile=" + loggingPath + " -Dkafka.logs.dir=" + paths.AppLogDir
+		if err = logrotation.RegisterApplicationRetention(ctx, d.exec, paths.AppLogDir, serviceName+".log", "tantor-kafka-"+serviceName); err != nil {
+			return err
+		}
 	}
 
 	serviceTemplate := SystemdTemplate

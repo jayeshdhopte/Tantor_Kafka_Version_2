@@ -14,6 +14,7 @@ Environment="JAVA_HOME={{.JavaHome}}"
 Environment="KAFKA_HEAP_OPTS=-Xmx{{.HeapXmx}} -Xms{{.HeapXms}}"
 {{if .JmxAgentPath}}Environment="KAFKA_OPTS=-javaagent:{{.JmxAgentPath}}={{.JmxPort}}:{{.JmxConfigPath}}"{{end}}
 {{if .AppLogDir}}Environment="LOG_DIR={{.AppLogDir}}"{{end}}
+{{if .LoggingOptions}}Environment="KAFKA_LOG4J_OPTS={{.LoggingOptions}}"{{end}}
 ExecStart={{.InstallDir}}/bin/kafka-server-start.sh {{.ConfigPath}}
 Restart=on-failure
 RestartSec=15

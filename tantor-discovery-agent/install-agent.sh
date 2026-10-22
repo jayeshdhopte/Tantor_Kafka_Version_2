@@ -1326,6 +1326,10 @@ install -o root -g root -m 0755 "$BINARY_SOURCE" "$INSTALL_DIR/tantor-discovery-
 # by the runtime user, while the existing regular log file remains appendable by
 # that user. Refuse symlinks and non-regular files before changing ownership.
 install -d -o root -g "$RUN_GROUP" -m 0750 "$LOG_DIR"
+if [[ -L "$LOG_DIR/archive" || ( -e "$LOG_DIR/archive" && ! -d "$LOG_DIR/archive" ) ]]; then
+  die "Refusing unsafe agent log archive directory."
+fi
+install -d -o "$RUN_USER" -g "$RUN_GROUP" -m 0750 "$LOG_DIR/archive"
 if [[ -L "$LOG_FILE" || ( -e "$LOG_FILE" && ! -f "$LOG_FILE" ) ]]; then
   die "Refusing unsafe agent log path: $LOG_FILE must be a regular file."
 fi
@@ -1440,6 +1444,7 @@ trap 'rm -f "${ENV_FILE_TMP:-}"' EXIT
   echo "TANTOR_AGENT_ALLOWED_SERVICES=$(escape_env "$ALLOWED_SERVICES")"
   echo "TANTOR_AGENT_RUN_PRECHECK=$(escape_env "$RUN_PRECHECK")"
   echo "TANTOR_AGENT_LOG_LEVEL=$(escape_env "$LOG_LEVEL")"
+  echo "TANTOR_AGENT_LOG_DIR=$(escape_env "$LOG_DIR")"
 } > "$ENV_FILE_TMP"
 
 chown root:"$RUN_GROUP" "$ENV_FILE_TMP"
@@ -1558,7 +1563,26 @@ fi
 # -----------------------------------------------------------------------------
 # Activate service.
 # -----------------------------------------------------------------------------
+cat > /etc/systemd/system/tantor-discovery-agent-log-retention.service <<EOF
+[Unit]
+Description=Tantor discovery agent log archive retention
+[Service]
+Type=oneshot
+User=$RUN_USER
+Group=$RUN_GROUP
+ExecStart="$INSTALL_DIR/tantor-discovery-agent" --prune-logs --log-dir="$LOG_DIR"
+EOF
+cat > /etc/systemd/system/tantor-discovery-agent-log-retention.timer <<'EOF'
+[Unit]
+Description=Prune Tantor discovery agent archives older than seven days
+[Timer]
+OnCalendar=hourly
+Persistent=true
+[Install]
+WantedBy=timers.target
+EOF
 systemctl daemon-reload
+systemctl enable --now tantor-discovery-agent-log-retention.timer
 systemctl enable "$SERVICE_NAME.service" >/dev/null
 # Stop the previous process before taking the server-time baseline. Otherwise
 # an old agent report could make an upgrade appear validated before this build runs.

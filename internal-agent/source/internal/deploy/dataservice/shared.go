@@ -3,6 +3,7 @@ package dataservice
 import (
 	"context"
 	"fmt"
+	"io.translab/tantor-agent/pkg/logrotation"
 	"net"
 	"os"
 	"path/filepath"
@@ -153,6 +154,12 @@ func deploySharedDataService(ctx context.Context, exec executor.Executor, s Sett
 	if err != nil {
 		return logs, fmt.Errorf("read existing data-service properties: %w: %s", err, detail)
 	}
+	if s.Kind == Schema {
+		current, err = basicSchemaProperties(current)
+		if err != nil {
+			return logs, err
+		}
+	}
 	files[0].Content, err = mergeConnectProperties(current, files[0].Content)
 	if err != nil {
 		return logs, err
@@ -211,6 +218,9 @@ func deploySharedDataService(ctx context.Context, exec executor.Executor, s Sett
 		if e != nil {
 			return logs, fmt.Errorf("write %s: %w: %s", file.Path, e, detail)
 		}
+	}
+	if err = logrotation.RegisterApplicationRetention(ctx, exec, s.Log, s.ServiceName+".log", "tantor-"+s.ServiceName); err != nil {
+		return logs, err
 	}
 	for _, action := range []string{"daemon-reload", "enable", "start"} {
 		args := []string{action}

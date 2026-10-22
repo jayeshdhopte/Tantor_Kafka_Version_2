@@ -17,15 +17,23 @@ import (
 	"io.translab/tantor-agent/internal/executor"
 	"io.translab/tantor-agent/internal/task"
 	"io.translab/tantor-agent/pkg/logger"
+	"io.translab/tantor-agent/pkg/logrotation"
 )
 
 var (
-	version   = "1.0.0-prod.16-reporting.9-dataservices.4-configchange.9-rollingrestart.1"
+	version   = "1.0.0-prod.16-reporting.9-dataservices.4-configchange.9-rollingrestart.1-logging.1"
 	commit    = "development"
 	buildDate = "unknown"
 )
 
 func main() {
+	if handled, err := logrotation.PruneCommand(os.Args[1:], "/var/log/tantor-agent", "agent.log"); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	configPath := flag.String("config", "/etc/tantor-agent/agent.yaml", "Path to agent configuration file")
 	showVersion := flag.Bool("version", false, "Print version and exit")
 	checkConfig := flag.Bool("check-config", false, "Validate configuration and exit")
@@ -47,7 +55,13 @@ func main() {
 		return
 	}
 
-	logger.InitLogger(cfg.Agent.LogLevel)
+	logFile, err := logrotation.New(cfg.Paths.LogDir, "agent.log")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "agent log initialization:", err)
+		os.Exit(1)
+	}
+	defer logFile.Close()
+	logger.InitLoggerOutput(cfg.Agent.LogLevel, logFile)
 	slog.Info("Starting Tantor Agent",
 		"version", version,
 		"commit", commit,
@@ -74,6 +88,10 @@ func main() {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+	logFile.Start(ctx)
+	if err := logrotation.InstallRetention(ctx, cfg.Paths.LogDir, "agent.log", "tantor-agent"); err != nil {
+		slog.Warn("Log retention timer installation failed; in-process rotation remains active", "error", err)
+	}
 	configbackup.Start(ctx)
 	taskEngine.Start(ctx)
 	slog.Info("Tantor Agent stopped cleanly")

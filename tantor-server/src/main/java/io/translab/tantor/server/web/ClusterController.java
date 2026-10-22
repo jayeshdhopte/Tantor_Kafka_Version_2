@@ -2046,7 +2046,10 @@ public class ClusterController {
 
         config.put("mode", deploymentMode);
         config.put("version", request.getKafka_version());
-        config.putIfAbsent("kafka_install_dir", "/opt");
+        String installBase = io.translab.tantor.server.service.DeploymentInstallPaths.brandedKafkaBase(
+                config.getOrDefault("kafka_install_base_dir", config.get("kafka_install_dir")));
+        config.put("kafka_install_base_dir", installBase);
+        config.put("kafka_install_dir", installBase);
         int listenerPort = requiredPort(config.get("listener_port"), "listener_port");
         config.put("listener_port", listenerPort);
         config.put("bootstrap_servers", buildBootstrapServers(request.getServices(), listenerPort));
