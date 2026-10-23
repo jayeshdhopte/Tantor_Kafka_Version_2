@@ -11,6 +11,14 @@ import java.util.UUID;
 @Repository
 public interface DataServiceConnectionRepository extends JpaRepository<DataServiceConnection, UUID> {
 
+    /** Serialize writers even when the scope has no connections yet. Held until transaction end. */
+    @org.springframework.data.jpa.repository.Query(value = """
+            select true from pg_advisory_xact_lock(
+                hashtextextended(cast(:clusterId as text) || ':' || :serviceType, 0))
+            """, nativeQuery = true)
+    Boolean lockConnectionScope(@org.springframework.data.repository.query.Param("clusterId") UUID clusterId,
+            @org.springframework.data.repository.query.Param("serviceType") String serviceType);
+
     /**
      * Lookup a specific named active connection for a cluster+service.
      */

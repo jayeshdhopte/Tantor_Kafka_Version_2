@@ -542,19 +542,24 @@ public class HostController {
         }
 
         if (hasExternalCluster) {
-            summary.put("available", false);
-            summary.put("status", "OCCUPIED_EXTERNAL");
             summary.put("clusterName", extClusterName);
             if (extClusterId != null) {
                 summary.put("clusterId", extClusterId.toString());
             }
+        }
+        if ("REMOVED".equalsIgnoreCase(effectiveStatus)) {
+            summary.put("available", false);
+            summary.put("status", "REMOVED");
         } else if ("PENDING".equalsIgnoreCase(effectiveStatus)) {
             // Host is awaiting approval — keep it in the modal, not the main table
             summary.put("available", false);
             summary.put("status", "PENDING");
-        } else if ("OFFLINE".equalsIgnoreCase(effectiveStatus) || "REMOVED".equalsIgnoreCase(effectiveStatus)) {
+        } else if (!"ONLINE".equalsIgnoreCase(agentConnectivityStatus)) {
             summary.put("available", false);
-            summary.put("status", effectiveStatus);
+            summary.put("status", "OFFLINE");
+        } else if (hasExternalCluster) {
+            summary.put("available", false);
+            summary.put("status", "OCCUPIED_EXTERNAL");
         } else if (activeCluster.isPresent() || "OCCUPIED".equalsIgnoreCase(effectiveStatus)) {
             summary.put("available", false);
             summary.put("status", "OCCUPIED_INTERNAL");

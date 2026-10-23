@@ -4,6 +4,7 @@ import org.springframework.data.jpa.repository.*;
 import jakarta.persistence.LockModeType;
 import java.util.*;
 public interface ExternalServiceTaskRepository extends JpaRepository<ExternalServiceTask, UUID> {
+ boolean existsByServiceIdAndCommandAndStatus(UUID serviceId,String command,String status);
  @Lock(LockModeType.PESSIMISTIC_WRITE)
  Optional<ExternalServiceTask> findFirstByAgentIdAndStatusInOrderByCreatedAtAsc(String agentId,Collection<String> statuses);
  @Lock(LockModeType.PESSIMISTIC_WRITE)

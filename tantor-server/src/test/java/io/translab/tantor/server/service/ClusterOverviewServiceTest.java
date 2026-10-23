@@ -55,7 +55,9 @@ class ClusterOverviewServiceTest {
                 externalClusterRepository,
                 hostRepository,
                 kafkaAdminService,
-                hostStatusService
+                hostStatusService, org.mockito.Mockito.mock(io.translab.tantor.server.repository.ExternalDataServiceRepository.class),
+                org.mockito.Mockito.mock(io.translab.tantor.server.repository.DiscoveryAgentRepository.class),
+                org.mockito.Mockito.mock(io.translab.tantor.server.repository.ExternalServiceTaskRepository.class)
         );
     }
 

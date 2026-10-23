@@ -488,6 +488,7 @@ public class ClusterController {
 
             io.translab.tantor.server.dto.ClusterOverviewDto dto = io.translab.tantor.server.dto.ClusterOverviewDto.builder()
                     .clusterId(extCluster.getId())
+                    .dataServicePaths(clusterOverviewService.externalDataServicePaths(id))
                     .kafkaClusterId(extCluster.getKafkaClusterId())
                     .name(extCluster.getName())
                     .kafkaVersion(displayVersion)

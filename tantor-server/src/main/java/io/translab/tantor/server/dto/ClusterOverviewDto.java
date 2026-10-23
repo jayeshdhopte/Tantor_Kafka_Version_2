@@ -35,6 +35,11 @@ public class ClusterOverviewDto {
 
     @Data @Builder @NoArgsConstructor @AllArgsConstructor
     public static class DataServicePathRow {
+        private String instanceId;
+        private String serviceName;
+        private String deploymentStatus;
+        private String pathSource;
+        private String agentStatus;
         private String serviceType;
         private String hostId;
         private String hostname;

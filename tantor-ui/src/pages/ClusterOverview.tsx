@@ -59,6 +59,7 @@ interface NodePathRow {
 }
 
 interface DataServicePathRow {
+  instanceId?: string; serviceName?: string; deploymentStatus?: string; pathSource?: string; agentStatus?: string;
   serviceType: string; hostId: string; hostname: string | null; ipAddress: string | null;
   installDir: string | null; configFile: string | null; pluginDir: string | null; workingDir: string | null; logDir: string | null;
 }
@@ -184,7 +185,7 @@ export function ClusterOverview() {
               <div className="overview-label">Cluster type</div>
               <div className="overview-value">{overview.originType || '-'}</div>
             </div>
-            {overview.originType !== 'EXTERNAL' && (
+            {(
               <>
                 <div className="overview-item">
                   <div className="overview-label">Install directory</div>
@@ -402,10 +403,11 @@ export function ClusterOverview() {
 
       {!!overview.dataServicePaths?.length && <section className="overview-section">
         <div className="overview-card"><div className="section-header-row"><h2>Service installation directories</h2></div>
-          <div className="overview-service-paths">{overview.dataServicePaths.map(service => <article className="overview-service-path-card" key={`${service.serviceType}-${service.hostId}`}>
-            <h3>{service.serviceType === 'SCHEMA_REGISTRY' ? 'Schema Registry' : 'Kafka Connect'}</h3>
+          <div className="overview-service-paths">{overview.dataServicePaths.map(service => <article className="overview-service-path-card" key={service.instanceId || `${service.serviceType}-${service.hostId}-${service.configFile}`}>
+            <h3>{service.serviceType === 'SCHEMA_REGISTRY' ? 'Schema Registry' : 'Kafka Connect'}{service.serviceName ? ` · ${service.serviceName}` : ''}</h3>
             <p>{service.hostname || service.hostId} · {service.ipAddress || 'IP not reported'}</p>
-            <dl><div><dt>Install directory</dt><dd><code>{service.installDir || 'Not reported'}</code></dd></div></dl>
+            {service.pathSource === 'DEPLOYMENT_CONFIGURATION' && <p>Saved deployment paths · Agent {service.agentStatus?.toLowerCase() || 'unknown'}</p>}
+            <dl>{[['Install directory', service.installDir], ['Configuration file', service.configFile], ['Working directory', service.workingDir], ['Log directory', service.logDir], ...(service.serviceType === 'KAFKA_CONNECT' ? [['Plugin directory', service.pluginDir]] : [])].map(([label, value]) => <div key={label}><dt>{label}</dt><dd><code>{value || 'Not reported'}</code></dd></div>)}</dl>
           </article>)}</div>
         </div>
       </section>}

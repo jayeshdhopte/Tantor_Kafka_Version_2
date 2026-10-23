@@ -24,7 +24,7 @@ class ExternalServiceSaveAddressTest {
   var agent=new DiscoveryAgent();when(manager.requireAgent(cluster,"agent")).thenReturn(agent);when(manager.serviceHost(agent)).thenReturn("192.168.3.174");
   when(connections.saveConnection(eq(cluster),eq("SCHEMA_REGISTRY"),any(),eq("operator"))).thenReturn(ConnectionResponse.builder().status("ONLINE").build());
   handler.execute(job);
-  verify(connections).saveConnection(eq(cluster),eq("SCHEMA_REGISTRY"),argThat(r->"192.168.3.174".equals(r.getHost())&&r.getPort()==8088&&"Deployed schema_registry on node174.translab.io:8088".equals(r.getConnectionName())),eq("operator"));
+  verify(connections).saveConnection(eq(cluster),eq("SCHEMA_REGISTRY"),argThat(r->r.getIsDefault()==null&&"192.168.3.174".equals(r.getHost())&&r.getPort()==8088&&"Deployed schema_registry on node174.translab.io:8088".equals(r.getConnectionName())),eq("operator"));
   verify(jobs).completeStep(eq(step.getId()),anyString());
   verify(manager,never()).enqueue(any(),anyString());
  }

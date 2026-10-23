@@ -40,6 +40,14 @@ class HostControllerAgentInventoryTest {
                 .containsEntry("agentVersion", "1.0.0-prod.16")
                 .containsEntry("agentPath", "/opt/tantor-agent/bin/tantor-agent")
                 .containsEntry("status", "OCCUPIED_EXTERNAL").containsEntry("available", false);
+        host.setStatus("OCCUPIED");
+        host.setLastHeartbeat(OffsetDateTime.now().minusMinutes(5));
+        var offline = controller.getAllHosts().getBody().getFirst();
+        assertThat(offline).containsEntry("status", "OFFLINE").containsEntry("agentStatus", "OFFLINE")
+                .containsEntry("available", false).containsEntry("clusterId", node.getClusterId().toString());
+        // Even an occupied internal cluster cannot turn a stale internal agent into an available host.
+        when(nodes.findAll()).thenReturn(List.of());
+        assertThat(controller.getAllHosts().getBody().getFirst()).containsEntry("status", "OFFLINE");
         verifyNoInteractions(discovery);
     }
 

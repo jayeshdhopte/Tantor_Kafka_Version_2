@@ -239,9 +239,13 @@ class ClusterControllerHostReleaseTest {
         when(discoveryAgentRepository.findByClusterId(clusterId)).thenReturn(List.of(agent));
         when(discoveryAgentRepository.findAll()).thenReturn(List.of(agent));
 
+        var installedService = io.translab.tantor.server.dto.ClusterOverviewDto.DataServicePathRow.builder()
+                .instanceId("installed-schema").serviceType("SCHEMA_REGISTRY").installDir("/client/tantor/schema").build();
+        when(clusterOverviewService.externalDataServicePaths(clusterId)).thenReturn(List.of(installedService));
         var body = controller.getClusterOverview(clusterId).getBody();
 
         assertThat(body).isNotNull();
+        assertThat(body.getDataServicePaths()).containsExactly(installedService);
         assertThat(body.getUptime().getConfiguredControllerCount()).isEqualTo(1);
         assertThat(body.getNodePaths()).hasSize(2);
         assertThat(body.getNodePaths().get(0).isHasTelemetry()).isTrue();

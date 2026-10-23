@@ -117,6 +117,7 @@ public class DataServiceConnectionService {
                 ? req.getConnectionName().trim()
                 : FALLBACK_CONNECTION_NAME;
 
+        repository.lockConnectionScope(clusterId, serviceType);
         // Count existing active rows BEFORE creating new one (for auto-default logic)
         long existingCount = repository.countByClusterIdAndServiceTypeAndIsActiveTrue(clusterId, serviceType);
         boolean isFirstConnection = (existingCount == 0);
@@ -189,14 +190,17 @@ public class DataServiceConnectionService {
 
     @Transactional
     public void deleteConnection(UUID clusterId, String serviceType, UUID connectionId, String callerUsername) {
+        repository.lockConnectionScope(clusterId, serviceType);
         repository.findByIdAndClusterIdAndServiceTypeAndIsActiveTrue(connectionId, clusterId, serviceType)
                 .ifPresent(conn -> {
                     conn.setIsActive(false);
+                    boolean wasDefault = Boolean.TRUE.equals(conn.getIsDefault());
+                    conn.setIsDefault(false);
                     conn.setUpdatedBy(callerUsername != null ? callerUsername : io.translab.tantor.server.security.SecurityUtils.getCurrentUsername());
-                    repository.save(conn);
+                    repository.saveAndFlush(conn);
                     
                     // If the deleted connection was default, optionally elect a new default
-                    if (Boolean.TRUE.equals(conn.getIsDefault())) {
+                    if (wasDefault) {
                         repository.findByClusterIdAndServiceTypeAndIsActiveTrueOrderByConnectionNameAsc(clusterId, serviceType)
                                 .stream()
                                 .findFirst()
@@ -359,6 +363,9 @@ public class DataServiceConnectionService {
                         repository.save(c);
                     }
                 });
+        // Hibernate flushes INSERTs before UPDATEs. Clear the old default in the DB
+        // before a new row (or an existing replacement) becomes default.
+        repository.flush();
     }
 
     private String normalizeCertificateType(String certificateType) {

@@ -42,6 +42,9 @@ public class ClusterOverviewService {
     private final HostRepository hostRepository;
     private final KafkaAdminService kafkaAdminService;
     private final HostStatusService hostStatusService;
+    private final io.translab.tantor.server.repository.ExternalDataServiceRepository externalServices;
+    private final io.translab.tantor.server.repository.DiscoveryAgentRepository discoveryAgents;
+    private final io.translab.tantor.server.repository.ExternalServiceTaskRepository externalServiceTasks;
 
     @Transactional(readOnly = true)
     public ClusterOverviewDto getOverview(UUID clusterId) {
@@ -138,7 +141,7 @@ public class ClusterOverviewService {
                     .logDirectory(logDirectory)
                     .generatedAt(OffsetDateTime.now())
                     .warnings(warnings)
-                    .dataServicePaths(dataServicePaths(internalCluster))
+                    .dataServicePaths(internalCluster == null ? externalDataServicePaths(clusterId) : dataServicePaths(internalCluster))
                     .uptime(ClusterOverviewDto.UptimeSummary.builder()
                             .brokerCount(brokerCount)
                             .activeController(activeControllerId)
@@ -188,6 +191,39 @@ public class ClusterOverviewService {
                     .pluginDir(schema ? null : path(config, "plugin_dir")).workingDir(path(config, "working_dir")).logDir(path(config, "log_dir")).build());
         }
         rows.sort(Comparator.comparing(ClusterOverviewDto.DataServicePathRow::getServiceType).thenComparing(ClusterOverviewDto.DataServicePathRow::getHostId));
+        return rows;
+    }
+
+    /** Paths from actual persisted deployments; never invent defaults for pending installations. */
+    public List<ClusterOverviewDto.DataServicePathRow> externalDataServicePaths(UUID clusterId) {
+        var rows = new ArrayList<ClusterOverviewDto.DataServicePathRow>();
+        for (var service : externalServices.findByClusterId(clusterId)) {
+            boolean schema = "schema_registry".equals(service.getRole());
+            if ((!schema && !"kafka_connect".equals(service.getRole())) || "DELETED".equals(service.getStatus())) continue;
+            boolean installed = Set.of("ONLINE", "SUCCESS", "DEPLOYED").contains(service.getStatus())
+                    || (service.getId() != null && externalServiceTasks.existsByServiceIdAndCommandAndStatus(service.getId(), "INSTALL", "SUCCESS"));
+            if (!installed) continue;
+            Map<String,Object> config;
+            try { config = new com.fasterxml.jackson.databind.ObjectMapper().readValue(service.getConfigJson(), new com.fasterxml.jackson.core.type.TypeReference<>() {}); }
+            catch (Exception ignored) { continue; }
+            var agent = discoveryAgents.findById(service.getAgentId());
+            boolean online = agent.filter(a -> "ONLINE".equalsIgnoreCase(a.getStatus()) && a.getLastHeartbeat() != null
+                    && a.getLastHeartbeat().isAfter(OffsetDateTime.now().minusSeconds(120))).isPresent();
+            String configDir = path(config,"config_dir");
+            rows.add(ClusterOverviewDto.DataServicePathRow.builder()
+                    .instanceId(service.getId() == null ? null : service.getId().toString())
+                    .serviceName(path(config,"service_name")).deploymentStatus(service.getStatus())
+                    .pathSource("DEPLOYMENT_CONFIGURATION").agentStatus(online ? "ONLINE" : "OFFLINE")
+                    .serviceType(schema ? "SCHEMA_REGISTRY" : "KAFKA_CONNECT").hostId(service.getAgentId())
+                    .hostname(agent.map(io.translab.tantor.server.domain.DiscoveryAgent::getHostname).orElse(service.getAgentId()))
+                    .ipAddress(path(config,"host_name")).installDir(path(config,"install_dir"))
+                    .configFile(configDir == null ? null : configDir.replaceAll("/+$", "") + (schema ? "/schema-registry.properties" : "/connect-distributed.properties"))
+                    .pluginDir(schema ? null : path(config,"plugin_dir"))
+                    .workingDir(path(config,"working_dir")).logDir(path(config,"log_dir")).build());
+        }
+        rows.sort(Comparator.comparing(ClusterOverviewDto.DataServicePathRow::getServiceType)
+                .thenComparing(ClusterOverviewDto.DataServicePathRow::getHostId)
+                .thenComparing(row -> java.util.Objects.toString(row.getInstanceId(), "")));
         return rows;
     }
 
