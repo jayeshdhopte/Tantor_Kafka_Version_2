@@ -1,0 +1,16 @@
+{
+  "sourceCommit": "359061e8aa55215084b2a7e24761ada92b2f3a24",
+  "builtAt": "2026-10-23",
+  "features": [
+    "restart-node-identity",
+    "deployment-artifact-cleanup",
+    "kafka-journal-logging"
+  ],
+  "sha256": {
+    "internal-agent/bin/tantor-agent-linux-amd64": "5cf3a970aed570228fd95f1919131bc417ee623bff9d28b0b737edba1b324767",
+    "internal-agent/bin/tantor-agent-linux-arm64": "cc7c4aa6f5edfe69ea662c176e78cca31de5677c2b9881b692f58ba1a2da07fe",
+    "tantor-discovery-agent/tantor-discovery-agent-linux-amd64": "633ad90498b11fec59d05fce8bc22ebc0c2bbf569f77be6c39cfdbd0761802ac",
+    "tantor-discovery-agent/tantor-discovery-agent-linux-arm64": "8db81cf7878a2dfe07374bea2b9d3851aaf3ed29ce6211849909f9bb88bca330",
+    "internal-agent/source-reporting.9.tar.gz": "c3f7f718ed9d94c542179492baab183bbc7095513a1fa3ba78321b4d2af6c528"
+  }
+}
