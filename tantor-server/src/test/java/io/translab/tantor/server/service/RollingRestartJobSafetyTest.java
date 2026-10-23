@@ -93,7 +93,7 @@ class RollingRestartJobSafetyTest {
         var jobs = mock(JobService.class); var deploy = mock(DeploymentService.class); var awaiter = mock(AgentTaskAwaiter.class);
         var clusters = mock(ClusterRepository.class); var hosts = mock(HostRepository.class); var kafka = mock(KafkaAdminService.class);
         var health = mock(RollingRestartHealthService.class); var mapper = new ObjectMapper();
-        var handler = new RollingRestartJobHandler(jobs, deploy, awaiter, clusters, hosts, kafka, health, mapper, new RollingRestartTaskDispatcher(deploy, jobs));
+        var handler = new RollingRestartJobHandler(jobs, deploy, awaiter, clusters, hosts, kafka, health, mapper, new RollingRestartTaskDispatcher(deploy, jobs), mock(RestartNodeDisplayService.class));
         ReflectionTestUtils.setField(handler, "healthTimeoutSeconds", 1L);
         ReflectionTestUtils.setField(handler, "stableSamples", 1);
         Cluster cluster = new Cluster(); cluster.setId(UUID.randomUUID()); cluster.setMode("kraft"); cluster.setStatus("SUCCESS");

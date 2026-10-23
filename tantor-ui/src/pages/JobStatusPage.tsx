@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, RefreshCw, AlertTriangle, Undo2, Check, MoreVertical } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
@@ -105,6 +105,14 @@ export function JobStatusPage() {
   const { canManage } = usePermissions();
   const [job, setJob] = useState<Job | null>(null);
   const [steps, setSteps] = useState<JobStep[]>([]);
+  const stepHosts = useMemo(() => Object.fromEntries(steps.flatMap(step => {
+    try {
+      const payload = typeof step.payload === 'string' ? JSON.parse(step.payload) as Record<string, unknown> : step.payload || {};
+      const target = typeof payload.hostId === 'string' ? payload.hostId : step.targetId;
+      if (!target || typeof payload.hostname !== 'string') return [];
+      return [[target, { name: payload.hostname, ip: typeof payload.ipAddress === 'string' ? payload.ipAddress : '' }]];
+    } catch { return []; }
+  })), [steps]);
   const [hostsById, setHostsById] = useState<Record<string, HostDisplay>>({});
   const [loading, setLoading] = useState(true);
   const [isLogsExpanded, setIsLogsExpanded] = useState(false);
@@ -299,9 +307,9 @@ export function JobStatusPage() {
         className += ' log-error';
       }
       const displayLine = line.replace(
-        new RegExp(UUID_PATTERN, 'gi'),
+        new RegExp(`(?:external:)?${UUID_PATTERN}`, 'gi'),
         targetId => {
-          const host = hostsById[targetId];
+          const host = stepHosts[targetId] || stepHosts[`external:${targetId}`] || hostsById[targetId];
           if (!host) return targetId;
           return host.ip ? `${host.name} (${host.ip})` : host.name;
         }
@@ -313,6 +321,14 @@ export function JobStatusPage() {
   const getStepDisplayName = (step: JobStep): string => {
     const businessName = getBusinessStepName(step.name);
     if (job?.type === 'CLUSTER_DELETION') return businessName;
+    if (job?.type === 'ROLLING_RESTART') {
+      try {
+        const payload = typeof step.payload === 'string' ? JSON.parse(step.payload) as Record<string, unknown> : step.payload || {};
+        if (payload.hostname && payload.nodeId != null) {
+          return `Restart ${String(payload.role || 'Kafka').replaceAll('_', '/')} node ${String(payload.nodeId)} - ${String(payload.hostname)} (${String(payload.ipAddress || 'IP not reported')})`;
+        }
+      } catch { return businessName; }
+    }
     if (job?.type === 'TARGETED_CONFIG_CHANGE') {
       try {
         const payload = typeof step.payload === 'string' ? JSON.parse(step.payload) as Record<string, unknown> : step.payload || {};

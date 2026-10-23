@@ -22,6 +22,7 @@ import (
 	"io.translab/tantor-agent/internal/executor"
 	"io.translab/tantor-agent/internal/taskvalidate"
 	"io.translab/tantor-agent/pkg/api"
+	"io.translab/tantor-agent/pkg/artifactwork"
 	"io.translab/tantor-agent/pkg/checksum"
 	"io.translab/tantor-agent/pkg/logrotation"
 )
@@ -48,15 +49,16 @@ type kafkaInstallPaths struct {
 // deploymentState is the deletion source of truth. Cleanup never guesses
 // paths, ports, or service names from defaults when a recorded deployment exists.
 type deploymentState struct {
-	Cleaned      bool     `json:"cleaned,omitempty"`
-	InstallBase  string   `json:"install_base"`
-	VersionedDir string   `json:"versioned_dir"`
-	ActiveDir    string   `json:"active_dir"`
-	DataDir      string   `json:"data_dir"`
-	Services     []string `json:"services"`
-	Ports        []string `json:"ports"`
-	AppLogDirs   []string `json:"app_log_dirs,omitempty"`
-	StorageDirs  []string `json:"storage_dirs,omitempty"`
+	Cleaned       bool     `json:"cleaned,omitempty"`
+	InstallBase   string   `json:"install_base"`
+	VersionedDir  string   `json:"versioned_dir"`
+	ActiveDir     string   `json:"active_dir"`
+	DataDir       string   `json:"data_dir"`
+	Services      []string `json:"services"`
+	Ports         []string `json:"ports"`
+	AppLogDirs    []string `json:"app_log_dirs,omitempty"`
+	StorageDirs   []string `json:"storage_dirs,omitempty"`
+	ArtifactRoots []string `json:"artifact_roots,omitempty"`
 }
 
 func firstNonEmpty(values ...string) string {
@@ -76,7 +78,7 @@ func NewDeployer(cfg *config.Config, client *client.APIClient, exec executor.Exe
 	}
 }
 
-func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step string, log string)) (string, error) {
+func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step string, log string)) (output string, resultErr error) {
 	var logs strings.Builder
 	if err := validateCommandTaskInputs(t); err != nil {
 		return logs.String(), err
@@ -192,6 +194,17 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 	if err := os.MkdirAll(artifactWorkDir, 0o750); err != nil {
 		return logs.String(), fmt.Errorf("prepare agent artifact work directory %s: %w", artifactWorkDir, err)
 	}
+	artifactRoot := artifactWorkDir
+	workspace, err := artifactwork.New(artifactRoot, artifactwork.Owner{ClusterID: firstNonEmpty(t.Parameters["db_cluster_id"], t.Parameters["cluster_id"]), TaskID: t.TaskID})
+	if err != nil {
+		return logs.String(), err
+	}
+	artifactWorkDir = workspace.Dir()
+	defer func() {
+		if err := workspace.Close(); err != nil {
+			output += "\n[WARN] Deployment artifact staging cleanup failed: " + err.Error()
+		}
+	}()
 	for _, dir := range append(kafkaStorageDirs(paths), paths.AppLogDir) {
 		if dir != "" {
 			if out, errOut, err := d.exec.RunSudo(ctx, "mkdir", "-p", strings.TrimSpace(dir)); err != nil {
@@ -235,7 +248,7 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 	destPath := filepath.Join(artifactWorkDir, fmt.Sprintf("kafka_%s.tgz", t.TaskID))
 	var downloadedChecksum string
 
-	if !shouldSkip("Download package to agent") {
+	if !shouldSkip("Download package to agent") || !shouldSkip("Extract Kafka") {
 		if artifactID != "" {
 			log("GET Kafka artifact %s from configured management server %s", artifactID, d.cfg.Agent.ServerURL)
 			downloadedChecksum, err = d.client.DownloadArtifactByID(artifactID, destPath)
@@ -252,7 +265,7 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 	}
 
 	setStep("Verify checksum")
-	if !shouldSkip("Verify checksum") {
+	if !shouldSkip("Verify checksum") || !shouldSkip("Extract Kafka") {
 		expectedChecksum := firstNonEmpty(
 			t.Checksum,
 			t.Parameters["checksum"],
@@ -274,14 +287,15 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 	}
 
 	if err := d.saveDeploymentState(t, deploymentState{
-		InstallBase:  installPaths.BaseDir,
-		VersionedDir: installPaths.VersionedDir,
-		ActiveDir:    activeInstallDir,
-		DataDir:      dataDir,
-		Services:     deploymentServices(t),
-		Ports:        deploymentPorts(t),
-		AppLogDirs:   []string{paths.AppLogDir},
-		StorageDirs:  kafkaStorageDirs(paths),
+		InstallBase:   installPaths.BaseDir,
+		VersionedDir:  installPaths.VersionedDir,
+		ActiveDir:     activeInstallDir,
+		DataDir:       dataDir,
+		Services:      deploymentServices(t),
+		Ports:         deploymentPorts(t),
+		AppLogDirs:    []string{paths.AppLogDir},
+		StorageDirs:   kafkaStorageDirs(paths),
+		ArtifactRoots: []string{artifactRoot},
 	}); err != nil {
 		return logs.String(), fmt.Errorf("persist deployment state: %w", err)
 	}
@@ -723,6 +737,7 @@ func (d *Deployer) saveDeploymentState(t *api.Task, state deploymentState) error
 		state.Ports = uniqueNonEmpty(append(previous.Ports, state.Ports...))
 		state.AppLogDirs = uniqueNonEmpty(append(previous.AppLogDirs, state.AppLogDirs...))
 		state.StorageDirs = uniqueNonEmpty(append(previous.StorageDirs, state.StorageDirs...))
+		state.ArtifactRoots = uniqueNonEmpty(append(previous.ArtifactRoots, state.ArtifactRoots...))
 	} else if !os.IsNotExist(err) {
 		return err
 	}
@@ -2222,7 +2237,7 @@ func (d *Deployer) createSystemdService(ctx context.Context, user, installDir st
 	major, _ := strconv.Atoi(strings.Split(strings.TrimPrefix(firstNonBlank(t.Parameters["version"], t.Parameters["target_version"]), "v"), ".")[0])
 	if serviceName != "zookeeper" && major >= 4 && paths.AppLogDir != "" {
 		loggingPath := filepath.Join(installDir, "config", "tantor-"+serviceName+"-log4j2.xml")
-		body := logrotation.Log4j2(paths.AppLogDir, serviceName+".log")
+		body := logrotation.KafkaLog4j2(paths.AppLogDir, serviceName+".log")
 		tmp, err := os.CreateTemp("", "tantor-kafka-log4j2-")
 		if err != nil {
 			return err
@@ -2400,10 +2415,21 @@ func (d *Deployer) Clean(ctx context.Context, t *api.Task) (string, error) {
 
 	state, err := d.loadDeploymentState(t)
 	if err != nil {
+		// A crash during download can precede the Kafka deployment-state file.
+		// The backend's saved task references still identify its staging safely.
+		if cleanupErr := d.cleanupDeploymentArtifacts(t, deploymentState{}); cleanupErr != nil {
+			return logs.String(), cleanupErr
+		}
 		return logs.String(), err
 	}
 	if state.Cleaned {
+		if err := d.cleanupDeploymentArtifacts(t, state); err != nil {
+			return logs.String(), err
+		}
 		return "[PASS] Cluster cleanup was already completed; no services or paths were touched.\n", nil
+	}
+	if err := d.cleanupDeploymentArtifacts(t, state); err != nil {
+		return logs.String(), err
 	}
 	services, err := cleanupServices(state.Services, t.Parameters["cleanup_services"])
 	if err != nil {

@@ -12,6 +12,7 @@ import (
 	"io.translab/tantor-agent/internal/executor"
 	"io.translab/tantor-agent/internal/taskvalidate"
 	"io.translab/tantor-agent/pkg/api"
+	"io.translab/tantor-agent/pkg/artifactwork"
 	"io.translab/tantor-agent/pkg/checksum"
 )
 
@@ -27,7 +28,7 @@ func NewDeployer(cfg *config.Config, client *client.APIClient, exec executor.Exe
 	return &Deployer{cfg: cfg, client: client, exec: exec}
 }
 
-func (d *Deployer) Distribute(ctx context.Context, t *api.Task) (string, error) {
+func (d *Deployer) Distribute(ctx context.Context, t *api.Task) (output string, resultErr error) {
 	var logs strings.Builder
 	log := func(msg string, args ...interface{}) {
 		logs.WriteString(fmt.Sprintf(msg, args...) + "\n")
@@ -46,7 +47,16 @@ func (d *Deployer) Distribute(ctx context.Context, t *api.Task) (string, error) 
 		return logs.String(), fmt.Errorf("failed to prepare artifact cache: %w", err)
 	}
 
-	downloadPath := filepath.Join(d.cfg.Paths.ArtifactsDir, fmt.Sprintf("parcel_%s_%s.tgz", meta.ServiceType, meta.Version))
+	workspace, err := artifactwork.New(d.cfg.Paths.ArtifactsDir, artifactwork.Owner{TaskID: t.TaskID})
+	if err != nil {
+		return logs.String(), err
+	}
+	defer func() {
+		if err := workspace.Close(); err != nil {
+			output += "\n[WARN] Parcel transfer staging cleanup failed: " + err.Error()
+		}
+	}()
+	downloadPath := filepath.Join(workspace.Dir(), fmt.Sprintf("parcel_%s_%s.tgz", meta.ServiceType, meta.Version))
 	log("Downloading parcel from %s to %s", t.ArtifactURL, downloadPath)
 	downloadedChecksum, err := d.client.DownloadArtifact(t.ArtifactURL, downloadPath)
 	if err != nil {

@@ -16,6 +16,7 @@ import java.util.UUID;
 public class JobController {
 
     private final JobService jobService;
+    private final io.translab.tantor.server.service.RestartNodeDisplayService restartDisplay;
 
     @GetMapping
     public ResponseEntity<List<Job>> listJobs() {
@@ -39,8 +40,10 @@ public class JobController {
     @GetMapping("/{id}/steps")
     public ResponseEntity<List<JobStep>> getJobSteps(@PathVariable UUID id) {
         try {
-            jobService.getJob(id);
-            return ResponseEntity.ok(jobService.getSteps(id));
+            Job job=jobService.getJob(id);
+            List<JobStep> steps=jobService.getSteps(id);
+            return ResponseEntity.ok(job.getType()==io.translab.tantor.server.domain.JobType.ROLLING_RESTART
+                    ?steps.stream().map(restartDisplay::historyView).toList():steps);
         } catch (Exception e) {
             return ResponseEntity.notFound().build();
         }

@@ -60,6 +60,7 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 
 	// Artifact Download
 	destPath := filepath.Join(artifactDir, fmt.Sprintf("ksqldb_%s.tgz", t.TaskID))
+	defer os.Remove(destPath) // never retain the task's transferred TAR after completion/failure
 	log("Downloading artifact to %s", destPath)
 
 	downloadedChecksum, err := d.client.DownloadArtifact(t.ArtifactURL, destPath)

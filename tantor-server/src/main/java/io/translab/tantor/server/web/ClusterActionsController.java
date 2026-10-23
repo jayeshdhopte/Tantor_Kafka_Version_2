@@ -28,6 +28,7 @@ public class ClusterActionsController {
     private final ObjectMapper objectMapper;
     private final AuditService auditService;
     private final RoleAuthenticationUtil roleAuthenticationUtil;
+    private final io.translab.tantor.server.service.RestartNodeDisplayService restartDisplay;
 
     @GetMapping("/rolling-restart/topology")
     public ResponseEntity<?> restartTopology(@RequestHeader(value = "Authorization", required = false) String authorization,
@@ -39,7 +40,7 @@ public class ClusterActionsController {
             var row=new java.util.LinkedHashMap<String,Object>();
             row.put("key",io.translab.tantor.server.service.RollingRestartPlan.key(service));row.put("hostId",service.getHostId());
             row.put("serviceName",io.translab.tantor.server.service.RollingRestartPlan.unit(service));row.put("role",service.getRole());row.put("nodeId",service.getNodeId()==null?0:service.getNodeId());
-            row.put("hostname",externalKafka != null && externalKafka.target(service.getHostId())?externalKafka.node(service.getHostId()).getHost():service.getHostId());
+            row.putAll(restartDisplay.identity(service.getHostId()));
             if(externalKafka != null && externalKafka.target(service.getHostId())) {try{externalKafka.require(service.getHostId(),false,true);}catch(IllegalStateException reason){row.put("blockedReason",reason.getMessage());}}
             return row;
         }).toList());
@@ -80,9 +81,12 @@ public class ClusterActionsController {
                 JobStep step = new JobStep();
                 step.setStepOrder(steps.size() + 1);
                 step.setTargetId(service.getHostId());
-                step.setName("Restart " + service.getRole() + " node " + service.getNodeId() + " on " + service.getHostId());
-                step.setPayload(objectMapper.writeValueAsString(Map.of("hostId", service.getHostId(), "role", service.getRole(),
-                        "nodeId", service.getNodeId() == null ? 0 : service.getNodeId(), "serviceName", io.translab.tantor.server.service.RollingRestartPlan.unit(service))));
+                var payload=new java.util.LinkedHashMap<String,Object>();
+                payload.put("hostId",service.getHostId());payload.put("role",service.getRole());payload.put("nodeId",service.getNodeId()==null?0:service.getNodeId());
+                payload.put("serviceName",io.translab.tantor.server.service.RollingRestartPlan.unit(service));
+                payload.putAll(restartDisplay.identity(service.getHostId()));
+                step.setName(io.translab.tantor.server.service.RestartNodeDisplayService.stepName(payload));
+                step.setPayload(objectMapper.writeValueAsString(payload));
                 steps.add(step);
             }
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) { throw new IllegalStateException("Unable to save restart plan", e); }

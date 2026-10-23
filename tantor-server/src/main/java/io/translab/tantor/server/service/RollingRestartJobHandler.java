@@ -26,6 +26,7 @@ public class RollingRestartJobHandler implements JobHandler {
     private final RollingRestartHealthService healthService;
     private final ObjectMapper objectMapper;
     private final RollingRestartTaskDispatcher restartDispatcher;
+    private final RestartNodeDisplayService restartDisplay;
     @Value("${tantor.rolling-restart.health-timeout-seconds:300}") private long healthTimeoutSeconds;
     @Value("${tantor.rolling-restart.health-poll-seconds:10}") private long healthPollSeconds;
     @Value("${tantor.rolling-restart.stable-samples:2}") private int stableSamples;
@@ -74,6 +75,9 @@ public class RollingRestartJobHandler implements JobHandler {
             var payload = readMap(step.getPayload());
             String host = String.valueOf(payload.get("hostId"));
             String unit = String.valueOf(payload.getOrDefault("serviceName",RollingRestartPlan.unit(String.valueOf(payload.get("role")))));
+            var identity=restartDisplay.identity(host);
+            identity.forEach((key,value)->{if(Objects.toString(payload.get(key),"").isBlank())payload.put(key,value);});
+            String display=String.valueOf(payload.get("role")).replace('_','/')+" node "+payload.get("nodeId")+" - "+RestartNodeDisplayService.label(payload);
             jobService.startStep(step.getId());
             try {
                 boolean alreadyRestarted = false;
@@ -105,19 +109,19 @@ public class RollingRestartJobHandler implements JobHandler {
                     if (active && !singleOverride && String.valueOf(payload.get("role")).contains("broker"))
                         healthService.assertBrokerCanStop(clusterId, ((Number) payload.get("nodeId")).intValue());
                     jobService.recordRollingRestartBaseline(step.getId(), baselineTask, baseline);
-                    jobService.appendLog(job.getId(), "Restarting " + unit + " on " + host + "; waiting for service and cluster health before continuing.");
+                    jobService.appendLog(job.getId(), "Restarting " + unit + " on " + display + "; waiting for service and cluster health before continuing.");
                     UUID task = restartDispatcher.dispatch(clusterId, host, unit, step.getId());
                     taskAwaiter.await(task);
-                } else jobService.appendLog(job.getId(), "Resuming health verification on " + host + "; no repeated restart.");
+                } else jobService.appendLog(job.getId(), "Resuming health verification on " + display + "; no repeated restart.");
                 Task verified = taskAwaiter.await(deploymentService.verifyKafkaService(clusterId, host, unit));
                 if (!"active".equals(readMap(verified.getLogOutput()).get("state"))) throw new IllegalStateException("Kafka service is not active: " + verified.getLogOutput());
                 jobService.reportRollingRestartPhase(step.getId(), "Service active; verifying cluster health.");
-                jobService.appendLog(job.getId(), "Service active on " + host + "; verifying quorum, replicas, ISR and host health.");
+                jobService.appendLog(job.getId(), "Service active on " + display + "; verifying quorum, replicas, ISR and host health.");
                 waitForHealth(clusterId, brokers, hosts, controllers, singleOverride, job.getId(), step.getId());
                 jobService.completeStep(step.getId(), "Service active; brokers, controller, replicas, ISR, lag and host health verified.");
             } catch (RuntimeException e) {
                 jobService.failStep(step.getId(), e.getMessage());
-                jobService.appendLog(job.getId(), "Stopped at " + host + ". Completed nodes are preserved; use Retry / Resume after resolving the failure.");
+                jobService.appendLog(job.getId(), "Stopped at " + display + ". Completed nodes are preserved; use Retry / Resume after resolving the failure.");
                 throw e;
             }
         }

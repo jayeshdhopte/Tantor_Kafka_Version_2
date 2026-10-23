@@ -619,8 +619,13 @@ public class DeploymentService {
             }
             mergeConfigParams(params, configJsonStr);
             applyDefaultKafkaPaths(params);
+            if (clusterId != null) params.put("db_cluster_id",clusterId.toString());
             params.put("data_services", objectMapper.writeValueAsString(dataServices));
             params.put("cleanup_kafka", Boolean.toString(cleanupKafka));
+            if (cleanupKafka) {
+                params.put("cleanup_artifact_downloads", objectMapper.writeValueAsString(legacyArtifactDownloads(
+                        taskRepository.findByClusterIdAndHostIdAndCommandOrderByCreatedAtDesc(clusterId,hostId,"INSTALL_KAFKA"),objectMapper)));
+            }
             task.setParameters(objectMapper.writeValueAsString(params));
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Failed to serialize cluster cleanup parameters", e);
@@ -628,6 +633,18 @@ public class DeploymentService {
         taskRepository.save(task);
         log.info("Dispatched DELETE_CLUSTER task for host {} in cluster {}", hostId, clusterId);
         return task.getId();
+    }
+
+    static List<Map<String,String>> legacyArtifactDownloads(List<Task> tasks,ObjectMapper mapper) throws JsonProcessingException {
+        List<Map<String,String>> result=new java.util.ArrayList<>();
+        for(Task task:tasks) {
+            if(task.getId()==null || !"INSTALL_KAFKA".equals(task.getCommand())) continue;
+            Map<String,Object> config=task.getParameters()==null||task.getParameters().isBlank()?Map.of():mapper.readValue(task.getParameters(),new com.fasterxml.jackson.core.type.TypeReference<>(){});
+            Object root=config.get("artifact_load_dir");
+            if(root==null || root.toString().isBlank()) root=config.get("artifacts_dir");
+            result.add(Map.of("taskId",task.getId().toString(),"artifactRoot",root==null?"":root.toString()));
+        }
+        return result;
     }
 
     @Transactional

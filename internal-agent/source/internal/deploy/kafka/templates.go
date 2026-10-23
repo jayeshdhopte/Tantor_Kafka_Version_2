@@ -16,6 +16,8 @@ Environment="KAFKA_HEAP_OPTS=-Xmx{{.HeapXmx}} -Xms{{.HeapXms}}"
 {{if .AppLogDir}}Environment="LOG_DIR={{.AppLogDir}}"{{end}}
 {{if .LoggingOptions}}Environment="KAFKA_LOG4J_OPTS={{.LoggingOptions}}"{{end}}
 ExecStart={{.InstallDir}}/bin/kafka-server-start.sh {{.ConfigPath}}
+StandardOutput=journal
+StandardError=journal
 Restart=on-failure
 RestartSec=15
 LimitNOFILE=1024000

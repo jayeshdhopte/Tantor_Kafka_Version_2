@@ -89,6 +89,7 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task) (string, error) {
 
 func (d *Deployer) deployComponent(ctx context.Context, t *api.Task, component, installDir, artifactDir, user string) error {
 	destPath := filepath.Join(artifactDir, fmt.Sprintf("%s_%s.tgz", component, t.TaskID))
+	defer os.Remove(destPath) // transferred TAR is staging; installed runtime is separate
 
 	// We assume artifact URLs are passed as prometheus_url, grafana_url in parameters
 	urlParam := component + "_url"
