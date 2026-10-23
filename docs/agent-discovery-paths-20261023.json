@@ -1,0 +1,8 @@
+{
+  "sourceCommit": "d22e941d3812b1f2473efbb4a05ac88870c897ed",
+  "version": "3.4.0-dataservices.2-configchange.9-rollingrestart.4-logging.1-paths.1",
+  "sha256": {
+    "tantor-discovery-agent-linux-amd64": "dfd51306933eee3516af1097402516e3a5e22b1c35589589ec47a2c845e2cc51",
+    "tantor-discovery-agent-linux-arm64": "ce4e42a70e3876f0886273c4b285198016a7634487706a9c07988c8eeb3f7a0d"
+  }
+}
