@@ -9,6 +9,7 @@ import (
 
 type cleanupExecutor struct {
 	unit     string
+	marker   string
 	commands []string
 	failDir  bool
 }
@@ -27,6 +28,9 @@ func (e *cleanupExecutor) RunSudo(_ context.Context, name string, args ...string
 		return "", "", errors.New("not found")
 	}
 	if name == "cat" {
+		if strings.HasSuffix(args[len(args)-1], "-ownership.json") {
+			return e.marker, "", nil
+		}
 		return e.unit, "", nil
 	}
 	if e.failDir && strings.HasPrefix(command, "rm -rf") {
@@ -66,7 +70,7 @@ func TestCleanupSkipsAbsentUnitAndRejectsForeignUnit(t *testing.T) {
 	if _, err := Clean(context.Background(), absent, Connect, task); err != nil {
 		t.Fatal(err)
 	}
-	if len(absent.commands) != 1 {
+	if len(absent.commands) != 4 || !strings.Contains(absent.commands[2], "tantor-kafka-connect") {
 		t.Fatalf("absent unit caused mutation: %v", absent.commands)
 	}
 	foreign := &cleanupExecutor{unit: "Description=Someone else's service\n"}
@@ -75,6 +79,26 @@ func TestCleanupSkipsAbsentUnitAndRejectsForeignUnit(t *testing.T) {
 	}
 	if strings.Contains(strings.Join(foreign.commands, "\n"), "systemctl stop") {
 		t.Fatalf("foreign service was stopped: %v", foreign.commands)
+	}
+}
+
+func TestCleanupPartialInstallRequiresMatchingLocalOwnership(t *testing.T) {
+	task := taskFor()
+	task.Parameters["install_dir"] = "/opt/tantor/kafka-connect"
+	s, err := Parse(Connect, task)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, marker := range []string{ownershipContent(s), `{"service":"someone-else"}`} {
+		run := &cleanupExecutor{marker: marker}
+		_, err := Clean(context.Background(), run, Connect, task)
+		if (err == nil) != (marker == ownershipContent(s)) {
+			t.Fatal("expected mismatched ownership to fail", err)
+		}
+		removed := strings.Contains(strings.Join(run.commands, "\n"), "rm -rf -- "+s.Install)
+		if removed != (marker == ownershipContent(s)) {
+			t.Fatal("partial install ownership check failed", run.commands)
+		}
 	}
 }
 

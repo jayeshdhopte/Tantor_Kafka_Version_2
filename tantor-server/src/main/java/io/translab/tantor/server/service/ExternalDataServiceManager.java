@@ -55,6 +55,7 @@ public class ExternalDataServiceManager {
  public Map<String,String> create(UUID id,Map<String,?> request,String username) {
   ExternalCluster c=clusters.findForServiceUpdate(id).orElseThrow(()->new ResponseStatusException(HttpStatus.NOT_FOUND));
   requireCluster(id);
+  if (Set.of("DELETING","DELETE_FAILED").contains(Objects.toString(c.getStatus(),""))) throw new IllegalArgumentException("Cluster deletion is pending; finish or retry cleanup before adding services.");
   if(request==null || request.isEmpty() || !ROLES.containsAll(request.keySet())) throw new IllegalArgumentException("Select Schema Registry and/or Kafka Connect.");
   String protocol=Objects.toString(c.getSecurityProtocol(),Objects.toString(c.getSecurity(),"PLAINTEXT"));
   if(!protocol.isBlank()&&!"PLAINTEXT".equalsIgnoreCase(protocol)) throw new IllegalArgumentException("Service deployment supports PLAINTEXT Kafka only; existing security settings will not be changed.");
@@ -186,7 +187,9 @@ public class ExternalDataServiceManager {
  public String json(Object data) { try { return mapper.writeValueAsString(data); } catch(Exception e) { throw new IllegalStateException(e); } }
  @Transactional
  public ExternalServiceTask enqueue(ExternalDataService service,String command) {
-  requireAgent(service.getClusterId(),service.getAgentId());
+  var agent=requireAgent(service.getClusterId(),service.getAgentId());
+  if (!Set.of("PRECHECK","INSTALL","CLEAN").contains(command)) throw new IllegalArgumentException("Unsupported service command.");
+  if ("CLEAN".equals(command) && !agent.getVersion().contains("-cleanup.1")) throw new IllegalArgumentException("Update the external agent to the cleanup release before deleting deployed services.");
   ExternalServiceTask t=new ExternalServiceTask(); t.setServiceId(service.getId()); t.setAgentId(service.getAgentId()); t.setCommand(command); return tasks.saveAndFlush(t);
  }
  @Transactional
@@ -205,7 +208,7 @@ public class ExternalDataServiceManager {
   p.putIfAbsent("host_display_name",p.getOrDefault("host_name",Objects.toString(agent.getHostname(),"")));
   p.put("host_name",serviceHost(agent));
   s.setConfigJson(json(p)); services.save(s);
-  return Map.of("id",t.getId(),"command",t.getCommand(),"kind",s.getRole().equals("schema_registry")?"schema-registry":"kafka-connect","parameters",p,"artifactId",p.get("artifact_id"),"checksum",p.get("checksum"));
+  return Map.of("id",t.getId(),"command",t.getCommand(),"kind",s.getRole().equals("schema_registry")?"schema-registry":"kafka-connect","parameters",p,"artifactId",p.getOrDefault("artifact_id",""),"checksum",p.getOrDefault("checksum",""));
  }
  @Transactional
  public void complete(String agentId,UUID id,Map<String,String> result) {

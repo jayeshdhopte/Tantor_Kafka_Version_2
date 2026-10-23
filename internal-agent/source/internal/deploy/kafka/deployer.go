@@ -48,6 +48,7 @@ type kafkaInstallPaths struct {
 // deploymentState is the deletion source of truth. Cleanup never guesses
 // paths, ports, or service names from defaults when a recorded deployment exists.
 type deploymentState struct {
+	Cleaned      bool     `json:"cleaned,omitempty"`
 	InstallBase  string   `json:"install_base"`
 	VersionedDir string   `json:"versioned_dir"`
 	ActiveDir    string   `json:"active_dir"`
@@ -2401,6 +2402,9 @@ func (d *Deployer) Clean(ctx context.Context, t *api.Task) (string, error) {
 	if err != nil {
 		return logs.String(), err
 	}
+	if state.Cleaned {
+		return "[PASS] Cluster cleanup was already completed; no services or paths were touched.\n", nil
+	}
 	services, err := cleanupServices(state.Services, t.Parameters["cleanup_services"])
 	if err != nil {
 		return logs.String(), err
@@ -2430,6 +2434,18 @@ func (d *Deployer) Clean(ctx context.Context, t *api.Task) (string, error) {
 	}
 
 	log("Starting Kafka cleanup process...")
+	// Application timers outlive the JVM unless explicitly removed. Derive only
+	// exact pairs from recorded role units; never remove host-wide agent timers.
+	for _, service := range services {
+		if strings.HasSuffix(service, "-exporter") {
+			continue
+		}
+		if len(appLogDirs) > 0 {
+			if err := logrotation.RemoveApplicationRetention(ctx, d.exec, appLogDirs[0], service+".log", "tantor-kafka-"+service, appLogDirs[1:]...); err != nil {
+				return logs.String(), err
+			}
+		}
+	}
 
 	// 1. Stop and disable systemd services
 	log("Stopping Kafka systemd services...")
@@ -2450,6 +2466,9 @@ func (d *Deployer) Clean(ctx context.Context, t *api.Task) (string, error) {
 	log("Removing systemd unit files...")
 	for _, service := range services {
 		if err := runRequired("rm", "-f", filepath.Join("/etc/systemd/system", service+".service")); err != nil {
+			return logs.String(), err
+		}
+		if err := runRequired("rm", "-rf", "--", filepath.Join("/etc/systemd/system", service+".service.d")); err != nil {
 			return logs.String(), err
 		}
 	}
@@ -2493,8 +2512,9 @@ func (d *Deployer) Clean(ctx context.Context, t *api.Task) (string, error) {
 			return logs.String(), fmt.Errorf("recorded port %s is still in use after cleanup", port)
 		}
 	}
-	if err := os.Remove(d.statePath(t)); err != nil {
-		return logs.String(), fmt.Errorf("remove deployment-state record: %w", err)
+	state.Cleaned = true
+	if err := d.saveDeploymentState(t, state); err != nil {
+		return logs.String(), fmt.Errorf("save completed cleanup receipt: %w", err)
 	}
 
 	log("Cleanup completed successfully.")

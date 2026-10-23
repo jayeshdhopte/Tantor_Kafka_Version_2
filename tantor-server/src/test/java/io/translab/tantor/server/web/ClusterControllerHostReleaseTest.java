@@ -51,6 +51,7 @@ class ClusterControllerHostReleaseTest {
     @Mock DeploymentService deploymentService;
     @Mock ClusterRepository clusterRepository;
     @Mock ExternalClusterRepository externalClusterRepository;
+    @Mock io.translab.tantor.server.service.ExternalClusterDeletionService externalDeletion;
     @Mock ExternalClusterNodeRepository externalClusterNodeRepository;
     @Mock TaskRepository taskRepository;
     @Mock HostRepository hostRepository;
@@ -466,5 +467,17 @@ class ClusterControllerHostReleaseTest {
         verify(auditService).record(org.mockito.ArgumentMatchers.eq("CLUSTER_CHANGE"),org.mockito.ArgumentMatchers.eq("EXTERNAL_CLUSTER_DELETED"),org.mockito.ArgumentMatchers.eq("CLUSTER"),org.mockito.ArgumentMatchers.eq(id.toString()),org.mockito.ArgumentMatchers.eq(id),org.mockito.ArgumentMatchers.eq("SUCCESS"),any(),any(),any(),any());
         verify(jobService).createJob(org.mockito.ArgumentMatchers.argThat(job->job.getStatus()==io.translab.tantor.server.domain.JobStatus.SUCCESS&&job.getPayload().contains("external-deleted")),org.mockito.ArgumentMatchers.anyList());
         verify(deploymentService,never()).deleteClusterFromHost(any(),any(),any(),any(),any(),org.mockito.ArgumentMatchers.anyBoolean());
+    }
+
+    @Test void ownedExternalServicesReturnCleanupJobBeforeUnregistering() {
+        UUID id=UUID.randomUUID(),job=UUID.randomUUID();ExternalCluster external=new ExternalCluster();external.setId(id);
+        when(roleAuthenticationUtil.canAccess(any(),anyString())).thenReturn(true);
+        when(roleAuthenticationUtil.extractUsername(any())).thenReturn("operator");
+        when(externalClusterRepository.findById(id)).thenReturn(Optional.of(external));
+        when(externalDeletion.queue(external,"operator",false)).thenReturn(job);
+        var response=controller.deleteCluster("Bearer test-token",id);
+        assertThat(response.getStatusCode().value()).isEqualTo(202);
+        assertThat(response.getHeaders().getFirst("X-Job-Id")).isEqualTo(job.toString());
+        verify(externalClusterService,never()).deleteExternalCluster(id);
     }
 }

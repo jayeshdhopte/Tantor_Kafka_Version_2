@@ -122,6 +122,15 @@ func Deploy(ctx context.Context, cfg *config.Config, download Downloader, exec e
 	if err = run("mkdir", append([]string{"-p", "--"}, s.Directories()...)...); err != nil {
 		return logs.String(), err
 	}
+	// Persist ownership before copying runtime files, so failed installations
+	// can be removed without guessing paths or relying on a completed unit.
+	marker := filepath.Join(staging, "ownership.json")
+	if err = os.WriteFile(marker, []byte(ownershipContent(s)+"\n"), 0600); err != nil {
+		return logs.String(), err
+	}
+	if err = run("install", "-m", "0600", "--", marker, ownershipPath(s)); err != nil {
+		return logs.String(), err
+	}
 	// Copy only runtime trees. Config/log/plugin/working directories are never overwritten by the archive.
 	source := filepath.Join(extracted, root)
 	for _, tree := range []string{"bin", "libs", "share"} {
@@ -131,6 +140,9 @@ func Deploy(ctx context.Context, cfg *config.Config, download Downloader, exec e
 		if err = run("cp", "-a", "--", filepath.Join(source, tree), s.Install+"/"); err != nil {
 			return logs.String(), err
 		}
+	}
+	if err = installBundledFileStream(ctx, exec, source, s); err != nil {
+		return logs.String(), err
 	}
 	files := ConfigFiles(s, javaHome)
 	for _, file := range files {
@@ -168,6 +180,9 @@ func Deploy(ctx context.Context, cfg *config.Config, download Downloader, exec e
 	}
 	health, err := Verify(ctx, kind, "http://"+net.JoinHostPort("127.0.0.1", strconv.Itoa(s.Port)))
 	logs.WriteString(health)
+	if err == nil && kind == Connect {
+		err = verifyBundledConnectPlugins(ctx, "http://"+net.JoinHostPort("127.0.0.1", strconv.Itoa(s.Port)))
+	}
 	return logs.String(), err
 }
 

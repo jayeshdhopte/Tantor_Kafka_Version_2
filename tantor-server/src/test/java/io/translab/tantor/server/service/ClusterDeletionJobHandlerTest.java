@@ -10,7 +10,8 @@ import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
 class ClusterDeletionJobHandlerTest {
  private final JobService jobs=mock(JobService.class);private final TaskRepository tasks=mock(TaskRepository.class);private final HostRepository hosts=mock(HostRepository.class);private final AgentTaskAwaiter awaiter=mock(AgentTaskAwaiter.class);private final AuditService audit=mock(AuditService.class);private final AuditLogRepository auditLogs=mock(AuditLogRepository.class);
- private final ClusterDeletionJobHandler handler=new ClusterDeletionJobHandler(jobs,tasks,hosts,awaiter,audit,auditLogs,new ObjectMapper());
+ private final ExternalClusterDeletionService externalDeletion=mock(ExternalClusterDeletionService.class);
+ private final ClusterDeletionJobHandler handler=new ClusterDeletionJobHandler(jobs,tasks,hosts,awaiter,audit,auditLogs,new ObjectMapper(),externalDeletion);
  private final UUID cluster=UUID.randomUUID();private final Job job=job();
  @Test void waitsForEveryHostAndRecordsCompletionAsOriginalActor() {
   JobStep first=step("host-1");JobStep second=step("host-2");when(jobs.getSteps(job.getId())).thenReturn(List.of(first,second));
@@ -38,5 +39,11 @@ class ClusterDeletionJobHandlerTest {
   when(jobs.getSteps(job.getId())).thenReturn(List.of(done,retry));when(tasks.findById(retry.getAgentTaskId())).thenReturn(Optional.of(original));UUID newId=UUID.randomUUID();
   when(tasks.save(any())).thenAnswer(call->{Task replacement=call.getArgument(0);replacement.setId(newId);return replacement;});Task result=new Task();result.setStatus("SUCCESS");result.setLogOutput("Retried cleanup completed");when(awaiter.await(newId)).thenReturn(result);
   handler.execute(job);verify(tasks).save(argThat(replacement->"retry-host".equals(replacement.getHostId())&&original.getParameters().equals(replacement.getParameters())));verify(jobs).attachAgentTask(retry.getId(),newId);verify(awaiter,never()).await(done.getAgentTaskId());
+ }
+ @Test void externalCleanupUsesDiscoveryTasksAndRecordsOriginalActor() {
+  job.setPayload("{\"clusterId\":\""+cluster+"\",\"mode\":\"EXTERNAL\",\"externalCleanup\":true}");
+  when(externalDeletion.execute(job,cluster)).thenReturn(List.of());handler.execute(job);
+  verify(externalDeletion).execute(job,cluster);verifyNoInteractions(tasks,hosts,awaiter);
+  verify(audit).recordAs(eq("operator"),anyString(),isNull(),eq("CLUSTER_CHANGE"),eq("CLUSTER_DELETED"),anyString(),eq(cluster.toString()),eq(cluster),eq("SUCCESS"),isNull(),isNull(),isNull(),any());
  }
 }

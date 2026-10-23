@@ -17,11 +17,13 @@ public class ClusterDeletionJobHandler implements JobHandler {
     private final AuditService audit;
     private final AuditLogRepository auditLogs;
     private final ObjectMapper mapper;
+    private final ExternalClusterDeletionService externalDeletion;
     @Override public boolean supports(JobType type) {return type==JobType.CLUSTER_DELETION;}
     @Override public void execute(Job job) {
         Map<String,Object> details=read(job.getPayload());UUID clusterId=UUID.fromString(String.valueOf(details.get("clusterId")));
-        List<String> failures=new ArrayList<>();
-        for (JobStep step : jobs.getSteps(job.getId())) {
+        boolean externalCleanup=Boolean.TRUE.equals(details.get("externalCleanup"));
+        List<String> failures=externalCleanup ? externalDeletion.execute(job,clusterId) : new ArrayList<>();
+        if (!externalCleanup) for (JobStep step : jobs.getSteps(job.getId())) {
             if (step.getStatus()==JobStepStatus.SUCCESS) continue;
             try {
                 if (step.getAgentTaskId()==null) throw new IllegalStateException("Deletion step has no linked cleanup task; cleanup cannot be inferred.");

@@ -103,7 +103,7 @@ func TestSharedSchemaMissingRuntimeAndCleanup(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, cmd := range cleanup.commands {
-		if strings.Contains(cmd, "rm -rf") {
+		if strings.HasPrefix(cmd, "rm -rf") && cmd != "rm -rf -- "+s.Log && cmd != "rm -rf -- "+s.Working && !strings.HasSuffix(cmd, ".service.d") {
 			t.Fatal("shared directory removed", cmd)
 		}
 	}

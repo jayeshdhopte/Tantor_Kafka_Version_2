@@ -16,12 +16,13 @@ import (
 	"io.translab/tantor-agent/internal/deploy"
 	"io.translab/tantor-agent/internal/executor"
 	"io.translab/tantor-agent/internal/task"
+	"io.translab/tantor-agent/pkg/buildinfo"
 	"io.translab/tantor-agent/pkg/logger"
 	"io.translab/tantor-agent/pkg/logrotation"
 )
 
 var (
-	version   = "1.0.0-prod.16-reporting.9-dataservices.4-configchange.9-rollingrestart.1-logging.1"
+	version   = buildinfo.Version
 	commit    = "development"
 	buildDate = "unknown"
 )

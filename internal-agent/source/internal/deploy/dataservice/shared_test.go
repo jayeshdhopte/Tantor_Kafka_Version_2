@@ -55,7 +55,7 @@ func TestSharedConnectPreservesPropertiesAndReplacesDuplicateManagedKeys(t *test
 	}
 }
 
-func TestSharedConnectCleanupPreservesEveryDirectory(t *testing.T) {
+func TestSharedConnectCleanupPreservesKafkaRuntimeAndRemovesServiceLogs(t *testing.T) {
 	task := taskFor()
 	delete(task.Parameters, "install_dir")
 	s, err := Parse(Connect, task)
@@ -67,7 +67,7 @@ func TestSharedConnectCleanupPreservesEveryDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, cmd := range exec.commands {
-		if strings.Contains(cmd, "rm -rf") {
+		if strings.HasPrefix(cmd, "rm -rf") && cmd != "rm -rf -- "+s.Log && cmd != "rm -rf -- "+s.Working && !strings.HasSuffix(cmd, ".service.d") {
 			t.Fatalf("shared directory removed: %s", cmd)
 		}
 	}
@@ -165,6 +165,8 @@ func TestSharedConnectInstallPreservesRuntimeAndRollsBackFailure(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
 			w.Write([]byte(`{"version":"4.3.0"}`))
+		} else if r.URL.Path == "/connector-plugins" {
+			w.Write([]byte(`[{"class":"org.apache.kafka.connect.file.FileStreamSourceConnector"},{"class":"org.apache.kafka.connect.file.FileStreamSinkConnector"}]`))
 		} else {
 			w.Write([]byte(`[]`))
 		}

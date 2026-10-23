@@ -147,6 +147,9 @@ func deploySharedDataService(ctx context.Context, exec executor.Executor, s Sett
 		return logs, fmt.Errorf("cannot locate Java home: %s", detail)
 	}
 	files := ConfigFiles(s, javaHome)
+	if err = installBundledFileStream(ctx, exec, s.Install, s); err != nil {
+		return logs, err
+	}
 	if _, _, err = exec.RunSudo(ctx, "bash", "-c", `test -f "$1" && test ! -L "$1"`, "--", files[0].Path); err != nil {
 		return logs, fmt.Errorf("data-service properties must be an existing regular file, not a symlink")
 	}
@@ -235,6 +238,11 @@ func deploySharedDataService(ctx context.Context, exec executor.Executor, s Sett
 	logs += "\n" + health
 	if e != nil {
 		return logs, e
+	}
+	if s.Kind == Connect {
+		if err = verifyBundledConnectPlugins(ctx, "http://"+net.JoinHostPort("127.0.0.1", strconv.Itoa(s.Port))); err != nil {
+			return logs, err
+		}
 	}
 	_, detail, err = exec.RunSudo(ctx, "find", s.Config, "-maxdepth", "1", "-type", "f", "-name", filepath.Base(files[0].Path)+".tantor-backup.*", "-mtime", "+6", "-delete")
 	if err != nil {

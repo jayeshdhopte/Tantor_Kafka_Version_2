@@ -4,6 +4,7 @@ package dataservices
 
 import (
 	"context"
+	"fmt"
 	"io.translab/tantor-agent/internal/config"
 	"io.translab/tantor-agent/internal/deploy/dataservice"
 	"io.translab/tantor-agent/internal/executor"
@@ -15,8 +16,14 @@ type Downloader = dataservice.Downloader
 type Task = api.Task
 
 func Execute(ctx context.Context, command, kind, cache string, task *Task, exec Executor, download Downloader) (string, error) {
+	if command == "CLEAN" {
+		return dataservice.Clean(ctx, exec, kind, task)
+	}
 	if command == "PRECHECK" {
 		return dataservice.Precheck(ctx, exec, kind, task)
+	}
+	if command != "INSTALL" {
+		return "", fmt.Errorf("unsupported data-service command %q", command)
 	}
 	cfg := &config.Config{}
 	cfg.Paths.ArtifactsDir = cache

@@ -849,7 +849,9 @@ public class ExternalClusterService {
         cluster.setKafkaVersion(blankToDefault(report.getKafkaVersion(), "Unknown"));
         cluster.setEnvironment(blankToDefault(report.getEnvironment(), "unknown"));
         cluster.setBootstrapServers(mergedBootstrapServers);
-        cluster.setStatus(report.isRunning() ? "SUCCESS" : "DEGRADED");
+        if (!Set.of("DELETING","DELETE_FAILED").contains(Objects.toString(cluster.getStatus(),""))) {
+            cluster.setStatus(report.isRunning() ? "SUCCESS" : "DEGRADED");
+        }
         String discoveredMode = normalizeKafkaMode(report.getKafkaMode());
         if (discoveredMode != null) {
             cluster.setKafkaMode(discoveredMode);
@@ -2256,6 +2258,7 @@ public class ExternalClusterService {
         for (ExternalCluster cluster : externalClusters) {
             try {
                 String previousStatus = cluster.getStatus();
+                if (Set.of("DELETING","DELETE_FAILED").contains(Objects.toString(previousStatus,""))) continue;
                 Map<String, Object> adminData = kafkaAdminService.inspectBootstrapServers(cluster, true);
                 boolean connected = Boolean.TRUE.equals(adminData.get("connected"));
                 String detectedKafkaClusterId = firstString(adminData, "clusterId", "kafka_cluster_id");

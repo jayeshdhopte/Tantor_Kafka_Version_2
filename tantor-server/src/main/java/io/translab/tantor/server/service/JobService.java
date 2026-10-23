@@ -331,7 +331,7 @@ public class JobService {
                 if (step.getStatus() != JobStepStatus.SUCCESS) {
                     step.setStatus(JobStepStatus.PENDING);
                     if (job.getType() != JobType.ROLLING_RESTART && job.getType() != JobType.CLUSTER_DELETION) {step.setAgentTaskId(null);step.setExternalKafkaTaskId(null);}
-                    step.setExternalServiceTaskId(null);
+                    if (job.getType() != JobType.CLUSTER_DELETION) step.setExternalServiceTaskId(null);
                     step.setStartTime(null);
                     step.setEndTime(null);
                     step.setRetryCount(step.getRetryCount() + 1);

@@ -150,14 +150,18 @@ export function Clusters() {
   const deleteCluster = async (e: React.MouseEvent, id: string, name: string) => {
     e.stopPropagation();
     if (!canManage) return;
-    if (!(await confirmAction(`Delete cluster '${name}' and clean it from assigned VM(s)?`))) return;
+    const selected = clusters.find(cluster => cluster.id === id);
+    const message = selected?.mode === 'EXTERNAL'
+      ? `Delete cluster '${name}'? This removes Tantor-deployed Schema Registry/Connect instances and their files, then unregisters the cluster. Existing Kafka and shared agents remain running.`
+      : `Delete cluster '${name}' and clean its deployed services, supporting units and data from assigned VM(s)?`;
+    if (!(await confirmAction(message))) return;
     try {
       const res = await fetch(`/api/v1/ui/clusters/${id}`, { method: 'DELETE' });
       if (res.ok) {
         setClusters(prev =>
           prev
             .map(c => c.id === id
-              ? { ...c, status: c.mode === 'EXTERNAL' ? 'DELETED' : 'DELETING' }
+              ? { ...c, status: res.status === 202 ? 'DELETING' : 'DELETED' }
               : c
             )
             .filter(c => c.status !== 'DELETED')

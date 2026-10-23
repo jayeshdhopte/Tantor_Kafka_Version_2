@@ -64,6 +64,7 @@ public class ClusterController {
     private final io.translab.tantor.server.service.KafkaAdminService kafkaAdminService;
     private final JobService jobService;
     private final io.translab.tantor.server.service.ClusterDeletionHistoryService deletionHistory;
+    private final io.translab.tantor.server.service.ExternalClusterDeletionService externalDeletion;
     private final io.translab.tantor.server.audit.AuditService auditService;
     private final io.translab.tantor.server.repository.DiscoveryAgentRepository discoveryAgentRepository;
     private final RoleAuthenticationUtil roleAuthenticationUtil;
@@ -980,6 +981,8 @@ public class ClusterController {
         java.util.Optional<ExternalCluster> external = externalClusterRepository.findById(id);
         if (external.isPresent()) {
             ExternalCluster cluster = external.get();
+            UUID cleanupJob = externalDeletion.queue(cluster, roleAuthenticationUtil.extractUsername(authorization), false);
+            if (cleanupJob != null) return deletionResponse(HttpStatus.ACCEPTED, cleanupJob);
             externalClusterService.deleteExternalCluster(id);
             recordExternalClusterDeletion(cluster, "EXTERNAL_CLUSTER_DELETED");
             UUID deletionJob = deletionHistory.completed(id, cluster.getName(), cluster.getKafkaClusterId(), cluster.getKafkaVersion(), "EXTERNAL", roleAuthenticationUtil.extractUsername(authorization), false, true);
@@ -1022,6 +1025,8 @@ public class ClusterController {
         java.util.Optional<ExternalCluster> external = externalClusterRepository.findById(id);
         if (external.isPresent()) {
             ExternalCluster cluster = external.get();
+            UUID cleanupJob = externalDeletion.queue(cluster, roleAuthenticationUtil.extractUsername(authorization), true);
+            if (cleanupJob != null) return deletionResponse(HttpStatus.ACCEPTED, cleanupJob);
             externalClusterService.deleteExternalCluster(id);
             recordExternalClusterDeletion(cluster, "EXTERNAL_CLUSTER_FORCE_DELETED");
             UUID deletionJob = deletionHistory.completed(id, cluster.getName(), cluster.getKafkaClusterId(), cluster.getKafkaVersion(), "EXTERNAL", roleAuthenticationUtil.extractUsername(authorization), true, true);

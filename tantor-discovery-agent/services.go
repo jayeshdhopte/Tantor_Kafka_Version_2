@@ -92,13 +92,13 @@ func (d serviceDownloader) DownloadArtifact(target, dest string) (string, error)
 var serviceUUID = regexp.MustCompile(`^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$`)
 
 func prepareServiceTask(t serviceTask, clusters []DiscoveredCluster) (*ds.Task, error) {
-	if t.Command != "PRECHECK" && t.Command != "INSTALL" {
+	if t.Command != "PRECHECK" && t.Command != "INSTALL" && t.Command != "CLEAN" {
 		return nil, fmt.Errorf("unsupported service command")
 	}
 	if t.Kind != "schema-registry" && t.Kind != "kafka-connect" {
 		return nil, fmt.Errorf("unsupported service")
 	}
-	if !serviceUUID.MatchString(t.ArtifactID) {
+	if t.Command != "CLEAN" && !serviceUUID.MatchString(t.ArtifactID) {
 		return nil, fmt.Errorf("invalid artifact ID")
 	}
 	p := make(map[string]string)

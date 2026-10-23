@@ -66,3 +66,36 @@ func Verify(ctx context.Context, kind, base string) (string, error) {
 		}
 	}
 }
+
+// A newly deployed worker is ready only when both bundled FileStream classes
+// are discoverable. Extra connector plugins remain supported.
+func verifyBundledConnectPlugins(ctx context.Context, base string) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(base, "/")+"/connector-plugins", nil)
+	if err != nil {
+		return err
+	}
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	var plugins []struct {
+		Class string `json:"class"`
+	}
+	if resp.StatusCode != http.StatusOK || json.NewDecoder(io.LimitReader(resp.Body, 1024*1024)).Decode(&plugins) != nil {
+		return fmt.Errorf("Connect plugin discovery returned an invalid response (HTTP %d)", resp.StatusCode)
+	}
+	classes := map[string]bool{}
+	for _, plugin := range plugins {
+		classes[plugin.Class] = true
+	}
+	for _, class := range []string{"org.apache.kafka.connect.file.FileStreamSourceConnector", "org.apache.kafka.connect.file.FileStreamSinkConnector"} {
+		if !classes[class] {
+			return fmt.Errorf("Connect is running but required bundled plugin %s is missing", class)
+		}
+	}
+	return nil
+}
