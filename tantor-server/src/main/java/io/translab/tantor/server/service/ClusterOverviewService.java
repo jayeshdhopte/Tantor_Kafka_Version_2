@@ -221,6 +221,29 @@ public class ClusterOverviewService {
                     .pluginDir(schema ? null : path(config,"plugin_dir"))
                     .workingDir(path(config,"working_dir")).logDir(path(config,"log_dir")).build());
         }
+        for (var agent : discoveryAgents.findByClusterId(clusterId)) {
+            if (agent.getDataServicePathsJson() == null) continue;
+            List<io.translab.tantor.server.dto.DiscoveredServicePath> reported;
+            try { reported = new com.fasterxml.jackson.databind.ObjectMapper().readValue(agent.getDataServicePathsJson(), new com.fasterxml.jackson.core.type.TypeReference<>() {}); }
+            catch (Exception ignored) { continue; }
+            boolean online = "ONLINE".equalsIgnoreCase(agent.getStatus()) && agent.getLastHeartbeat() != null
+                    && agent.getLastHeartbeat().isAfter(OffsetDateTime.now().minusSeconds(120));
+            for (var discovered : reported) {
+                rows.removeIf(row -> row.getHostId().equals(agent.getId()) && row.getServiceType().equals(discovered.serviceType())
+                        && (java.util.Objects.equals(row.getConfigFile(), discovered.configFile()) || java.util.Objects.equals(row.getServiceName(), discovered.serviceName())));
+                String ip = null;
+                try {
+                    var addresses = new com.fasterxml.jackson.databind.ObjectMapper().readTree(agent.getIpAddresses());
+                    if (addresses.isArray() && !addresses.isEmpty()) ip = addresses.get(0).asText();
+                } catch (Exception ignored) {}
+                rows.add(ClusterOverviewDto.DataServicePathRow.builder()
+                        .instanceId(agent.getId()+":"+discovered.serviceName()).serviceName(discovered.serviceName())
+                        .serviceType(discovered.serviceType()).hostId(agent.getId()).hostname(agent.getHostname()).ipAddress(ip)
+                        .pathSource("AGENT_DISCOVERY").agentStatus(online ? "ONLINE" : "OFFLINE").reportedAt(agent.getServicePathsReportedAt())
+                        .installDir(discovered.installDir()).configFile(discovered.configFile()).pluginDir(discovered.pluginDir())
+                        .workingDir(discovered.workingDir()).logDir(discovered.logDir()).build());
+            }
+        }
         rows.sort(Comparator.comparing(ClusterOverviewDto.DataServicePathRow::getServiceType)
                 .thenComparing(ClusterOverviewDto.DataServicePathRow::getHostId)
                 .thenComparing(row -> java.util.Objects.toString(row.getInstanceId(), "")));

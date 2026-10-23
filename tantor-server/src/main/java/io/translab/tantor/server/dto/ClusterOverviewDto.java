@@ -40,6 +40,7 @@ public class ClusterOverviewDto {
         private String deploymentStatus;
         private String pathSource;
         private String agentStatus;
+        private OffsetDateTime reportedAt;
         private String serviceType;
         private String hostId;
         private String hostname;

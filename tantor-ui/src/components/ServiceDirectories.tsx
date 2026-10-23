@@ -3,7 +3,7 @@ import { ChevronDown, RefreshCw } from 'lucide-react';
 import './ServiceDirectories.css';
 
 interface ServicePath {
-  instanceId?: string; serviceName?: string; deploymentStatus?: string; pathSource?: string; agentStatus?: string;
+  instanceId?: string; serviceName?: string; deploymentStatus?: string; pathSource?: string; agentStatus?: string; reportedAt?: string;
   serviceType: string;
   hostId: string;
   hostname: string | null;
@@ -71,6 +71,7 @@ export function ServiceDirectories({ clusterId, serviceType, preview = false }: 
           : paths.map(path => <article className="service-directory-instance" key={path.instanceId || `${path.serviceType}-${path.hostId}-${path.configFile}`}>
             <h4>{path.hostname || path.hostId}{path.serviceName ? ` · ${path.serviceName}` : ''}</h4>
             <p>{path.ipAddress || 'IP not reported'}</p>
+            {path.pathSource === 'AGENT_DISCOVERY' && <p>Agent-reported paths · Agent {path.agentStatus?.toLowerCase() || 'unknown'}{path.reportedAt ? ` · Last reported ${new Date(path.reportedAt).toLocaleString()}` : ''}</p>}
             {path.pathSource === 'DEPLOYMENT_CONFIGURATION' && <p>Saved deployment paths · Agent {path.agentStatus?.toLowerCase() || 'unknown'} · Deployment {path.deploymentStatus?.toLowerCase() || 'unknown'}</p>}
             <dl>{[
               ['Install directory', path.installDir],

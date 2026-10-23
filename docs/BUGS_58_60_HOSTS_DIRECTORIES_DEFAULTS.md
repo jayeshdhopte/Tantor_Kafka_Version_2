@@ -13,8 +13,9 @@ The external agent's connectivity cannot overwrite the internal agent's status.
 External overviews now include per-instance Schema Registry and Kafka Connect
 deployment paths. The existing Info/directory panels consume the same overview
 API, and the overview also displays installation/configuration/data/log paths for
-external Kafka nodes when available. No agent update is needed: the missing link
-was that overview path mapping only read internal assignments.
+external Kafka nodes when available. The initial fix mapped saved external deployment records. Discovery agent
+`paths.1` additionally reports existing running services, including Schema Registry
+connections added after cluster re-registration, where no deployment record remains.
 
 Service directory rows come from stored external deployment configuration after
 successful installation. ONLINE legacy services are included; other states must
@@ -22,9 +23,11 @@ have a successful INSTALL task. This preserves paths when installation succeeds
 but the subsequent connection SAVE fails. Pending/failed installations without a
 successful INSTALL and deleted services are excluded. Paths remain visible when
 the discovery agent goes offline, labelled **Saved deployment paths**, with agent
-connectivity. These are recorded installation paths, not a new live filesystem
-discovery feature. Manual filesystem changes outside Tantor are not rediscovered
-by this change. Missing values remain Not reported.
+connectivity. Agent-reported paths take precedence over matching saved deployment rows and show
+their last report time. Discovery reads known systemd services and their Java
+process/configuration, restricted to the reported Kafka bootstrap endpoints. It
+does not restart services or transmit full configs/environments. Missing values
+remain Not reported. Agent snapshots persist independently of deployment jobs.
 
 Per-instance IDs are used as UI keys, so multiple services on one node no longer
 overwrite/reuse each other's directory cards. Custom paths are preserved. The

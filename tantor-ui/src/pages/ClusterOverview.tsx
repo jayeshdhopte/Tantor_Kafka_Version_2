@@ -59,7 +59,7 @@ interface NodePathRow {
 }
 
 interface DataServicePathRow {
-  instanceId?: string; serviceName?: string; deploymentStatus?: string; pathSource?: string; agentStatus?: string;
+  instanceId?: string; serviceName?: string; deploymentStatus?: string; pathSource?: string; agentStatus?: string; reportedAt?: string;
   serviceType: string; hostId: string; hostname: string | null; ipAddress: string | null;
   installDir: string | null; configFile: string | null; pluginDir: string | null; workingDir: string | null; logDir: string | null;
 }
@@ -406,6 +406,7 @@ export function ClusterOverview() {
           <div className="overview-service-paths">{overview.dataServicePaths.map(service => <article className="overview-service-path-card" key={service.instanceId || `${service.serviceType}-${service.hostId}-${service.configFile}`}>
             <h3>{service.serviceType === 'SCHEMA_REGISTRY' ? 'Schema Registry' : 'Kafka Connect'}{service.serviceName ? ` · ${service.serviceName}` : ''}</h3>
             <p>{service.hostname || service.hostId} · {service.ipAddress || 'IP not reported'}</p>
+            {service.pathSource === 'AGENT_DISCOVERY' && <p>Agent-reported paths · Agent {service.agentStatus?.toLowerCase() || 'unknown'}</p>}
             {service.pathSource === 'DEPLOYMENT_CONFIGURATION' && <p>Saved deployment paths · Agent {service.agentStatus?.toLowerCase() || 'unknown'}</p>}
             <dl>{[['Install directory', service.installDir], ['Configuration file', service.configFile], ['Working directory', service.workingDir], ['Log directory', service.logDir], ...(service.serviceType === 'KAFKA_CONNECT' ? [['Plugin directory', service.pluginDir]] : [])].map(([label, value]) => <div key={label}><dt>{label}</dt><dd><code>{value || 'Not reported'}</code></dd></div>)}</dl>
           </article>)}</div>

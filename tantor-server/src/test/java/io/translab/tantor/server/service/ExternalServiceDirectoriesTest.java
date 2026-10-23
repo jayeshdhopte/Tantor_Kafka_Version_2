@@ -9,6 +9,30 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class ExternalServiceDirectoriesTest {
+    @Test void discoversExistingSchemaWithoutAnyDeploymentRecordAndDeduplicatesTrackedConnect() {
+        var services = mock(ExternalDataServiceRepository.class);
+        var agents = mock(DiscoveryAgentRepository.class);
+        var tasks = mock(ExternalServiceTaskRepository.class);
+        var overview = new ClusterOverviewService(null,null,null,null,null,services,agents,tasks);
+        UUID cluster = UUID.randomUUID();
+        var connect = service("kafka_connect","ONLINE","/client/connect");
+        when(services.findByClusterId(cluster)).thenReturn(List.of(connect));
+        var agent = new DiscoveryAgent();agent.setId("agent");agent.setHostname("node229");agent.setStatus("ONLINE");
+        agent.setLastHeartbeat(OffsetDateTime.now());agent.setServicePathsReportedAt(OffsetDateTime.now());
+        agent.setDataServicePathsJson("""
+            [{"serviceType":"SCHEMA_REGISTRY","serviceName":"schema-registry","restPort":8081,
+              "installDir":"/opt/tantor/schema-registry","configFile":"/opt/tantor/schema-registry/etc/schema-registry/schema-registry.properties"},
+             {"serviceType":"KAFKA_CONNECT","serviceName":"kafka-connect","restPort":8083,
+              "installDir":"/client/connect","configFile":"/client/connect/etc/connect-distributed.properties"}]
+            """);
+        when(agents.findById("agent")).thenReturn(Optional.of(agent));
+        when(agents.findByClusterId(cluster)).thenReturn(List.of(agent));
+        var rows = overview.externalDataServicePaths(cluster);
+        assertThat(rows).hasSize(2).allSatisfy(row->assertThat(row.getPathSource()).isEqualTo("AGENT_DISCOVERY"));
+        assertThat(rows).extracting(row->row.getServiceType()).containsExactlyInAnyOrder("SCHEMA_REGISTRY","KAFKA_CONNECT");
+        assertThat(rows.stream().filter(r->r.getServiceType().equals("SCHEMA_REGISTRY")).findFirst().orElseThrow().getInstallDir())
+                .isEqualTo("/opt/tantor/schema-registry");
+    }
     @Test void reportsDistinctInstalledInstancesAndPreservesPathsWhenAgentIsOfflineOrSaveFailed() {
         var services = mock(ExternalDataServiceRepository.class);
         var agents = mock(DiscoveryAgentRepository.class);

@@ -9,6 +9,9 @@ import java.util.UUID;
 @Entity
 @Table(name = "kf_discovery_agents")
 public class DiscoveryAgent {
+    @Column(columnDefinition = "text")
+    private String dataServicePathsJson;
+    private OffsetDateTime servicePathsReportedAt;
 
     @Id
     @Column(name = "id")

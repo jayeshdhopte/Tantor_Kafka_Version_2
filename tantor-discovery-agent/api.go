@@ -12,42 +12,43 @@ import (
 )
 
 type ExternalClusterPayload struct {
-	HostID              string  `json:"hostId"`
-	AgentName           string  `json:"agentName"`
-	Name                string  `json:"name"`
-	Environment         string  `json:"environment"`
-	BootstrapServers    string  `json:"bootstrapServers"`
-	KafkaVersion        string  `json:"kafkaVersion"`
-	KafkaClusterID      string  `json:"kafkaClusterId"`
-	KafkaMode           string  `json:"kafkaMode"`
-	Security            string  `json:"security"`
-	BrokerCount         int     `json:"brokerCount"`
-	LocalBrokerCount    int     `json:"localBrokerCount"`
-	NodeID              int     `json:"nodeId"`
-	IsRunning           bool    `json:"isRunning"`
-	InstallPath         string  `json:"installPath"`
-	ConfigFile          string  `json:"configFile"`
-	SystemdService      string  `json:"systemdService"`
-	CanManageKafka      bool    `json:"canManageKafka"`
-	CanWriteConfig      bool    `json:"canWriteConfig"`
-	CanRestart          bool    `json:"canRestart"`
-	DataDirs            string  `json:"dataDirs"`
-	LogDirs             string  `json:"logDirs"`
-	Hostname            string  `json:"hostname"`
-	Listeners           string  `json:"listeners"`
-	AdvertisedListeners string  `json:"advertisedListeners"`
-	ProcessRoles        string  `json:"processRoles"`
-	CPUUsagePct         float64 `json:"cpuUsagePct"`
-	MemoryUsedMB        int64   `json:"memoryUsedMb"`
-	MemoryTotalMB       int64   `json:"memoryTotalMb"`
-	DiskUsedGB          int64   `json:"diskUsedGb"`
-	DiskTotalGB         int64   `json:"diskTotalGb"`
-	DiskUsedBytes       int64   `json:"diskUsedBytes"`
-	DiskTotalBytes      int64   `json:"diskTotalBytes"`
-	JMXExporterPort     *int    `json:"jmxExporterPort,omitempty"`
-	CanExecuteTasks     bool    `json:"canExecuteTasks"`
-	AgentVersion        string  `json:"agentVersion"`
-	CanDeployServices   bool    `json:"canDeployServices"`
+	DataServicePaths    []DataServicePath `json:"dataServicePaths"`
+	HostID              string            `json:"hostId"`
+	AgentName           string            `json:"agentName"`
+	Name                string            `json:"name"`
+	Environment         string            `json:"environment"`
+	BootstrapServers    string            `json:"bootstrapServers"`
+	KafkaVersion        string            `json:"kafkaVersion"`
+	KafkaClusterID      string            `json:"kafkaClusterId"`
+	KafkaMode           string            `json:"kafkaMode"`
+	Security            string            `json:"security"`
+	BrokerCount         int               `json:"brokerCount"`
+	LocalBrokerCount    int               `json:"localBrokerCount"`
+	NodeID              int               `json:"nodeId"`
+	IsRunning           bool              `json:"isRunning"`
+	InstallPath         string            `json:"installPath"`
+	ConfigFile          string            `json:"configFile"`
+	SystemdService      string            `json:"systemdService"`
+	CanManageKafka      bool              `json:"canManageKafka"`
+	CanWriteConfig      bool              `json:"canWriteConfig"`
+	CanRestart          bool              `json:"canRestart"`
+	DataDirs            string            `json:"dataDirs"`
+	LogDirs             string            `json:"logDirs"`
+	Hostname            string            `json:"hostname"`
+	Listeners           string            `json:"listeners"`
+	AdvertisedListeners string            `json:"advertisedListeners"`
+	ProcessRoles        string            `json:"processRoles"`
+	CPUUsagePct         float64           `json:"cpuUsagePct"`
+	MemoryUsedMB        int64             `json:"memoryUsedMb"`
+	MemoryTotalMB       int64             `json:"memoryTotalMb"`
+	DiskUsedGB          int64             `json:"diskUsedGb"`
+	DiskTotalGB         int64             `json:"diskTotalGb"`
+	DiskUsedBytes       int64             `json:"diskUsedBytes"`
+	DiskTotalBytes      int64             `json:"diskTotalBytes"`
+	JMXExporterPort     *int              `json:"jmxExporterPort,omitempty"`
+	CanExecuteTasks     bool              `json:"canExecuteTasks"`
+	AgentVersion        string            `json:"agentVersion"`
+	CanDeployServices   bool              `json:"canDeployServices"`
 }
 
 func firstNonBlank(values ...string) string {
@@ -89,6 +90,7 @@ func jmxMetricsURLForCluster(cfg RuntimeConfig, cluster DiscoveredCluster) strin
 
 func registerCluster(ctx context.Context, client *APIClient, cfg RuntimeConfig, c DiscoveredCluster, hostMetrics HostMetrics, logger *slog.Logger) bool {
 	payload := ExternalClusterPayload{
+		DataServicePaths: discoverDataServicePaths(ctx, c.BootstrapServers),
 		HostID:           cfg.HostID,
 		AgentName:        cfg.AgentName,
 		Name:             c.Name,

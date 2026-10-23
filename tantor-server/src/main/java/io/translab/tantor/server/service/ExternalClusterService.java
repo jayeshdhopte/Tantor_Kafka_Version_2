@@ -1416,6 +1416,19 @@ public class ExternalClusterService {
         agent.setIpAddresses(blankToDefault(report.getIpAddresses(), writeJson(List.of(extractHostFromBootstrap(report.getBootstrapServers())))));
         agent.setVersion(blankToDefault(report.getAgentVersion(), "tantor-discovery-agent"));
         agent.setCanDeployServices(report.isCanDeployServices());
+        if (report.getDataServicePaths() != null) {
+            var paths = report.getDataServicePaths();
+            if (paths.size() > 100 || paths.stream().anyMatch(p -> p == null
+                    || !Set.of("SCHEMA_REGISTRY", "KAFKA_CONNECT").contains(java.util.Objects.toString(p.serviceType(), ""))
+                    || p.restPort() < 1 || p.restPort() > 65535
+                    || p.serviceName() == null || !p.serviceName().matches("[A-Za-z0-9_.@-]{1,255}")
+                    || !cleanReportedPath(p.configFile(), true) || !cleanReportedPath(p.installDir(), false)
+                    || !cleanReportedPath(p.workingDir(), false) || !cleanReportedPath(p.logDir(), false)
+                    || (p.pluginDir() != null && !p.pluginDir().isBlank() && java.util.Arrays.stream(p.pluginDir().split(",")).anyMatch(v -> !cleanReportedPath(v.trim(), true)))))
+                throw new IllegalArgumentException("Invalid reported service directories.");
+            agent.setDataServicePathsJson(writeJson(paths));
+            agent.setServicePathsReportedAt(OffsetDateTime.now());
+        }
         agent.setStatus(report.isRunning() ? "ONLINE" : "OFFLINE");
         agent.setCanExecuteTasks(report.isCanExecuteTasks());
         agent.setLastHeartbeat(OffsetDateTime.now());
@@ -1433,6 +1446,12 @@ public class ExternalClusterService {
         agent.setStatus("ONLINE");
         agent.setLastHeartbeat(OffsetDateTime.now());
         discoveryAgentRepository.save(agent);
+    }
+
+    private static boolean cleanReportedPath(String path, boolean required) {
+        if (path == null || path.isBlank()) return !required;
+        return path.startsWith("/") && path.length() <= 4096 && !path.contains("\n") && !path.contains("\r")
+                && !path.contains("\0") && !java.util.Arrays.asList(path.split("/")).contains("..");
     }
 
     private int nextNodeId(UUID clusterId) {
@@ -2125,6 +2144,7 @@ public class ExternalClusterService {
 
     @Data
     public static class ExternalDiscoveryReport {
+        private List<io.translab.tantor.server.dto.DiscoveredServicePath> dataServicePaths;
         private String hostId;
         private String agentName;
         private String name;
