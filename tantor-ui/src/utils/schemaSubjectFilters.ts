@@ -12,6 +12,10 @@ export const schemaCompatibilityLevels = ['DEFAULT', 'NONE', 'BACKWARD', 'BACKWA
 export const subjectCompatibilityLevel = (subject: FilterableSchemaSubject): string =>
   subject.compatibility?.toUpperCase() || 'UNKNOWN';
 
+export function filterSchemaVersions<T extends { deleted?: boolean }>(versions: T[], deletedOnly: boolean): T[] {
+  return versions.filter(version => Boolean(version.deleted) === deletedOnly);
+}
+
 export function filterSchemaSubjects<T extends FilterableSchemaSubject>(subjects: T[], search: string,
   types: string[], compatibility: string[], deletedOnly?: boolean): T[] {
   const query = search.trim().toLowerCase();

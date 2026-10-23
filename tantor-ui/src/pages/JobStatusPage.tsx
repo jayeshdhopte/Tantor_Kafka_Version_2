@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, RefreshCw, AlertTriangle, Undo2, Check, MoreVertical } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { confirmAction, notifyAction } from '../components/confirmUtils';
+import { formatIstDateTime, formatLogTimestampsIst } from '../utils/istLogTime';
 import './JobStatusPage.css';
 
 type Job = {
@@ -306,7 +307,7 @@ export function JobStatusPage() {
       } else if (lowerLine.includes('failed') || lowerLine.includes('error')) {
         className += ' log-error';
       }
-      const displayLine = line.replace(
+      const displayLine = formatLogTimestampsIst(line).replace(
         new RegExp(`(?:external:)?${UUID_PATTERN}`, 'gi'),
         targetId => {
           const host = stepHosts[targetId] || stepHosts[`external:${targetId}`] || hostsById[targetId];
@@ -407,14 +408,14 @@ export function JobStatusPage() {
           <div className="summary-col">
             <div className="summary-label">Started</div>
             <div className="summary-value date-val">
-              {job.startTime ? new Date(job.startTime).toLocaleString() : '-'}
+              {formatIstDateTime(job.startTime)}
             </div>
           </div>
           <div className="summary-divider" />
           <div className="summary-col">
             <div className="summary-label">Updated</div>
             <div className="summary-value date-val">
-              {job.endTime ? new Date(job.endTime).toLocaleString() : (job.startTime ? new Date(job.startTime).toLocaleString() : '-')}
+              {formatIstDateTime(job.endTime || job.startTime)}
             </div>
           </div>
         </div>
@@ -537,7 +538,7 @@ export function JobStatusPage() {
                             paddingRight: '12px'
                           }} title={stepDisplayName}>
                             {stepDisplayName}
-                            {job?.type === 'ROLLING_RESTART' && isRunning && step.logs?.startsWith('Service active;') && <small style={{ display: 'block', marginTop: '6px' }}>{step.logs}</small>}
+                            {job?.type === 'ROLLING_RESTART' && isRunning && step.logs?.startsWith('Service active;') && <small style={{ display: 'block', marginTop: '6px' }}>{formatLogTimestampsIst(step.logs)}</small>}
                           </span>
                           <span style={{
                             fontFamily: 'Satoshi', 

@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { RefreshCw } from 'lucide-react';
+import { formatIstDateTime } from '../utils/istLogTime';
 import './JobsList.css';
 
 type Job = {
@@ -116,8 +117,8 @@ export function JobsList() {
                       {formatStatus(job.status)}
                     </div>
                   </td>
-                  <td>{job.startTime ? new Date(job.startTime).toLocaleString('en-GB', { month: '2-digit', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }).replace(',', ', ') : 'N/A'}</td>
-                  <td>{job.endTime ? new Date(job.endTime).toLocaleString('en-GB', { month: '2-digit', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }).replace(',', ', ') : 'N/A'}</td>
+                  <td>{formatIstDateTime(job.startTime, 'N/A')}</td>
+                  <td>{formatIstDateTime(job.endTime, 'N/A')}</td>
                   <td>
                     <button className="btn-outline-primary" onClick={() => navigate(`/jobs/${job.id}`)}>
                       View Details

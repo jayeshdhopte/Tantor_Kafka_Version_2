@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams } from 'react-router-dom';
-import { AlertOctagon, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardPaste, Copy, Edit3, Info, FileText, GitCompare, MoreVertical, Paperclip, Plus, RefreshCw, RotateCcw, Search, Settings, Trash2, X } from 'lucide-react';
+import { AlertOctagon, Check, ChevronDown, ChevronLeft, ChevronRight, ClipboardPaste, Copy, Edit3, Info, FileText, GitCompare, ListChecks, MoreVertical, Paperclip, Plus, RefreshCw, Search, Settings, Trash2, X } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { KafkaGroupPanel } from '../components/KafkaGroupPanel';
 import orangeBanner from '../assets/orange.png';
@@ -12,8 +12,12 @@ import { compareSchemaFields } from '../utils/schemaFieldDiff';
 import { compareSchemaCode } from '../utils/schemaCodeDiff';
 import { schemaSubmissionError } from '../utils/schemaSubmissionError';
 import { SchemaSubjectFilter } from '../components/SchemaSubjectFilter';
-import { filterSchemaSubjects, schemaTypes, schemaCompatibilityLevels, subjectCompatibilityLevel } from '../utils/schemaSubjectFilters';
+import { filterSchemaSubjects, filterSchemaVersions, schemaTypes, schemaCompatibilityLevels, subjectCompatibilityLevel } from '../utils/schemaSubjectFilters';
 import { SchemaRegistrySettingModal } from '../components/SchemaRegistrySettingModal';
+import { SchemaRecoveryDialog } from '../components/SchemaRecoveryDialog';
+import { BulkSchemaDeleteDialog } from '../components/BulkSchemaDeleteDialog';
+import { DeletedSchemaSubjectActions } from '../components/DeletedSchemaSubjectActions';
+import { bulkSoftDeleteSubjects } from '../utils/bulkSoftDeleteSubjects';
 import './DataServiceTabs.css';
 
 interface SchemaSubject {
@@ -355,6 +359,9 @@ export function SchemaRegistry() {
   const [pendingDelete, setPendingDelete] = useState<PendingSchemaDelete | null>(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
   const [showDeletedSubjects, setShowDeletedSubjects] = useState(false);
+  const [subjectSelection, setSubjectSelection] = useState<{ context: string; names: string[]; enabled: boolean }>({ context: '', names: [], enabled: false });
+  const [pendingBulkDelete, setPendingBulkDelete] = useState<{ context: string; names: string[] } | null>(null);
+  const bulkDeleteInFlight = useRef(false);
   const [subjectFilters, setSubjectFilters] = useState({ context: '', search: '', types: [] as string[], compatibility: [] as string[] });
   const [showDeletedVersions, setShowDeletedVersions] = useState(false);
   const [selected, setSelected] = useState<SchemaSubject | null>(null);
@@ -450,9 +457,25 @@ export function SchemaRegistry() {
       .sort((a, b) => b.version - a.version);
   }, [details]);
   const filters = subjectFilters.context === modeContext ? subjectFilters : { search: '', types: [], compatibility: [] };
-  const updateSubjectFilters = (patch: Partial<typeof filters>) => setSubjectFilters({ ...filters, ...patch, context: modeContext });
+  const updateSubjectFilters = (patch: Partial<typeof filters>) => {
+    setSubjectFilters({ ...filters, ...patch, context: modeContext });
+    setSubjectSelection({ context: '', names: [], enabled: false });
+    setPendingBulkDelete(null);
+  };
   const scopeSubjects = filterSchemaSubjects(summary?.subjects || [], '', [], [], showDeletedSubjects);
   const visibleSubjects = filterSchemaSubjects(scopeSubjects, filters.search, filters.types, filters.compatibility);
+  const selectionContext = JSON.stringify([modeContext, view, showDeletedSubjects, filters]);
+  const currentSelectionContext = useRef(selectionContext);
+  useLayoutEffect(() => { currentSelectionContext.current = selectionContext; }, [selectionContext]);
+  const selectionMode = canManage && !showDeletedSubjects && subjectSelection.context === selectionContext && subjectSelection.enabled;
+  const selectedSubjectNames = selectionMode ? subjectSelection.names.filter(name => visibleSubjects.some(item => item.subject === name && !item.deleted)) : [];
+  const allSubjectsSelected = visibleSubjects.length > 0 && selectedSubjectNames.length === visibleSubjects.length;
+  const cancelSubjectSelection = () => {
+    setSubjectSelection({ context: selectionContext, names: [], enabled: false });
+    setPendingBulkDelete(null);
+  };
+  const toggleSubjectSelection = (name: string) => setSubjectSelection({ context: selectionContext, enabled: true,
+    names: selectedSubjectNames.includes(name) ? selectedSubjectNames.filter(item => item !== name) : [...selectedSubjectNames, name] });
   const typeCounts: Record<string, number> = {};
   const compatibilityCounts: Record<string, number> = {};
   for (const subject of filterSchemaSubjects(scopeSubjects, filters.search, [], filters.compatibility)) {
@@ -464,10 +487,12 @@ export function SchemaRegistry() {
   const availableTypes = Array.from(new Set([...schemaTypes, ...scopeSubjects.map(subject => subject.schemaType.toUpperCase())]));
   const availableCompatibility = Array.from(new Set([...schemaCompatibilityLevels, ...scopeSubjects.map(subjectCompatibilityLevel)]));
   const filtersActive = Boolean(filters.search || filters.types.length || filters.compatibility.length);
-  const visibleVersions = (details?.versions || []).filter(version => showDeletedVersions || !version.deleted);
+  const visibleVersions = filterSchemaVersions(details?.versions || [], showDeletedVersions);
 
   const switchDeletedSubjects = (show: boolean) => {
     if (show === showDeletedSubjects) return;
+    setSubjectSelection({ context: '', names: [], enabled: false });
+    setPendingBulkDelete(null);
     setShowDeletedSubjects(show);
     setSummary(null);
     void load(selectedConnectionId, undefined, show);
@@ -699,6 +724,8 @@ export function SchemaRegistry() {
     const connectionId = value || null;
     if (!connectionId || connectionId === selectedConnectionId) return;
     loadRequestId.current += 1;
+    setSubjectSelection({ context: '', names: [], enabled: false });
+    setPendingBulkDelete(null);
     setSelectedConnectionId(connectionId);
     setPendingSetting(null); setSettingSuccess(null); setSuccess(null); setSelected(null); setView('list');
     setSummary(null);
@@ -1028,6 +1055,29 @@ export function SchemaRegistry() {
     } finally { recoveryInFlight.current = false; setSaving(false); }
   };
 
+  const confirmBulkSoftDelete = async () => {
+    if (!canManage || saving || bulkDeleteInFlight.current || !pendingBulkDelete || pendingBulkDelete.context !== selectionContext) return;
+    const batch = pendingBulkDelete;
+    bulkDeleteInFlight.current = true;
+    setSaving(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const result = await bulkSoftDeleteSubjects(batch.names, subject =>
+        withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(subject)}`));
+      if (currentSelectionContext.current !== batch.context) return;
+      setPendingBulkDelete(null);
+      setSubjectSelection({ context: batch.context, enabled: result.failed.length > 0, names: result.failed.map(item => item.subject) });
+      await load(selectedConnectionId, undefined, false);
+      if (currentSelectionContext.current !== batch.context) return;
+      if (result.deleted.length) setSuccess(`${result.deleted.length} ${result.deleted.length === 1 ? 'subject' : 'subjects'} soft-deleted successfully.`);
+      if (result.failed.length) setError(`Could not soft-delete: ${result.failed.map(item => `${item.subject}: ${item.message}`).join('; ')}`);
+    } finally {
+      bulkDeleteInFlight.current = false;
+      setSaving(false);
+    }
+  };
+
   const requestSchemaDelete = (subject: string, permanent: boolean, version?: number) => {
     if (!canManage) return;
     setError(null);
@@ -1289,13 +1339,29 @@ export function SchemaRegistry() {
                 </div>
                 <div className="ds-schema-filter-meta">
                 {filtersActive && <button type="button" className="ds-subject-filter-reset" onClick={() => updateSubjectFilters({ search: '', types: [], compatibility: [] })}>Clear filters</button>}
+                {canManage && !showDeletedSubjects && <div className="ds-schema-selection-toolbar">
+                  {selectionMode ? <>
+                    <span role="status">{selectedSubjectNames.length} selected</span>
+                    <button type="button" className="ds-button outlined" onClick={cancelSubjectSelection} disabled={saving}><X size={16} /> Cancel selection</button>
+                    <button type="button" className="ds-button primary" disabled={saving || loading || !selectedSubjectNames.length}
+                      onClick={() => setPendingBulkDelete({ context: selectionContext, names: [...selectedSubjectNames] })}>
+                      <Trash2 size={16} /> Soft delete selected
+                    </button>
+                  </> : <button type="button" className="ds-button outlined" disabled={saving || loading || !visibleSubjects.length}
+                    onClick={() => setSubjectSelection({ context: selectionContext, names: [], enabled: true })}>
+                    <ListChecks size={16} /> Select subjects
+                  </button>}
+                </div>}
                 <span className="ds-subject-results" role="status">{visibleSubjects.length} of {scopeSubjects.length} subjects</span>
                 </div>
               </div>
               <div className="ds-panel ds-sr-subjects-panel">
               <table className="ds-table ds-sr-subjects-table">
                 <thead>
-                  <tr><th>Subject</th><th>Type</th><th>Latest Version</th><th>Schema ID</th><th>Schema Type</th><th>Compatibility</th>{canManage && <th>Actions</th>}</tr>
+                  <tr><th>{selectionMode ? <span className="ds-schema-selectable-name"><input type="checkbox" aria-label="Select all filtered subjects"
+                    checked={allSubjectsSelected} disabled={saving || loading || !visibleSubjects.length}
+                    ref={element => { if (element) element.indeterminate = selectedSubjectNames.length > 0 && !allSubjectsSelected; }}
+                    onChange={event => setSubjectSelection({ context: selectionContext, enabled: true, names: event.target.checked ? visibleSubjects.map(item => item.subject) : [] })} />Subject</span> : 'Subject'}</th><th>Type</th><th>Latest Version</th><th>Schema ID</th><th>Schema Type</th><th>Compatibility</th>{canManage && <th>Actions</th>}</tr>
                 </thead>
                 <tbody>
                   {loading && !summary ? (
@@ -1303,7 +1369,11 @@ export function SchemaRegistry() {
                   ) : visibleSubjects.length > 0 ? (
                     visibleSubjects.map(item => (
                       <tr key={item.subject} className="ds-hoverable-row" onClick={() => openSubject(item)} style={{ cursor: 'pointer' }}>
-                        <td><span className="ds-link-button">{item.subject}</span>{item.deleted && <span className="ds-subject-deleted-tag">Soft-deleted</span>}</td>
+                        <td>{selectionMode ? <span className="ds-schema-selectable-name">
+                          <input type="checkbox" aria-label={`Select ${item.subject}`} checked={selectedSubjectNames.includes(item.subject)}
+                            disabled={saving || loading} onClick={event => event.stopPropagation()} onChange={() => toggleSubjectSelection(item.subject)} />
+                          <span className="ds-link-button">{item.subject}</span>
+                        </span> : <><span className="ds-link-button">{item.subject}</span>{item.deleted && <span className="ds-subject-deleted-tag">Soft-deleted</span>}</>}</td>
                         <td><span className="ds-status">{item.type}</span></td>
                         <td>{item.version || '-'}</td>
                         <td>{item.id || '-'}</td>
@@ -1312,12 +1382,12 @@ export function SchemaRegistry() {
                         {canManage && (
                           <td>
                             <div className="ds-inline-actions" onClick={e => e.stopPropagation()}>
-                              {item.deleted && <button type="button" className="ds-button outlined" disabled={saving} onClick={() => openSubject(item)}>
-                                <RotateCcw size={14} /> View / recover
+                              {item.deleted ? <DeletedSchemaSubjectActions subject={item.subject} disabled={saving || loading}
+                                onRecover={() => void openSubject(item)}
+                                onDelete={() => requestSchemaDelete(item.subject, true)}
+                              /> : <button className="ds-table-delete-btn" onClick={() => requestSchemaDelete(item.subject, false)} disabled={saving}>
+                                <Trash2 size={14} /> Soft delete
                               </button>}
-                              <button className="ds-table-delete-btn" onClick={() => requestSchemaDelete(item.subject, Boolean(item.deleted))} disabled={saving}>
-                                <Trash2 size={14} /> {item.deleted ? 'Permanently delete' : 'Soft delete'}
-                              </button>
                             </div>
                           </td>
                         )}
@@ -1427,7 +1497,7 @@ export function SchemaRegistry() {
 
           <div className="ds-schema-delete-toolbar">
             <h4 className="ds-section-title">Versions</h4>
-            <label><input type="checkbox" checked={showDeletedVersions} onChange={event => setShowDeletedVersions(event.target.checked)} /> Show soft-deleted versions</label>
+            <label><input type="checkbox" checked={showDeletedVersions} onChange={event => setShowDeletedVersions(event.target.checked)} /> Show only soft-deleted versions</label>
           </div>
           <div className="ds-panel ds-sr-versions-panel">
             <table className="ds-table ds-sr-versions-table">
@@ -1460,16 +1530,17 @@ export function SchemaRegistry() {
                       <td>{version.version}</td>
                       <td>{version.id}</td>
                       <td>{version.schemaType}</td>
-                      <td>{version.deleted ? 'Soft-deleted' : 'Active'}</td>
+                      <td><span className={`ds-schema-version-status ${version.deleted ? 'deleted' : 'active'}`}>{version.deleted ? 'Soft-deleted' : 'Active'}</span></td>
                       {canManage && <td onClick={event => event.stopPropagation()}>
-                        {version.deleted && <button type="button" className="ds-button outlined" disabled={saving}
-                          onClick={() => { setRecoveryError(null); setPendingRecovery({ subject: selected.subject, version, connectionId: selectedConnectionId }); }}>
-                          <RotateCcw size={14} /> Recover
+                        {version.deleted ? <DeletedSchemaSubjectActions
+                          subject={`${selected.subject} / version ${version.version}`}
+                          disabled={saving || loadingDetails}
+                          onRecover={() => { setRecoveryError(null); setPendingRecovery({ subject: selected.subject, version, connectionId: selectedConnectionId }); }}
+                          onDelete={() => requestSchemaDelete(selected.subject, true, version.version)}
+                        /> : <button type="button" className="ds-table-delete-btn" disabled={saving}
+                          onClick={() => requestSchemaDelete(selected.subject, false, version.version)}>
+                          <Trash2 size={14} /> Soft delete
                         </button>}
-                        <button type="button" className="ds-table-delete-btn" disabled={saving}
-                          onClick={() => requestSchemaDelete(selected.subject, Boolean(version.deleted), version.version)}>
-                          <Trash2 size={14} /> {version.deleted ? 'Permanently delete' : 'Soft delete'}
-                        </button>
                       </td>}
                     </tr>
                     {expandedVersions.has(version.version) && (
@@ -1498,7 +1569,7 @@ export function SchemaRegistry() {
                   </Fragment>
                 ))}
                 {!loadingDetails && visibleVersions.length === 0 && (
-                  <tr><td colSpan={canManage ? 6 : 5} className="ds-empty">No versions in this view.</td></tr>
+                  <tr><td colSpan={canManage ? 6 : 5} className="ds-empty">{showDeletedVersions ? 'No soft-deleted versions found.' : 'No active versions found.'}</td></tr>
                 )}
               </tbody>
             </table>
@@ -1947,25 +2018,13 @@ export function SchemaRegistry() {
       )}
 
       {/* ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ Custom Delete Subject Confirmation Modal ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ */}
-      {pendingRecovery && createPortal(
-        <div className="ds-modal-backdrop ds-delete-backdrop" role="dialog" aria-modal="true" aria-labelledby="schema-recovery-title">
-          <div className="ds-delete-confirm-modal">
-            <div className="ds-delete-confirm-content">
-              <div className="ds-delete-confirm-title-row"><RotateCcw size={24} /><h2 id="schema-recovery-title">Recover schema version</h2></div>
-              <p className="ds-delete-confirm-desc">Subject: <strong>{pendingRecovery.subject}</strong></p>
-              <p className="ds-delete-confirm-desc">Original version: {pendingRecovery.version.version} · Schema ID: {pendingRecovery.version.id ?? 'Unavailable'} · Type: {pendingRecovery.version.schemaType}</p>
-              <p className="ds-delete-confirm-desc">Re-register the original schema and its references. The registry assigns the resulting version. Only this schema is recovered; other deleted versions remain unchanged.</p>
-              <pre className="ds-version-schema-code" style={{ maxHeight: 220, overflow: 'auto', whiteSpace: 'pre-wrap' }}>{formatSchema(pendingRecovery.version.schema, pendingRecovery.version.schemaType)}</pre>
-              {recoveryError && <p className="ds-alert" role="alert">{recoveryError}</p>}
-              <div className="ds-delete-modal-footer">
-                <button type="button" className="ds-button outlined" disabled={saving} onClick={() => setPendingRecovery(null)}>Cancel</button>
-                <button type="button" className="ds-button primary" disabled={saving} onClick={confirmSchemaRecovery}>{saving ? 'Recovering...' : 'Recover schema'}</button>
-              </div>
-            </div>
-          </div>
-        </div>, document.body
-      )}
+      {pendingRecovery && <SchemaRecoveryDialog subject={pendingRecovery.subject}
+        version={pendingRecovery.version.version} schemaId={pendingRecovery.version.id} schemaType={pendingRecovery.version.schemaType}
+        schema={formatSchema(pendingRecovery.version.schema, pendingRecovery.version.schemaType)}
+        saving={saving} error={recoveryError} onCancel={() => setPendingRecovery(null)} onConfirm={confirmSchemaRecovery} />}
 
+      {pendingBulkDelete?.context === selectionContext && <BulkSchemaDeleteDialog subjects={pendingBulkDelete.names} saving={saving}
+        onCancel={() => setPendingBulkDelete(null)} onConfirm={() => void confirmBulkSoftDelete()} />}
       {pendingDelete && createPortal(
         <div className="ds-modal-backdrop ds-delete-backdrop" role="dialog" aria-modal="true">
           <div className="ds-delete-confirm-modal animate-fade-in">

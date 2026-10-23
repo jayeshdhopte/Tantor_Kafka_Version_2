@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { CheckCircle2, Clock, Copy, Loader2, RefreshCw, Terminal, XCircle, RotateCcw, PlayCircle, Trash2, Download, ChevronDown } from 'lucide-react';
 import { retryTask, resumeTask, rollbackTask, cleanupTask } from '../lib/api';
 import { confirmAction, notifyAction } from '../components/confirmUtils';
+import { formatIstDateTime, formatLogTimestampsIst } from '../utils/istLogTime';
 import './DeploymentLogs.css';
 
 interface Task {
@@ -44,37 +45,65 @@ export function DeploymentLogs() {
   const [selectedTaskId, setSelectedTaskId] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [copyNotice, setCopyNotice] = useState('');
+  const [notice, setNotice] = useState<{ message: string; error: boolean } | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [isConsoleMaximized, setIsConsoleMaximized] = useState(false);
   const logBodyRef = useRef<HTMLDivElement>(null);
-  const copyNoticeTimerRef = useRef<number | null>(null);
+  const noticeTimerRef = useRef<number | null>(null);
+  const refreshInFlightRef = useRef(false);
+  const refreshGenerationRef = useRef(0);
+
+  const showNotice = useCallback((message: string, error = false) => {
+    if (noticeTimerRef.current !== null) window.clearTimeout(noticeTimerRef.current);
+    setNotice({ message, error });
+    noticeTimerRef.current = window.setTimeout(() => setNotice(null), error ? 5000 : 2500);
+  }, []);
 
   const fetchTasks = useCallback(async (manual = false) => {
-    if (manual) setRefreshing(true);
+    if (manual && refreshInFlightRef.current) return;
+    const generation = refreshGenerationRef.current;
+    const minimumSpin = manual ? new Promise<void>(resolve => window.setTimeout(resolve, 500)) : null;
+    let succeeded = false;
+    if (manual) {
+      refreshInFlightRef.current = true;
+      setNotice(null);
+      setRefreshing(true);
+    }
     try {
       const [clusterRes, tasksRes] = await Promise.all([
         fetch(`/api/v1/ui/clusters/${id}`, { cache: 'no-store' }),
         fetch(`/api/v1/ui/clusters/${id}/tasks`, { cache: 'no-store' }),
       ]);
+      if (manual && !clusterRes.ok) throw new Error('Cluster request failed');
       if (clusterRes.ok) setCluster(await clusterRes.json());
       if (tasksRes.ok) {
         const nextTasks: Task[] = await tasksRes.json();
+        if (!Array.isArray(nextTasks)) throw new Error('Invalid tasks response');
         const availableTasks = Array.isArray(nextTasks) ? nextTasks : [];
         setTasks(availableTasks);
         setSelectedTaskId(current => current && availableTasks.some(task => task.id === current) ? current : availableTasks[0]?.id || '');
+        succeeded = true;
       } else {
         throw new Error('Tasks request failed');
       }
     } catch (error) {
       console.error('Failed to load deployment logs', error);
-      setTasks([]);
-      setSelectedTaskId('');
+      if (!manual) {
+        setTasks([]);
+        setSelectedTaskId('');
+      }
     } finally {
       setLoading(false);
-      if (manual) setRefreshing(false);
+      if (manual) {
+        await minimumSpin;
+        if (generation === refreshGenerationRef.current) {
+          refreshInFlightRef.current = false;
+          setRefreshing(false);
+          showNotice(succeeded ? 'Logs refreshed' : "Couldn't refresh logs. Try again.", !succeeded);
+        }
+      }
     }
-  }, [id]);
+  }, [id, showNotice]);
 
   useEffect(() => {
     void (async () => { await fetchTasks(); })();
@@ -96,16 +125,15 @@ export function DeploymentLogs() {
   }, [selectedTask?.logOutput, selectedTask?.stepLogs]);
 
   useEffect(() => () => {
-    if (copyNoticeTimerRef.current !== null) window.clearTimeout(copyNoticeTimerRef.current);
+    refreshGenerationRef.current += 1;
+    if (noticeTimerRef.current !== null) window.clearTimeout(noticeTimerRef.current);
   }, []);
 
   const handleCopyLogs = async () => {
     if (!selectedTask) return;
     try {
-      await navigator.clipboard.writeText(selectedTask.logOutput || selectedTask.errorMsg || '');
-      setCopyNotice('Copied to clipboard');
-      if (copyNoticeTimerRef.current !== null) window.clearTimeout(copyNoticeTimerRef.current);
-      copyNoticeTimerRef.current = window.setTimeout(() => setCopyNotice(''), 2500);
+      await navigator.clipboard.writeText(formatLogTimestampsIst(selectedTask.logOutput || selectedTask.errorMsg || ''));
+      showNotice('Copied to clipboard');
     } catch (error) {
       console.error('Failed to copy deployment logs', error);
       notifyAction('Unable to copy logs to the clipboard.');
@@ -119,6 +147,13 @@ export function DeploymentLogs() {
     return <Clock size={15} />;
   };
 
+  const feedback = notice && (
+    <div className={`deployment-copy-toast${notice.error ? ' deployment-refresh-error' : ''}`} role={notice.error ? 'alert' : 'status'} aria-live={notice.error ? 'assertive' : 'polite'}>
+      {notice.error ? <XCircle size={16} /> : <CheckCircle2 size={16} />}
+      {notice.message}
+    </div>
+  );
+
   if (loading && tasks.length === 0) {
     return <div className="state-center"><Loader2 className="spin" /> Loading deployment logs...</div>;
   }
@@ -126,6 +161,7 @@ export function DeploymentLogs() {
   if (!selectedTask) {
     return (
       <div className="empty-state deployment-log-empty">
+        {feedback}
         <Terminal size={32} />
         <h3>No deployment logs</h3>
         <p>No task has been executed for this cluster.</p>
@@ -195,7 +231,7 @@ export function DeploymentLogs() {
 
   const handleDownloadLogs = () => {
     if (!selectedTask) return;
-    const content = selectedTask.logOutput || selectedTask.errorMsg || '';
+    const content = formatLogTimestampsIst(selectedTask.logOutput || selectedTask.errorMsg || '');
     const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -218,7 +254,7 @@ export function DeploymentLogs() {
       } else if (lowerLine.includes('failed') || lowerLine.includes('error')) {
         className += ' log-error';
       }
-      return <div key={idx} className={className}>{line || ' '}</div>;
+      return <div key={idx} className={className}>{formatLogTimestampsIst(line) || ' '}</div>;
     });
   };
 
@@ -269,19 +305,16 @@ export function DeploymentLogs() {
               background: "var(--bg-surface)",
               cursor: 'pointer'
             }}
-            title="Refresh"
+            title={refreshing ? 'Refreshing logs...' : 'Refresh'}
+            aria-label={refreshing ? 'Refreshing logs' : 'Refresh logs'}
+            aria-busy={refreshing}
           >
             <RefreshCw size={16} className={loading || refreshing ? 'spin' : ''} style={{ color: 'var(--text-tertiary)' }} />
           </button>
         </div>
       </div>
 
-      {copyNotice && (
-        <div className="deployment-copy-toast" role="status" aria-live="polite">
-          <CheckCircle2 size={16} />
-          {copyNotice}
-        </div>
-      )}
+      {feedback}
 
       {/* Task dropdown selector */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)', width: '100%' }}>
@@ -356,10 +389,10 @@ export function DeploymentLogs() {
             {selectedTask.hostId}
           </div>
           <div style={{ flex: 1, padding: '14px 16px', fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-regular)', fontSize: 'var(--text-base)', color: 'var(--text-heading)' }}>
-            {new Date(selectedTask.createdAt).toLocaleString()}
+            {formatIstDateTime(selectedTask.createdAt)}
           </div>
           <div style={{ flex: 1, padding: '14px 16px', fontFamily: 'Satoshi, sans-serif', fontWeight: 'var(--font-regular)', fontSize: 'var(--text-base)', color: 'var(--text-heading)' }}>
-            {new Date(selectedTask.updatedAt).toLocaleString()}
+            {formatIstDateTime(selectedTask.updatedAt)}
           </div>
         </div>
       </div>
@@ -464,7 +497,7 @@ export function DeploymentLogs() {
           {selectedTask.currentStep && <small>Failed step: {selectedTask.currentStep}</small>}
           <details>
             <summary>Technical error</summary>
-            <pre>{selectedTask.errorMsg}</pre>
+            <pre>{formatLogTimestampsIst(selectedTask.errorMsg)}</pre>
           </details>
         </div>
       )}
