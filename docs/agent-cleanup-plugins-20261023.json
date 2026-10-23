@@ -1,0 +1,15 @@
+{
+  "sourceCommit": "98b22b22605d4c99d92253ae6f9654dc8eaeae08",
+  "builtAt": "2026-10-23",
+  "features": [
+    "owned-service-cleanup",
+    "connect-filestream-parity"
+  ],
+  "sha256": {
+    "internal-agent/bin/tantor-agent-linux-amd64": "821067c1f74c79a1388cf8bb012a3f5b1a3606a090d7325a99915e73a0b67cdd",
+    "internal-agent/bin/tantor-agent-linux-arm64": "d1c2c7dabfe9f60bc6be1471abea11a89958d71e0fe7e42f536c9d1528ed36bb",
+    "tantor-discovery-agent/tantor-discovery-agent-linux-amd64": "057f8d9b35e22bbfdc64c74ff6b63eaefa29177ccc0dc6e5712fd86290d84d9a",
+    "tantor-discovery-agent/tantor-discovery-agent-linux-arm64": "2421f0ad1239a15f3443426a9ae097de68e1e00faf32f87fa0f9fbb29bb859bb",
+    "internal-agent/source-reporting.9.tar.gz": "7000721b8edfaca2ca19e5eefc1a5b71230684d569cf33eb539de2a41a7291b0"
+  }
+}
