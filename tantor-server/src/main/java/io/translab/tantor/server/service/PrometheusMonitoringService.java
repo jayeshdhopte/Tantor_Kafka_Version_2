@@ -390,7 +390,9 @@ public class PrometheusMonitoringService {
     }
 
     private void addExternalJmxTargets(List<SdTargetGroup> targets, Cluster cluster) {
-        if (!Boolean.TRUE.equals(cluster.getJmxEnabled())) {
+        var configured = externalMetricOptions(cluster.getId());
+        if(configured != null && !configured.isEnabled())return;
+        if (configured == null && !Boolean.TRUE.equals(cluster.getJmxEnabled())) {
             return;
         }
         for (ExternalClusterNode node : externalClusterNodeRepository.findByClusterId(cluster.getId())) {
@@ -401,7 +403,7 @@ public class PrometheusMonitoringService {
             boolean broker = Boolean.TRUE.equals(node.getIsBroker());
             boolean controller = Boolean.TRUE.equals(node.getIsController());
             if (broker) {
-                int jmxPort = validExporterPort(node.getJmxExporterPort())
+                int jmxPort = configured != null ? configured.getBrokerPort() : validExporterPort(node.getJmxExporterPort())
                         ? node.getJmxExporterPort()
                         : defaultJmxExporterPort;
                 if (validExporterPort(jmxPort)) {
@@ -411,7 +413,7 @@ public class PrometheusMonitoringService {
                 addTargetIfAbsent(targets, node.getHost() + ":" + kafkaExporterPortBase,
                         labels(cluster, "kafka_exporter", controller ? "broker_controller" : "broker", nodeId));
             } else if (controller) {
-                int jmxPort = validExporterPort(node.getJmxExporterPort())
+                int jmxPort = configured != null ? configured.getControllerPort() : validExporterPort(node.getJmxExporterPort())
                         ? node.getJmxExporterPort()
                         : defaultControllerJmxExporterPort;
                 if (validExporterPort(jmxPort)) {
@@ -423,6 +425,8 @@ public class PrometheusMonitoringService {
     }
 
     private void addExternalJmxTargets(List<SdTargetGroup> targets, ExternalCluster cluster) {
+        var configured = externalMetricOptions(cluster.getId());
+        if(configured != null && !configured.isEnabled())return;
         for (ExternalClusterNode node : externalClusterNodeRepository.findByClusterId(cluster.getId())) {
             if (node.getHost() == null || node.getHost().isBlank()) {
                 continue;
@@ -431,7 +435,7 @@ public class PrometheusMonitoringService {
             boolean broker = Boolean.TRUE.equals(node.getIsBroker());
             boolean controller = Boolean.TRUE.equals(node.getIsController());
             if (broker) {
-                int port = validExporterPort(node.getJmxExporterPort())
+                int port = configured != null ? configured.getBrokerPort() : validExporterPort(node.getJmxExporterPort())
                         ? node.getJmxExporterPort()
                         : defaultJmxExporterPort;
                 addTargetIfAbsent(targets, node.getHost() + ":" + port,
@@ -439,13 +443,21 @@ public class PrometheusMonitoringService {
                 addTargetIfAbsent(targets, node.getHost() + ":" + kafkaExporterPortBase,
                         labels(cluster, "kafka_exporter", controller ? "broker_controller" : "broker", nodeId));
             } else if (controller) {
-                int port = validExporterPort(node.getJmxExporterPort())
+                int port = configured != null ? configured.getControllerPort() : validExporterPort(node.getJmxExporterPort())
                         ? node.getJmxExporterPort()
                         : defaultControllerJmxExporterPort;
                 addTargetIfAbsent(targets, node.getHost() + ":" + port,
                         labels(cluster, "kafka_jmx", "controller", nodeId));
             }
         }
+    }
+
+    private io.translab.tantor.server.dto.ExternalConnectionSettings.Metrics externalMetricOptions(UUID id) {
+        return externalClusterRepository.findById(id).map(cluster -> {
+            if(cluster.getConnectionSettings()==null || cluster.getConnectionSettings().isBlank())return null;
+            try{return objectMapper.readValue(cluster.getConnectionSettings(),io.translab.tantor.server.dto.ExternalConnectionSettings.class).getMetrics();}
+            catch(Exception e){throw new IllegalStateException("External metrics configuration could not be read.",e);}
+        }).orElse(null);
     }
 
     private void addTargetIfAbsent(List<SdTargetGroup> targets, String target, Map<String, String> labels) {

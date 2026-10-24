@@ -27,6 +27,7 @@ const ClusterActions = React.lazy(() => import('./pages/ClusterActions').then(m 
 const DeploymentLogs = React.lazy(() => import('./pages/DeploymentLogs').then(m => ({ default: m.DeploymentLogs })));
 const Brokers = React.lazy(() => import('./pages/Brokers').then(m => ({ default: m.Brokers })));
 const ExternalClusters = React.lazy(() => import('./pages/ExternalClusters').then(m => ({ default: m.ExternalClusters })));
+const ExternalConnectionSettings = React.lazy(() => import('./pages/ExternalConnectionSettings').then(m => ({ default: m.ExternalConnectionSettings })));
 const ClusterDeployment = React.lazy(() => import('./pages/ClusterDeployment').then(m => ({ default: m.ClusterDeployment })));
 const LdapSettings = React.lazy(() => import('./pages/LdapSettings').then(m => ({ default: m.LdapSettings })));
 const SchemaRegistry = React.lazy(() => import('./pages/SchemaRegistry').then(m => ({ default: m.SchemaRegistry })));
@@ -84,6 +85,7 @@ function App() {
                   <Route path="/clusters" element={<Clusters />} />
                   <Route path="/cluster-deployment" element={<ClusterDeployment />} />
                   <Route path="/external-clusters" element={<ExternalClusters />} />
+                  <Route path="/external-clusters/:id/connection-settings" element={<ExternalConnectionSettings />} />
                   <Route path="/clusters/:id" element={<ClusterDetails />}>
                     <Route path="overview" element={<ClusterOverview />} />
                     <Route path="nodes" element={<ClusterNodes />} />

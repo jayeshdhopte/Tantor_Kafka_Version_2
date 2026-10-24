@@ -43,7 +43,7 @@ class TopicOperationsServiceDetailsTest {
         when(dirs.allDescriptions()).thenReturn(KafkaFuture.completedFuture(Map.of()));
         var segments = mock(TopicSegmentMetricsService.class);
         when(segments.segmentCount(cluster, description)).thenReturn(new TopicSegmentMetricsService.SegmentCount(1L, null));
-        var service = new TopicOperationsService(kafka, mock(AuditService.class), segments);
+        var service = new TopicOperationsService(kafka, mock(AuditService.class), segments, mock(MessageMaskingService.class));
         var details = service.getTopicDetails(cluster, name);
         assertThat(details).containsEntry("segmentCount", 1L).containsEntry("storedBytes", 0L)
                 .containsEntry("partitionCount", 1).containsEntry("messageCount", 0L);

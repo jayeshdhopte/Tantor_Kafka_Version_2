@@ -20,6 +20,10 @@ public class ExternalCluster {
     @Column(name = "bootstrap_servers", nullable = false)
     private String bootstrapServers;
 
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
+    @Column(name = "connection_settings", columnDefinition = "jsonb")
+    private String connectionSettings;
+
     @Column(name = "kafka_version")
     private String kafkaVersion;
 

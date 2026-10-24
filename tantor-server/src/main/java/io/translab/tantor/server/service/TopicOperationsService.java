@@ -34,6 +34,7 @@ public class TopicOperationsService {
     private final KafkaAdminService kafkaAdminService;
     private final AuditService auditService;
     private final TopicSegmentMetricsService topicSegmentMetricsService;
+    private final MessageMaskingService messageMaskingService;
 
     public Map<String, Object> getTopicDetails(UUID clusterId, String topicName) {
         AdminClient admin = kafkaAdminService.getAdminClient(clusterId);
@@ -210,7 +211,8 @@ public class TopicOperationsService {
         long started = System.nanoTime();
         List<ConsumerRecord<byte[], byte[]>> records = readRecords(
                 clusterId, topicName, requestedPartitions, order, Math.min(Math.max(limit, 1), 500), search);
-        List<Map<String, Object>> messages = records.stream().map(this::messageMap).toList();
+        var masking = messageMaskingService.rules(clusterId);
+        List<Map<String, Object>> messages = records.stream().map(record -> messageMap(record, masking)).toList();
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("messages", messages);
@@ -434,7 +436,9 @@ public class TopicOperationsService {
         properties.put("key.deserializer", ByteArrayDeserializer.class.getName());
         properties.put("value.deserializer", ByteArrayDeserializer.class.getName());
         properties.put("enable.auto.commit", "false");
-        properties.put("group.id", "tantor-browser-" + UUID.randomUUID());
+        // Manual partition assignment and no commits: browsing must not join a group.
+        properties.remove("group.id");
+        var masking = messageMaskingService.rules(clusterId);
         properties.put("auto.offset.reset", "earliest");
 
         try (KafkaConsumer<byte[], byte[]> consumer = new KafkaConsumer<>(properties)) {
@@ -468,7 +472,7 @@ public class TopicOperationsService {
                 }
                 emptyPolls = 0;
                 for (ConsumerRecord<byte[], byte[]> record : polled) {
-                    if (matches(record, search)) records.add(record);
+                    if (matches(record, search, masking)) records.add(record);
                 }
                 boolean atEnd = partitions.stream().allMatch(tp -> consumer.position(tp) >= ends.getOrDefault(tp, 0L));
                 if (atEnd) break;
@@ -483,13 +487,13 @@ public class TopicOperationsService {
         }
     }
 
-    private Map<String, Object> messageMap(ConsumerRecord<byte[], byte[]> record) {
+    private Map<String, Object> messageMap(ConsumerRecord<byte[], byte[]> record, List<io.translab.tantor.server.dto.ExternalConnectionSettings.Mask> masking) {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("partition", record.partition());
         row.put("offset", record.offset());
         row.put("timestamp", record.timestamp());
-        row.put("key", asUtf8(record.key()));
-        row.put("value", asUtf8(record.value()));
+        row.put("key", messageMaskingService.apply(masking,record.topic(),true,asUtf8(record.key())));
+        row.put("value", messageMaskingService.apply(masking,record.topic(),false,asUtf8(record.value())));
         row.put("keySize", record.key() == null ? 0 : record.key().length);
         row.put("valueSize", record.value() == null ? 0 : record.value().length);
         Map<String, List<String>> headers = new LinkedHashMap<>();
@@ -499,11 +503,11 @@ public class TopicOperationsService {
         return row;
     }
 
-    private boolean matches(ConsumerRecord<byte[], byte[]> record, String search) {
+    private boolean matches(ConsumerRecord<byte[], byte[]> record, String search, List<io.translab.tantor.server.dto.ExternalConnectionSettings.Mask> masking) {
         if (search == null || search.isBlank()) return true;
         String needle = search.toLowerCase(Locale.ROOT);
-        return Optional.ofNullable(asUtf8(record.key())).orElse("").toLowerCase(Locale.ROOT).contains(needle)
-                || Optional.ofNullable(asUtf8(record.value())).orElse("").toLowerCase(Locale.ROOT).contains(needle);
+        return Optional.ofNullable(messageMaskingService.apply(masking,record.topic(),true,asUtf8(record.key()))).orElse("").toLowerCase(Locale.ROOT).contains(needle)
+                || Optional.ofNullable(messageMaskingService.apply(masking,record.topic(),false,asUtf8(record.value()))).orElse("").toLowerCase(Locale.ROOT).contains(needle);
     }
 
     private long recordSize(ConsumerRecord<byte[], byte[]> record) {

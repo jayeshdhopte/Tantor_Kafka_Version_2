@@ -14,6 +14,8 @@ import {
 } from 'lucide-react';
 import { getValidToken } from '../services/KeycloakService';
 import './ExternalClusters.css';
+import { BootstrapServersInput, ExternalConnectionOptionsForm } from '../components/ExternalConnectionOptionsForm';
+import { emptyConnectionOptions, validateBootstrapServers, validateConnectionOptions } from '../utils/externalConnectionOptions';
 
 interface BrokerNode {
   node_id?: string | number;
@@ -84,6 +86,7 @@ const TRUSTSTORE_FILE_RULES: Record<string, { accept: string; extensions: string
 };
 
 export function ExternalClusters() {
+  const [connectionOptions, setConnectionOptions] = useState(emptyConnectionOptions);
   const navigate = useNavigate();
   const [banner, setBanner] = useState('');
   const [error, setError] = useState('');
@@ -236,7 +239,7 @@ export function ExternalClusters() {
       const res = await fetch('/api/v1/ui/external-clusters/bootstrap/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, bootstrapServers: validateBootstrapServers(form.bootstrapServers) }),
       });
       const data: BootstrapResult = await res.json();
       setBootstrapResult(data);
@@ -317,6 +320,8 @@ export function ExternalClusters() {
       );
       const payload = {
         ...form,
+        connectionOptions,
+        bootstrapServers: validateBootstrapServers(form.bootstrapServers),
         clusterId: bootstrapResult?.cluster_id || bootstrapResult?.kafka_cluster_id || bootstrapResult?.clusterId,
         brokerCount: bootstrapResult?.brokerCount
           ?? bootstrapResult?.brokers?.filter((node) => node.isBroker !== false).length
@@ -338,6 +343,7 @@ export function ExternalClusters() {
         throw new Error('Your sign-in session is unavailable. Please sign in again and retry.');
       }
 
+      validateConnectionOptions(connectionOptions);
       const res = await fetch('/api/v1/ui/external-clusters/bootstrap/register', {
         method: 'POST',
         headers: {
@@ -454,19 +460,9 @@ export function ExternalClusters() {
                     </select>
                   </div>
                   <div className="form-field-group bootstrap-url-field">
-                    <label>Bootstrap URL</label>
-                    <input
-                      type="text"
-                      placeholder="Broker host and port"
-                      value={form.bootstrapServers}
-                      onChange={e => {
-                        setForm(prev => ({ ...prev, bootstrapServers: e.target.value }));
-                        setBootstrapResult(null);
-                      }}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') testBootstrap();
-                      }}
-                    />
+                    <BootstrapServersInput value={form.bootstrapServers} onChange={value => {
+                      setForm(prev => ({ ...prev, bootstrapServers: value })); setBootstrapResult(null);
+                    }} disabled={testing || registering} />
                   </div>
                 </div>
               </div>
@@ -748,6 +744,7 @@ export function ExternalClusters() {
                 </div>
               )}
 
+              <ExternalConnectionOptionsForm value={connectionOptions} onChange={setConnectionOptions} disabled={registering} />
               <div className="external-actions-row">
                 <button className="action-btn cancel-btn" onClick={() => navigate('/clusters')}>
                   Cancel

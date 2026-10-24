@@ -492,6 +492,8 @@ export function Clusters() {
 
       {servicesMenu && <AnchoredMenu anchor={servicesMenu.anchor} className="cluster-services-menu" onClose={() => setServicesMenu(null)}>
         <div role="menu">
+          {servicesMenu.cluster.mode === 'EXTERNAL' && !['DELETED','DELETING'].includes(servicesMenu.cluster.status) &&
+            <button role="menuitem" disabled={locked(servicesMenu.cluster.id)} onClick={() => { navigate(`/external-clusters/${servicesMenu.cluster.id}/connection-settings`); setServicesMenu(null); }}><Settings size={15} /> Connection settings</button>}
           {(servicesMenu.cluster.mode === 'EXTERNAL'
             ? !['DELETED', 'DELETING'].includes(servicesMenu.cluster.status)
             : servicesMenu.cluster.status === 'SUCCESS') &&

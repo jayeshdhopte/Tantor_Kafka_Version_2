@@ -1,0 +1,15 @@
+.connection-options { border: 1px solid var(--border-color, #d6d1dd); border-radius: 10px; padding: 20px; margin: 16px 0; color: var(--text-primary, #35264c); min-width: 0; }
+.connection-options legend { font-weight: 600; padding: 0 6px; }
+.connection-options p { color: var(--text-secondary, #696371); font-size: 13px; line-height: 1.6; }
+.connection-options details { border-top: 1px solid var(--border-color, #d6d1dd); padding: 16px 0; }
+.connection-options summary { cursor: pointer; font-weight: 600; margin-bottom: 12px; }
+.connection-options summary span { font-size: 12px; color: var(--text-secondary); margin-left: 12px; }
+.connection-options label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; flex: 1; min-width: 0; }
+.connection-options input, .connection-options select { border: 1px solid var(--border-color, #cbc6d2); border-radius: 7px; padding: 10px; min-width: 0; width: 100%; box-sizing: border-box; background: var(--bg-surface, #fff); color: var(--text-primary, #35264c); }
+.connection-options .ds-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid #4b1b75; border-radius: 7px; padding: 9px 12px; background: var(--bg-surface, #fff); color: var(--text-primary, #4b1b75); cursor: pointer; }
+.connection-options .ds-button:disabled { opacity: .5; cursor: default; }
+.connection-row { display: flex; align-items: end; gap: 12px; margin: 10px 0; }
+.connection-row > input { flex: 1; }
+.connection-service-row { display: grid; grid-template-columns: 1fr 100px 1.5fr 100px auto; gap: 12px; align-items: end; margin: 12px 0; }
+.connection-mask-rule { border: 1px solid var(--border-color, #d6d1dd); border-radius: 8px; padding: 14px; margin: 14px 0; display: grid; gap: 12px; }
+@media(max-width: 900px) { .connection-service-row { grid-template-columns: 1fr 1fr; } .connection-row { flex-wrap: wrap; } }

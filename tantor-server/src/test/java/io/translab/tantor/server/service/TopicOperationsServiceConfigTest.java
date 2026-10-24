@@ -43,7 +43,7 @@ class TopicOperationsServiceConfigTest {
         when(admin.incrementalAlterConfigs(any())).thenReturn(altered);
         when(altered.all()).thenReturn(KafkaFuture.completedFuture(null));
 
-        new TopicOperationsService(kafkaAdmin, mock(AuditService.class), mock(TopicSegmentMetricsService.class))
+        new TopicOperationsService(kafkaAdmin, mock(AuditService.class), mock(TopicSegmentMetricsService.class), mock(MessageMaskingService.class))
                 .updateTopicConfigs(clusterId, "orders", Map.of("retention.ms", "2000"), List.of("cleanup.policy"));
 
         @SuppressWarnings({"unchecked", "rawtypes"})
@@ -76,7 +76,7 @@ class TopicOperationsServiceConfigTest {
                 entry("retention.ms", "1000", ConfigEntry.ConfigSource.DEFAULT_CONFIG, false, true)
         )))));
 
-        assertThatThrownBy(() -> new TopicOperationsService(kafkaAdmin, mock(AuditService.class), mock(TopicSegmentMetricsService.class))
+        assertThatThrownBy(() -> new TopicOperationsService(kafkaAdmin, mock(AuditService.class), mock(TopicSegmentMetricsService.class), mock(MessageMaskingService.class))
                 .updateTopicConfigs(clusterId, "orders", Map.of("retention.ms", "2000"), List.of()))
                 .isInstanceOf(IllegalArgumentException.class);
         verify(admin, never()).incrementalAlterConfigs(any());

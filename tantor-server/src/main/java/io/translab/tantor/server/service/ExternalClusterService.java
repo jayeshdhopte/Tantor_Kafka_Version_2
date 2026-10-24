@@ -65,6 +65,8 @@ public class ExternalClusterService {
     private final EncryptionService encryptionService;
     private final TruststoreStorageService truststoreStorageService;
     private final PrometheusMonitoringService prometheusMonitoringService;
+    @org.springframework.beans.factory.annotation.Autowired
+    private ExternalConnectionSettingsService connectionSettings;
 
     private final Map<String, ExternalAgentTask> pendingTasks = new ConcurrentHashMap<>();
     private final Map<String, ExternalAgentTask> completedTasks = new ConcurrentHashMap<>();
@@ -397,6 +399,7 @@ public class ExternalClusterService {
 
     @Transactional
     public ExternalCluster registerBootstrapCluster(BootstrapExternalClusterRequest request) {
+        if(request.getConnectionOptions()!=null) connectionSettings.validate(request.getConnectionOptions());
         if (request.getBootstrapServers() == null || request.getBootstrapServers().isBlank()) {
             throw new IllegalArgumentException("Bootstrap servers are required.");
         }
@@ -568,6 +571,10 @@ public class ExternalClusterService {
                 null,
                 externalAuditDetails(savedCluster)
         );
+        if(request.getConnectionOptions()!=null) {
+            request.getConnectionOptions().setBootstrapServers(null);
+            connectionSettings.save(savedCluster.getId(),request.getConnectionOptions());
+        }
         return savedCluster;
     }
 
@@ -2115,6 +2122,7 @@ public class ExternalClusterService {
 
     @Data
     public static class BootstrapExternalClusterRequest {
+        private io.translab.tantor.server.dto.ExternalConnectionSettings.Request connectionOptions;
         private String name;
         private String environment;
         private String bootstrapServers;
