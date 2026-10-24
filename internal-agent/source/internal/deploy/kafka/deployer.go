@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -20,6 +21,7 @@ import (
 	"io.translab/tantor-agent/internal/config"
 	"io.translab/tantor-agent/internal/configbackup"
 	"io.translab/tantor-agent/internal/executor"
+	"io.translab/tantor-agent/internal/pathpolicy"
 	"io.translab/tantor-agent/internal/taskvalidate"
 	"io.translab/tantor-agent/pkg/api"
 	"io.translab/tantor-agent/pkg/artifactwork"
@@ -1191,14 +1193,7 @@ func kafkaArtifactWorkDir(t *api.Task, fallback, approvedRoots string) (string, 
 	if !filepath.IsAbs(candidate) {
 		return "", fmt.Errorf("UI artifact path must be absolute: %q", configured)
 	}
-	for _, root := range strings.Split(approvedRoots, ":") {
-		root = filepath.Clean(strings.TrimSpace(root))
-		rel, err := filepath.Rel(root, candidate)
-		if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
-			return candidate, nil
-		}
-	}
-	return "", fmt.Errorf("UI artifact path %q is outside the administrator-approved deployment roots", candidate)
+	return pathpolicy.ResolveCanonical(candidate, approvedRoots, "UI artifact path")
 }
 
 func (d *Deployer) ensureActiveSymlink(ctx context.Context, activeDir, versionedDir string) error {
@@ -2415,12 +2410,18 @@ func (d *Deployer) Clean(ctx context.Context, t *api.Task) (string, error) {
 
 	state, err := d.loadDeploymentState(t)
 	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return logs.String(), err
+		}
 		// A crash during download can precede the Kafka deployment-state file.
 		// The backend's saved task references still identify its staging safely.
 		if cleanupErr := d.cleanupDeploymentArtifacts(t, deploymentState{}); cleanupErr != nil {
 			return logs.String(), cleanupErr
 		}
-		return logs.String(), err
+		if err := d.cleanUninstalledDirectories(ctx, t); err != nil {
+			return logs.String(), err
+		}
+		return "[PASS] Deployment stopped before installation; only empty prerequisite directories and owned staging were removed.\n", nil
 	}
 	if state.Cleaned {
 		if err := d.cleanupDeploymentArtifacts(t, state); err != nil {

@@ -58,10 +58,11 @@ func (d *Deployer) cleanupDeploymentArtifacts(task *api.Task, state deploymentSt
 		}
 	}
 	for _, root := range uniqueNonEmpty(roots) {
-		if _, err := kafkaArtifactWorkDir(&api.Task{Parameters: map[string]string{"artifact_load_dir": root}}, d.cfg.Paths.ArtifactsDir, d.cfg.Paths.AllowedDeploymentRoots); err != nil {
+		resolved, err := kafkaArtifactWorkDir(&api.Task{Parameters: map[string]string{"artifact_load_dir": root}}, d.cfg.Paths.ArtifactsDir, d.cfg.Paths.AllowedDeploymentRoots)
+		if err != nil {
 			return err
 		}
-		if err := artifactwork.CleanupCluster(root, firstNonEmpty(task.Parameters["db_cluster_id"], task.Parameters["cluster_id"])); err != nil {
+		if err := artifactwork.CleanupCluster(resolved, firstNonEmpty(task.Parameters["db_cluster_id"], task.Parameters["cluster_id"])); err != nil {
 			return err
 		}
 	}

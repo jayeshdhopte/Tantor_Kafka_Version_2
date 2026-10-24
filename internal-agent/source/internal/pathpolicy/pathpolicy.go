@@ -32,6 +32,17 @@ func Resolve(value, approvedRoots, field string) (string, error) {
 	return "", fmt.Errorf("%s %q is outside administrator-approved deployment roots", field, candidate)
 }
 
+// ResolveCanonical pins work to the real location of an approved root, including
+// administrator-configured root aliases. Symlinks beneath that root must still
+// resolve inside it; approving a parent does not approve arbitrary redirections.
+func ResolveCanonical(value, approvedRoots, field string) (string, error) {
+	approved, err := Resolve(value, approvedRoots, field)
+	if err != nil {
+		return "", err
+	}
+	return resolveExisting(approved), nil
+}
+
 func resolveExisting(path string) string {
 	current := path
 	for {
