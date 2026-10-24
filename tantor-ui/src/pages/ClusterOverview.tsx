@@ -408,7 +408,7 @@ export function ClusterOverview() {
             <p>{service.hostname || service.hostId} · {service.ipAddress || 'IP not reported'}</p>
             {service.pathSource === 'AGENT_DISCOVERY' && <p>Agent-reported paths · Agent {service.agentStatus?.toLowerCase() || 'unknown'}</p>}
             {service.pathSource === 'DEPLOYMENT_CONFIGURATION' && <p>Saved deployment paths · Agent {service.agentStatus?.toLowerCase() || 'unknown'}</p>}
-            <dl>{[['Install directory', service.installDir], ['Configuration file', service.configFile], ['Working directory', service.workingDir], ['Log directory', service.logDir], ...(service.serviceType === 'KAFKA_CONNECT' ? [['Plugin directory', service.pluginDir]] : [])].map(([label, value]) => <div key={label}><dt>{label}</dt><dd><code>{value || 'Not reported'}</code></dd></div>)}</dl>
+            <dl><div><dt>Install directory</dt><dd><code>{service.installDir || 'Not reported'}</code></dd></div></dl>
           </article>)}</div>
         </div>
       </section>}
