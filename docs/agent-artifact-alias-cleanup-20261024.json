@@ -1,0 +1,16 @@
+{
+  "sourceCommit": "467e0e202fce04ae9533aa9b67c813e09217b5fa",
+  "builtAt": "2026-10-24",
+  "features": [
+    "approved-artifact-root-aliases",
+    "safe-preinstall-cleanup",
+    "owned-artifact-cleanup"
+  ],
+  "sha256": {
+    "internal-agent/bin/tantor-agent-linux-amd64": "8c855f027b35040745d09278597ba120feb59a1ec3365eebaa44cd3a61b81dcf",
+    "internal-agent/bin/tantor-agent-linux-arm64": "a96f1f342d3d90911eb410882d55132822d0fe1f67707691d746456e1cc44453",
+    "tantor-discovery-agent/tantor-discovery-agent-linux-amd64": "962f781fb368f6a4eb8371d57723d2425bb127e6c599558fe1b6e0ad56909277",
+    "tantor-discovery-agent/tantor-discovery-agent-linux-arm64": "37b0833c8994cad1e53316a4c7811d8e7dd43b88961fe7eac28a96f36555e4c4",
+    "internal-agent/source-reporting.9.tar.gz": "94c5a2b159e7f70cf9cfaf96bccccafa7bf36dc816a0f4f56079b16cd20ad2a9"
+  }
+}
