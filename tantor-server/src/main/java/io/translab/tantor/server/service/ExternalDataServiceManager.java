@@ -101,11 +101,49 @@ public class ExternalDataServiceManager {
   }
   List<JobStep> steps=new ArrayList<>();
   for(var s:additions) { services.saveAndFlush(s); for(String op:List.of("PRECHECK","TOPICS","INSTALL","SAVE")) {
-   JobStep step=new JobStep(); step.setStepOrder(steps.size()+1); step.setTargetId(s.getAgentId()); step.setName(s.getRole()+": "+op); step.setPayload(json(Map.of("serviceId",s.getId().toString(),"operation",op))); steps.add(step);
+   JobStep step=new JobStep(); step.setStepOrder(steps.size()+1); step.setTargetId(s.getAgentId());
+   var payload=serviceStepPayload(s,op);step.setName(serviceStepName(payload));step.setPayload(json(payload));steps.add(step);
   } }
   Job job=new Job(); job.setType(JobType.EXTERNAL_SERVICES); job.setStatus(JobStatus.PENDING); job.setRollbackSupported(false); job.setRequestedBy(username); job.setResourceKey("cluster:"+id); job.setPayload(json(Map.of("clusterId",id.toString())));
   Job saved=jobs.createJob(job,steps);
   return Map.of("id",id.toString(),"jobId",saved.getId().toString());
+ }
+ Map<String,String> serviceStepPayload(ExternalDataService service,String operation) {
+  var config=read(service.getConfigJson());
+  var agent=agents.findById(service.getAgentId()).filter(a->Objects.equals(a.getClusterId(),service.getClusterId())).orElse(null);
+  Map<String,String> payload=new LinkedHashMap<>();
+  payload.put("serviceId",service.getId().toString());payload.put("operation",operation);
+  payload.put("serviceRole",service.getRole());
+  payload.put("serviceName",config.getOrDefault("service_name",service.getRole().replace('_','-')));
+  payload.put("restPort",config.getOrDefault("rest_port",""));
+  payload.putAll(RestartNodeDisplayService.agentIdentity(agent,config.get("host_name"),mapper));
+  if("Hostname not reported".equals(payload.get("hostname")) && !value(config,"host_display_name","").isBlank()) payload.put("hostname",config.get("host_display_name"));
+  return payload;
+ }
+ static String serviceStepName(Map<String,String> payload) {
+  String service="schema_registry".equals(payload.get("serviceRole"))?"Schema Registry":"Kafka Connect";
+  String action=switch(payload.getOrDefault("operation","CLEAN")) {
+   case "PRECHECK" -> "Check prerequisites for "; case "TOPICS" -> "Prepare Kafka topics for ";
+   case "INSTALL" -> "Install and start "; case "SAVE" -> "Verify and save connection for ";
+   default -> "Remove ";
+  };
+  String instance=payload.getOrDefault("serviceName","").replaceAll("(?i)-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}","");
+  String port=payload.getOrDefault("restPort","");
+  return action+service+(instance.isBlank()?"":" ["+instance+(port.isBlank()?"":":"+port)+"]")+" on "+RestartNodeDisplayService.label(payload);
+ }
+ public JobStep serviceHistoryView(JobStep original) {
+  try {
+   Map<String,String> payload=read(original.getPayload());
+   if(!payload.containsKey("serviceId"))return original;
+   if(!payload.containsKey("serviceRole")||!payload.containsKey("hostname")||!payload.containsKey("ipAddress")) {
+    var service=services.findById(UUID.fromString(payload.get("serviceId"))).orElse(null);
+    if(service!=null) serviceStepPayload(service,payload.getOrDefault("operation","CLEAN")).forEach(payload::putIfAbsent);
+   }
+   if(!payload.containsKey("serviceRole"))return original;
+   payload.putIfAbsent("hostname","Hostname not reported");payload.putIfAbsent("ipAddress","IP not reported");
+   var view=new JobStep();org.springframework.beans.BeanUtils.copyProperties(original,view);
+   view.setName(serviceStepName(payload));view.setPayload(json(payload));return view;
+  } catch(RuntimeException ignored) {return original;}
  }
  static List<String> paths(Map<String,String> p) { return List.of("install_dir","config_dir","log_dir","working_dir","plugin_dir").stream().map(p::get).filter(Objects::nonNull).filter(v->!v.isBlank()).toList(); }
  String availableServiceName(String role,String agentId,List<ExternalDataService> existing) {

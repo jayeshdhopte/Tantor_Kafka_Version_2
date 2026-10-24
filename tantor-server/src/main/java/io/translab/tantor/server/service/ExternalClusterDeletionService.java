@@ -39,8 +39,9 @@ public class ExternalClusterDeletionService {
         for (var service : owned) {
             if (!ExternalDataServiceManager.ROLES.contains(service.getRole())) throw new IllegalStateException("Unsupported owned service role.");
             JobStep step = new JobStep(); step.setStepOrder(steps.size()+1); step.setTargetId(service.getAgentId());
-            step.setName("Remove Tantor " + service.getRole() + " instance " + service.getId() + " on " + service.getAgentId());
-            step.setPayload(json(Map.of("serviceId",service.getId().toString()))); steps.add(step);
+            var stepPayload=manager.serviceStepPayload(service,"CLEAN");
+            step.setName(ExternalDataServiceManager.serviceStepName(stepPayload));
+            step.setPayload(json(stepPayload)); steps.add(step);
         }
         JobStep finish = new JobStep(); finish.setStepOrder(steps.size()+1); finish.setTargetId(cluster.getId().toString());
         finish.setName("Unregister external cluster; preserve existing Kafka and shared agents");

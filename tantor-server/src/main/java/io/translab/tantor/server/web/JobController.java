@@ -17,6 +17,7 @@ public class JobController {
 
     private final JobService jobService;
     private final io.translab.tantor.server.service.RestartNodeDisplayService restartDisplay;
+    private final io.translab.tantor.server.service.ExternalDataServiceManager externalServices;
 
     @GetMapping
     public ResponseEntity<List<Job>> listJobs() {
@@ -42,8 +43,11 @@ public class JobController {
         try {
             Job job=jobService.getJob(id);
             List<JobStep> steps=jobService.getSteps(id);
-            return ResponseEntity.ok(job.getType()==io.translab.tantor.server.domain.JobType.ROLLING_RESTART
-                    ?steps.stream().map(restartDisplay::historyView).toList():steps);
+            return ResponseEntity.ok(switch(job.getType()) {
+                case ROLLING_RESTART -> steps.stream().map(restartDisplay::historyView).toList();
+                case EXTERNAL_SERVICES, CLUSTER_DELETION -> steps.stream().map(externalServices::serviceHistoryView).toList();
+                default -> steps.stream().map(restartDisplay::externalTaskView).toList();
+            });
         } catch (Exception e) {
             return ResponseEntity.notFound().build();
         }

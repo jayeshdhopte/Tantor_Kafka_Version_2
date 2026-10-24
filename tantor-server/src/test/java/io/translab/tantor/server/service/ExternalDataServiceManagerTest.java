@@ -67,6 +67,7 @@ class ExternalDataServiceManagerTest {
         agent.setId("agent-1");
         agent.setClusterId(clusterId);
         agent.setHostname("broker1.example");
+        agent.setIpAddresses("[\"192.168.3.191\"]");
         agent.setStatus("ONLINE");
         agent.setLastHeartbeat(OffsetDateTime.now());
         agent.setVersion("3.4.0-dataservices.2-configchange.8-rollingrestart.2");
@@ -102,8 +103,14 @@ class ExternalDataServiceManagerTest {
         assertThat(jobCaptor.getValue().getType()).isEqualTo(JobType.EXTERNAL_SERVICES);
         assertThat(jobCaptor.getValue().getRollbackSupported()).isFalse();
         assertThat(stepsCaptor.getValue()).extracting(JobStep::getName).containsExactly(
-                "schema_registry: PRECHECK", "schema_registry: TOPICS", "schema_registry: INSTALL", "schema_registry: SAVE",
-                "kafka_connect: PRECHECK", "kafka_connect: TOPICS", "kafka_connect: INSTALL", "kafka_connect: SAVE");
+                "Check prerequisites for Schema Registry [schema-registry:8081] on broker1.example (192.168.3.191)",
+                "Prepare Kafka topics for Schema Registry [schema-registry:8081] on broker1.example (192.168.3.191)",
+                "Install and start Schema Registry [schema-registry:8081] on broker1.example (192.168.3.191)",
+                "Verify and save connection for Schema Registry [schema-registry:8081] on broker1.example (192.168.3.191)",
+                "Check prerequisites for Kafka Connect [kafka-connect:8083] on broker1.example (192.168.3.191)",
+                "Prepare Kafka topics for Kafka Connect [kafka-connect:8083] on broker1.example (192.168.3.191)",
+                "Install and start Kafka Connect [kafka-connect:8083] on broker1.example (192.168.3.191)",
+                "Verify and save connection for Kafka Connect [kafka-connect:8083] on broker1.example (192.168.3.191)");
     }
 
     @Test

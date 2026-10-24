@@ -19,6 +19,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class JobService {
     @org.springframework.beans.factory.annotation.Autowired private ExternalKafkaManagement externalKafka;
+    @org.springframework.beans.factory.annotation.Autowired private RestartNodeDisplayService nodeDisplay;
 
     private final JobRepository jobRepository;
     private final JobStepRepository jobStepRepository;
@@ -34,6 +35,10 @@ public class JobService {
         }
         Job saved = jobRepository.saveAndFlush(job);
         for (JobStep step : steps) {
+            if(nodeDisplay!=null) {
+                JobStep display=nodeDisplay.externalTaskView(step);
+                step.setName(display.getName());step.setPayload(display.getPayload());
+            }
             step.setJob(saved);
         }
         jobStepRepository.saveAll(steps);

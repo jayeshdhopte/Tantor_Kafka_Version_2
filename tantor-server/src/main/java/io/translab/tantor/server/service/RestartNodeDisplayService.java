@@ -29,7 +29,7 @@ public class RestartNodeDisplayService {
                     var agent=node.getAgentId()==null?null:agents.findById(node.getAgentId()).orElse(null);
                     if(agent!=null && Objects.equals(agent.getClusterId(),node.getClusterId())) {
                         if(agent.getHostname()!=null && !agent.getHostname().isBlank()) hostname=agent.getHostname();
-                        if(ip.isEmpty()) ip=firstIp(agent.getIpAddresses());
+                        if(ip.isEmpty()) ip=firstIp(agent.getIpAddresses(),mapper);
                     }
                 }
             } catch(IllegalArgumentException ignored) { /* deleted/legacy node: explicit unavailable labels */ }
@@ -41,7 +41,18 @@ public class RestartNodeDisplayService {
                 "ipAddress",ip.isBlank()?"IP not reported":ip);
     }
 
-    private String firstIp(String value) {
+    public static Map<String,String> agentIdentity(io.translab.tantor.server.domain.DiscoveryAgent agent, String fallbackHost, ObjectMapper mapper) {
+        String ip=literalIp(fallbackHost);
+        String hostname=ip.isEmpty()?Objects.toString(fallbackHost,""):"";
+        if(agent!=null) {
+            if(agent.getHostname()!=null&&!agent.getHostname().isBlank()) hostname=agent.getHostname();
+            if(ip.isEmpty()) ip=firstIp(agent.getIpAddresses(),mapper);
+        }
+        return Map.of("hostname",hostname.isBlank()?"Hostname not reported":hostname,
+                "ipAddress",ip.isBlank()?"IP not reported":ip);
+    }
+
+    private static String firstIp(String value, ObjectMapper mapper) {
         if(value==null) return "";
         try {
             for(String candidate:mapper.readValue(value,new TypeReference<List<String>>(){})) {
@@ -50,7 +61,7 @@ public class RestartNodeDisplayService {
         } catch(Exception ignored) {return literalIp(value);}
         return "";
     }
-    private String literalIp(String value) {
+    private static String literalIp(String value) {
         if(value==null) return "";
         String candidate=value.trim().replaceAll("^\\[|\\]$","");
         if(!candidate.matches("(?:[0-9]{1,3}\\.){3}[0-9]{1,3}|[0-9a-fA-F]*:[0-9a-fA-F:]+(?:%[a-zA-Z0-9]+)?")) return "";
@@ -65,6 +76,27 @@ public class RestartNodeDisplayService {
     }
     public static String stepName(Map<String,?> payload) {
         return "Restart "+String.valueOf(payload.get("role")).replace('_','/')+" node "+payload.get("nodeId")+" - "+label(payload);
+    }
+
+    public JobStep externalTaskView(JobStep original) {
+        try {
+            Map<String,Object> payload=mapper.readValue(original.getPayload(),new TypeReference<>(){});
+            String target=Objects.toString(payload.get("hostId"),original.getTargetId());
+            if(target==null||!target.startsWith("external:"))return original;
+            String previousLabel=label(payload);
+            if(Objects.toString(payload.get("hostname"),"").isBlank()
+                    ||Objects.toString(payload.get("ipAddress"),"").isBlank()
+                    ||Objects.equals(payload.get("hostname"),payload.get("ipAddress"))) payload.putAll(identity(target));
+            String name=Objects.toString(original.getName(),"Run node task");
+            name=name.replace(previousLabel,label(payload));
+            if(!name.contains(label(payload))) {
+                name=name.replace(target,label(payload));
+                if(!name.contains(label(payload))) name+=" on "+Objects.toString(payload.get("role"),"Kafka")
+                        +" node "+Objects.toString(payload.getOrDefault("nodeId",payload.get("brokerId")),"not reported")+" - "+label(payload);
+            }
+            var view=new JobStep();BeanUtils.copyProperties(original,view);
+            view.setName(name);view.setPayload(mapper.writeValueAsString(payload));return view;
+        } catch(Exception ignored) {return original;}
     }
 
     // Enrich old history on read without rewriting its execution data or DB rows.

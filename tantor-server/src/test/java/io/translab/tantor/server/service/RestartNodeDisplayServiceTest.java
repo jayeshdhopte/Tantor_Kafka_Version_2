@@ -43,4 +43,22 @@ class RestartNodeDisplayServiceTest {
  @Test void missingNodeHasExplicitUnavailableLabels() {
   assertThat(display.identity("external:"+UUID.randomUUID())).containsEntry("hostname","Hostname not reported").containsEntry("ipAddress","IP not reported");
  }
+ @Test void configHistoryKeepsItsActionAndShowsNodeDetails() {
+  var original=new JobStep();String target="external:"+UUID.randomUUID();original.setTargetId(target);
+  original.setName("Back up and apply broker.properties v3");
+  original.setPayload("{\"hostId\":\""+target+"\",\"role\":\"broker\",\"nodeId\":2,\"hostname\":\"saved.example\",\"ipAddress\":\"192.168.3.229\"}");
+  var view=display.externalTaskView(original);
+  assertThat(view.getName()).isEqualTo("Back up and apply broker.properties v3 on broker node 2 - saved.example (192.168.3.229)");
+  assertThat(view.getTargetId()).isEqualTo(target);assertThat(original.getName()).doesNotContain("saved.example");
+  assertThat(display.externalTaskView(view).getName()).isEqualTo(view.getName());
+  verifyNoInteractions(nodes,hosts,agents);
+ }
+ @Test void replacesAnOldIpOnlyLabelInsteadOfAppendingAnotherTarget() {
+  UUID id=UUID.randomUUID(),cluster=UUID.randomUUID();var node=new ExternalClusterNode();node.setId(id);node.setClusterId(cluster);node.setAgentId("agent");node.setHost("192.168.3.229");
+  var agent=new DiscoveryAgent();agent.setClusterId(cluster);agent.setHostname("node229.translab.io");
+  when(nodes.findById(id)).thenReturn(Optional.of(node));when(agents.findById("agent")).thenReturn(Optional.of(agent));
+  var step=new JobStep();step.setName("Apply config on broker node 1 on 192.168.3.229 (192.168.3.229)");
+  step.setPayload("{\"hostId\":\"external:"+id+"\",\"hostname\":\"192.168.3.229\",\"ipAddress\":\"192.168.3.229\"}");
+  assertThat(display.externalTaskView(step).getName()).isEqualTo("Apply config on broker node 1 on node229.translab.io (192.168.3.229)");
+ }
 }

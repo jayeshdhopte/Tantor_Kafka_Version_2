@@ -27,6 +27,10 @@ class ExternalClusterDeletionServiceTest {
         cluster.setId(id);cluster.setName("external");cluster.setStatus("SUCCESS");
         when(clusters.findById(id)).thenReturn(Optional.of(cluster));
         when(manager.read(anyString())).thenAnswer(call->mapper.readValue(call.getArgument(0,String.class),new com.fasterxml.jackson.core.type.TypeReference<Map<String,String>>(){}));
+        when(manager.serviceStepPayload(any(),anyString())).thenAnswer(call->{
+            ExternalDataService service=call.getArgument(0);
+            return Map.of("serviceId",service.getId().toString(),"operation",call.getArgument(1,String.class),"serviceRole",service.getRole(),"serviceName",service.getRole().replace('_','-'),"hostname","node.example","ipAddress","192.168.3.229");
+        });
         when(jobs.createJob(any(),anyList())).thenAnswer(call->{Job job=call.getArgument(0);job.setId(UUID.randomUUID());return job;});
     }
     ExternalDataService service() {
