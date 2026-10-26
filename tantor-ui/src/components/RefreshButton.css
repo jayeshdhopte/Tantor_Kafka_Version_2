@@ -1,0 +1,17 @@
+.refresh-feedback-button[data-refreshing='true'] > svg,
+.refresh-feedback-button > svg.spin {
+  animation: refresh-feedback-rotation 0.6s linear infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+@keyframes refresh-feedback-rotation {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .refresh-feedback-button[data-refreshing='true'] > svg,
+  .refresh-feedback-button > svg.spin {
+    animation: none;
+  }
+}

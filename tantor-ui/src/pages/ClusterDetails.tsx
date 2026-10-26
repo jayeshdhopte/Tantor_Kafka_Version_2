@@ -1,9 +1,11 @@
+import { RefreshButton } from '../components/RefreshButton';
 import { useState, useEffect } from 'react';
 
 import { Network, Activity, Settings, RefreshCw, LayoutList, Users, Server, Database, LineChart, Shield, FileJson, Plug, ChevronLeft, ChevronRight, ChevronDown, Info } from 'lucide-react';
 import { useParams, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useCluster } from '../contexts/useCluster';
 import { clusterStatusTone } from '../utils/clusterStatusTone';
+import { isClusterDeploying } from '../utils/clusterDeploymentState';
 import { AnchoredMenu } from '../components/AnchoredMenu';
 import { useActiveClusterJobs, locksClusterView } from '../hooks/useActiveClusterJobs';
 import './ClusterDetails.css';
@@ -28,6 +30,8 @@ interface ClusterInfo {
   runtimeHealth?: string;
   runtimeStatusLabel?: string;
   runtimeStatusReason?: string;
+  deploymentInProgress?: boolean;
+  deploymentJobId?: string;
 }
 
 export function ClusterDetails() {
@@ -36,13 +40,15 @@ export function ClusterDetails() {
   const activeJobs = useActiveClusterJobs();
   const location = useLocation();
   const [cluster, setCluster] = useState<ClusterInfo | null>(null);
+  const [refreshRevision, setRefreshRevision] = useState(0);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [dropdownAnchor, setDropdownAnchor] = useState<HTMLDivElement | null>(null);
+  const blockingJob = activeJobs.find(job => job.clusterId === id && locksClusterView(job));
 
   useEffect(() => {
-    const blockingJob = activeJobs.find(job => job.clusterId === id && locksClusterView(job));
-    if (blockingJob) navigate(`/jobs/${blockingJob.id}`, { replace: true });
-  }, [activeJobs, id, navigate]);
+    const jobId = blockingJob?.id || (cluster && isClusterDeploying(cluster, activeJobs) ? cluster.deploymentJobId : undefined);
+    if (jobId) navigate(`/jobs/${jobId}`, { replace: true });
+  }, [blockingJob, cluster, activeJobs, navigate]);
 
   const { setActiveClusterId } = useCluster();
 
@@ -65,6 +71,7 @@ export function ClusterDetails() {
   // Handle redirects
   useEffect(() => {
     if (!cluster) return;
+    if (blockingJob || isClusterDeploying(cluster, activeJobs)) return;
 
     const currentPath = location.pathname;
 
@@ -90,11 +97,15 @@ export function ClusterDetails() {
     if (currentPath === `/clusters/${id}`) {
       navigate(`/clusters/${id}/overview`, { replace: true });
     }
-  }, [cluster, id, navigate, location.pathname]);
+  }, [cluster, id, navigate, location.pathname, blockingJob, activeJobs]);
 
 
   if (!cluster) {
     return <div className="state-center"><RefreshCw className="spin" /> Loading cluster...</div>;
+  }
+
+  if (blockingJob || isClusterDeploying(cluster, activeJobs)) {
+    return <div className="state-center" role="status"><RefreshCw className="spin" /> Cluster operation in progress. View deployment progress in Jobs.</div>;
   }
 
   const isLogsView = location.pathname === `/clusters/${id}/logs`;
@@ -222,7 +233,7 @@ export function ClusterDetails() {
         </header>
 
         <div className="cluster-content cluster-logs-content" style={{ marginTop: '16px' }}>
-      <Outlet />
+      <Outlet key={refreshRevision} />
         </div>
       </div>
       </div>
@@ -294,21 +305,23 @@ export function ClusterDetails() {
               </div>
             </div>
 
-            <button 
+            <RefreshButton
               type="button" 
               className="cd-details-refresh-btn" 
               onClick={() => {
-                setCluster(null);
-                fetch(`/api/v1/ui/clusters/${id}`)
+                return fetch(`/api/v1/ui/clusters/${id}`)
                   .then(res => res.json())
-                  .then(setCluster)
+                  .then(result => {
+                    setCluster(result);
+                    setRefreshRevision(value => value + 1);
+                  })
                   .catch(console.error);
               }}
               title="Refresh"
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: "var(--bg-surface)", border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', cursor: 'pointer', width: '40px', height: '40px', padding: 'var(--space-2)' }}
             >
               <RefreshCw size={16} style={{ color: 'var(--text-tertiary)' }} />
-            </button>
+            </RefreshButton>
           </div>
 
         </header>
@@ -381,7 +394,7 @@ export function ClusterDetails() {
         </div>
 
         <div className="cluster-content">
-          <Outlet />
+          <Outlet key={refreshRevision} />
         </div>
       </div>
     </div>

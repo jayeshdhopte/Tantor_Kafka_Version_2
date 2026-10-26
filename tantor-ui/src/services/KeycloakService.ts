@@ -1,5 +1,6 @@
 import Keycloak from 'keycloak-js';
 import { runtimeConfig } from '../config/runtimeConfig';
+import { keycloakRedirectUri } from '../utils/keycloakRedirectUri';
 
 const keycloak = new Keycloak({
   url: runtimeConfig.keycloakUrl,
@@ -13,7 +14,7 @@ let initializationPromise: Promise<boolean> | undefined;
 let authenticatedFetchInstalled = false;
 let nativeFetch: typeof window.fetch | undefined;
 
-const currentRedirectUri = () => window.location.href;
+const currentRedirectUri = () => keycloakRedirectUri(window.location.href);
 const pathMatches = (path: string, prefix: string) => path === prefix || path.startsWith(`${prefix}/`);
 const isRuntimeApiPath = (path: string) => pathMatches(path, '/api')
   || pathMatches(path, runtimeConfig.apiBasePath)

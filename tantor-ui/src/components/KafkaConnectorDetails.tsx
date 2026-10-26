@@ -1,3 +1,4 @@
+import { RefreshButton } from './RefreshButton';
 import { useEffect, useState } from 'react';
 import { Activity, ArrowLeft, ArrowUpDown, ArrowUp, ArrowDown, Braces, CircleAlert, CirclePlay, MoreVertical, RefreshCw, RotateCw, Server, Users, Workflow } from 'lucide-react';
 import { AnchoredMenu } from './AnchoredMenu';
@@ -67,7 +68,7 @@ export function KafkaConnectorDetails({ clusterId, connectionId, name, initial, 
     <header className="ds-kc-detail-header">
       <div><button className="ds-connector-link" onClick={onBack} disabled={acting || configDirty}><ArrowLeft size={16} /> Connectors</button><h2>{name}</h2></div>
       <div className="ds-inline-actions">
-        <button className="ds-button outlined" onClick={refresh} disabled={loading || acting || configDirty}><RefreshCw size={16} className={loading ? 'spin' : ''} /> Refresh details</button>
+        <RefreshButton className="ds-button outlined" onClick={refresh} disabled={loading || acting || configDirty}><RefreshCw size={16} className={loading ? 'spin' : ''} /> Refresh details</RefreshButton>
         {canManage && <select className="ds-kc-action-select" aria-label="Connector action" value="" disabled={acting || loading || configDirty || !data}
           onChange={event => void perform(event.target.value as Action)}><option value="" disabled>Manage connector</option>
           {(['pause', 'resume', 'stop', 'restart', 'restart-all', 'restart-failed', 'delete'] as Action[]).map(action => <option key={action} value={action}>{actionLabels[action]}</option>)}

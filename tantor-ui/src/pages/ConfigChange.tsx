@@ -1,3 +1,4 @@
+import { RefreshButton } from '../components/RefreshButton';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Check, Loader2, Plus, RefreshCw, Settings, ShieldCheck, Trash2 } from 'lucide-react';
@@ -268,7 +269,7 @@ export function ConfigChange() {
     </>;
 
   return <div className="cc-page node-config-page versioned-config-page">
-    <header className="cc-page-header node-config-header"><div><span className="cc-overline"><Settings size={15} /> Configuration change</span><h2>{clusterName}</h2><p>Select a Kafka role and targets, then review the changes before execution.</p></div><button className="cc-refresh" onClick={() => void refresh()} disabled={!!busy}><RefreshCw size={16} /> Refresh topology</button></header>
+    <header className="cc-page-header node-config-header"><div><span className="cc-overline"><Settings size={15} /> Configuration change</span><h2>{clusterName}</h2><p>Select a Kafka role and targets, then review the changes before execution.</p></div><RefreshButton className="cc-refresh" onClick={() => void refresh()} disabled={!!busy}><RefreshCw size={16} className={busy === 'load' ? 'spin' : ''} /> Refresh topology</RefreshButton></header>
     {error && <div ref={errorPanel} className="cc-error" role="alert">{error}{error.includes('ELR') && <p>Kafka ELR requires min.insync.replicas to be changed at cluster-default or topic level. This per-broker form cannot apply that change. <button type="button" onClick={() => navigate(`/clusters/${id}/topics`)}>Open topics</button></p>}</div>}
     {busy === 'load' && <div className="cc-loading"><Loader2 className="spin" /> Loading live configuration…</div>}
     {busy && busy !== "load" && <div className="cc-loading" role="status"><Loader2 className="spin" /> Checking configuration and cluster health… Please wait.</div>}

@@ -59,6 +59,9 @@ export function Consumers() {
   const [sortBy, setSortBy] = useState('totalLag');
   const [refreshInterval, setRefreshInterval] = useState(0);
   const activeRequest = useRef<{ key: string; controller: AbortController } | null>(null);
+  const [manualRefreshing, setManualRefreshing] = useState(false);
+  const manualRefreshInFlight = useRef(false);
+  const manualRefreshSequence = useRef(0);
 
   // Detail Modal State
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
@@ -93,6 +96,28 @@ export function Consumers() {
       }
     }
   }, [id, page, size, searchQuery, sortBy]);
+
+  const handleManualRefresh = async () => {
+    if (loading || manualRefreshInFlight.current) return;
+    manualRefreshInFlight.current = true;
+    const sequence = ++manualRefreshSequence.current;
+    setManualRefreshing(true);
+    const minimumSpin = new Promise<void>(resolve => window.setTimeout(resolve, 500));
+    try {
+      await fetchGroups();
+    } finally {
+      await minimumSpin;
+      if (sequence === manualRefreshSequence.current) {
+        manualRefreshInFlight.current = false;
+        setManualRefreshing(false);
+      }
+    }
+  };
+
+  useEffect(() => () => {
+    manualRefreshSequence.current += 1;
+    manualRefreshInFlight.current = false;
+  }, []);
 
   useEffect(() => {
     void (async () => { await fetchGroups(); })();
@@ -160,11 +185,12 @@ export function Consumers() {
           <button
             type="button"
             className="consumer-refresh-button"
-            onClick={fetchGroups}
-            disabled={loading}
+            onClick={handleManualRefresh}
+            disabled={loading || manualRefreshing}
+            aria-busy={loading || manualRefreshing}
             aria-label="Refresh consumer groups"
           >
-            <RefreshCw className={loading ? 'spin' : ''} size={15} />
+            <RefreshCw className={loading || manualRefreshing ? 'consumer-refresh-spin' : ''} size={15} />
           </button>
           </div>
         </div>

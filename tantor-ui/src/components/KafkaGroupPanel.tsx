@@ -1,3 +1,4 @@
+import { RefreshButton } from './RefreshButton';
 import { useCallback, useEffect, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import './KafkaGroupPanel.css';
@@ -32,7 +33,7 @@ export function KafkaGroupPanel({ clusterId, kind }: { clusterId?: string; kind:
     <summary>{title}{error ? ' — metadata unavailable' : loading ? ' — loading' : ` (${visible.length})`}</summary>
     <div className="kafka-group-panel-body">
       <div className="kafka-group-panel-toolbar"><p>{kind === 'other' ? 'These groups are listed separately because their protocol is unrecognized or they use a different group type.' : 'These groups coordinate service instances. They are separate from application consumer groups.'}</p>
-        <button type="button" onClick={refresh} disabled={loading} aria-label={`Refresh ${title.toLowerCase()}`}><RefreshCw size={15} /> Refresh</button></div>
+        <RefreshButton type="button" onClick={refresh} disabled={loading} aria-label={`Refresh ${title.toLowerCase()}`}><RefreshCw size={15} className={loading ? 'spin' : ''} /> Refresh</RefreshButton></div>
       {loading ? <p role="status">Reading Kafka group metadata…</p> : error ? <p role="alert">{error}</p> : visible.length === 0 ? <p>No matching groups reported by Kafka.</p> :
         <div className="kafka-group-panel-scroll"><table><thead><tr><th>Group ID</th><th>Protocol</th><th>Group type</th><th>State</th></tr></thead><tbody>{visible.map(group => <tr key={group.groupId}><td>{group.groupId}</td><td>{group.protocol || 'Not reported'}</td><td>{group.groupType}</td><td>{group.state}</td></tr>)}</tbody></table></div>}
     </div>

@@ -1,3 +1,4 @@
+import { RefreshButton } from '../components/RefreshButton';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, RefreshCw, Check, Server } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
@@ -448,7 +449,7 @@ export function Monitoring() {
             </div>
 
             {/* Manual Refresh Button */}
-            <button
+            <RefreshButton
               className="manual-refresh-button"
               onClick={() => {
                 if (selectedClusterId) {
@@ -471,7 +472,7 @@ export function Monitoring() {
               }}
             >
               <RefreshCw size={18} className={loading ? 'spin' : ''} />
-            </button>
+            </RefreshButton>
           </div>
         </div>
 

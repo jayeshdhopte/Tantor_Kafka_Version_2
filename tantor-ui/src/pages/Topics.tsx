@@ -1,9 +1,10 @@
+import { RefreshButton } from '../components/RefreshButton';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   AlertTriangle, Check, ChevronLeft, ChevronRight, Copy, Database, Download,
-  Plus, RefreshCw, Search, Trash2, X
+  ListChecks, Plus, RefreshCw, Search, Trash2, X
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { AnchoredMenu } from '../components/AnchoredMenu';
@@ -29,7 +30,7 @@ interface PaginatedResponse {
   hasNext: boolean;
 }
 
-type PendingTopicAction = { kind: TopicActionKind; names: string[] };
+type PendingTopicAction = { kind: TopicActionKind; names: string[]; context: string };
 
 async function apiError(response: Response) {
   const body = await response.json().catch(() => null);
@@ -58,7 +59,10 @@ export function Topics() {
   const [size, setSize] = useState(10);
   const [search, setSearch] = useState('');
   const [includeInternal, setIncludeInternal] = useState(false);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const selectionContext = JSON.stringify([id, search, includeInternal]);
+  const [topicSelection, setTopicSelection] = useState<{ context: string; enabled: boolean; names: Set<string> }>({ context: '', enabled: false, names: new Set() });
+  const selectionMode = canManage && topicSelection.context === selectionContext && topicSelection.enabled;
+  const selected = selectionMode ? topicSelection.names : new Set<string>();
   const [pendingAction, setPendingAction] = useState<PendingTopicAction | null>(null);
   const [acting, setActing] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
@@ -129,23 +133,28 @@ export function Topics() {
   const visibleNames = useMemo(() => data?.content.map(topic => topic.name) || [], [data]);
   const allVisibleSelected = visibleNames.length > 0 && visibleNames.every(name => selected.has(name));
 
+  const cancelTopicSelection = () => {
+    setTopicSelection({ context: selectionContext, enabled: false, names: new Set() });
+    setPendingAction(null);
+  };
+
   const toggleAll = () => {
-    if (!canManage) return;
-    setSelected(current => {
-      const next = new Set(current);
+    if (!selectionMode || acting) return;
+    setTopicSelection(current => {
+      const next = new Set(current.context === selectionContext ? current.names : []);
       if (allVisibleSelected) visibleNames.forEach(name => next.delete(name));
       else visibleNames.forEach(name => next.add(name));
-      return next;
+      return { context: selectionContext, enabled: true, names: next };
     });
   };
 
   const toggleTopic = (name: string) => {
-    if (!canManage) return;
-    setSelected(current => {
-      const next = new Set(current);
+    if (!selectionMode || acting) return;
+    setTopicSelection(current => {
+      const next = new Set(current.context === selectionContext ? current.names : []);
       if (next.has(name)) next.delete(name);
       else next.add(name);
-      return next;
+      return { context: selectionContext, enabled: true, names: next };
     });
   };
 
@@ -196,7 +205,7 @@ export function Topics() {
 
   const runAction = async () => {
     if (!canManage) return;
-    if (!id || !pendingAction) return;
+    if (!id || !pendingAction || pendingAction.context !== selectionContext) return;
     setActing(true);
     setError(null);
     try {
@@ -214,7 +223,7 @@ export function Topics() {
       }
       setNotice(topicActionCopy[pendingAction.kind].button + ' completed.');
       setPendingAction(null);
-      setSelected(new Set());
+      cancelTopicSelection();
       await fetchTopics();
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Topic action failed');
@@ -257,9 +266,9 @@ export function Topics() {
           <p>Browse, inspect, and manage the streams in this cluster.</p>
         </div>
         <div className="topics-title-actions">
-          <button className="topic-button secondary" onClick={() => fetchTopics(Boolean(data))} disabled={loading || refreshing} aria-label="Refresh topics" title="Refresh">
+          <RefreshButton className="topic-button secondary" onClick={() => fetchTopics(Boolean(data))} disabled={loading || refreshing} aria-label="Refresh topics" title="Refresh">
             <RefreshCw size={16} className={loading || refreshing ? 'spin' : ''} />
-          </button>
+          </RefreshButton>
           <div ref={setLiveDropdownAnchor} style={{ position: 'relative', height: '40px', display: 'flex', alignItems: 'center' }}>
             <div
               onClick={() => setShowIntervalDropdown(!showIntervalDropdown)}
@@ -359,13 +368,20 @@ export function Topics() {
             onChange={event => {
               setSearch(event.target.value);
               setPage(0);
+              cancelTopicSelection();
             }}
             placeholder="Search by topic name"
           />
-          {search && <button aria-label="Clear search" onClick={() => setSearch('')}><X size={15} /></button>}
+          {search && <button aria-label="Clear search" onClick={() => { setSearch(''); cancelTopicSelection(); }}><X size={15} /></button>}
         </label>
 
         <div className="topics-toolbar-right">
+          {canManage && <button type="button" className="topic-button outline topic-selection-toggle" aria-pressed={selectionMode}
+            disabled={acting || (!selectionMode && (loading || !data?.content.length))}
+            onClick={() => selectionMode ? cancelTopicSelection() : setTopicSelection({ context: selectionContext, enabled: true, names: new Set() })}>
+            {selectionMode ? <X size={16} /> : <ListChecks size={16} />}
+            {selectionMode ? 'Cancel selection' : 'Select topics'}
+          </button>}
           <label className="internal-toggle">
             <input
               type="checkbox"
@@ -373,6 +389,7 @@ export function Topics() {
               onChange={event => {
                 setIncludeInternal(event.target.checked);
                 setPage(0);
+                cancelTopicSelection();
               }}
             />
             <span aria-hidden="true" />
@@ -381,21 +398,23 @@ export function Topics() {
         </div>
       </div>
 
-      {canManage && selected.size > 0 && (
+      {selectionMode && selected.size > 0 && (
         <div className="bulk-actions">
           <strong className="bulk-actions-count">{selected.size} selected</strong>
           <button
             className="bulk-action-button destructive"
-            onClick={() => setPendingAction({ kind: 'remove', names: Array.from(selected) })}
+            disabled={acting}
+            onClick={() => setPendingAction({ kind: 'remove', names: Array.from(selected), context: selectionContext })}
           >
             <Trash2 size={15} /> Delete selected
           </button>
-          <button className="bulk-action-button neutral" onClick={copySelected}>
+          <button className="bulk-action-button neutral" onClick={copySelected} disabled={acting}>
             <Copy size={15} /> Copy names
           </button>
           <button
             className="bulk-action-button primary"
-            onClick={() => setPendingAction({ kind: 'clear', names: Array.from(selected) })}
+            disabled={acting}
+            onClick={() => setPendingAction({ kind: 'clear', names: Array.from(selected), context: selectionContext })}
           >
             <Database size={15} /> Clear messages
           </button>
@@ -415,7 +434,9 @@ export function Topics() {
             <tr>
               <th className="th-topic-name">
                 <div className="table-header-with-checkbox">
-                  {canManage && <input type="checkbox" checked={allVisibleSelected} onChange={toggleAll} />}
+                  {selectionMode && <input type="checkbox" aria-label="Select all topics on this page" checked={allVisibleSelected}
+                    disabled={acting || loading || refreshing} onChange={toggleAll}
+                    ref={element => { if (element) element.indeterminate = visibleNames.some(name => selected.has(name)) && !allVisibleSelected; }} />}
                   Topic Name
                 </div>
               </th>
@@ -450,8 +471,9 @@ export function Topics() {
               <tr key={topic.name} onClick={() => navigate('/clusters/' + id + '/topics/' + encodeURIComponent(topic.name))}>
                 <td>
                   <div className="topic-name-cell">
-                    {canManage && (
-                      <input type="checkbox" checked={selected.has(topic.name)} onChange={event => { event.stopPropagation(); toggleTopic(topic.name); }} onClick={event => event.stopPropagation()} />
+                    {selectionMode && (
+                      <input type="checkbox" aria-label={`Select ${topic.name}`} checked={selected.has(topic.name)} disabled={acting || loading || refreshing}
+                        onChange={event => { event.stopPropagation(); toggleTopic(topic.name); }} onClick={event => event.stopPropagation()} />
                     )}
                     {topic.internal && <span className="internal-badge">IN</span>}
                     <strong>{topic.name}</strong>
@@ -633,7 +655,7 @@ export function Topics() {
         document.body
       )}
 
-      {canManage && pendingAction && (
+      {canManage && pendingAction?.context === selectionContext && (
         <TopicActionConfirmationModal
           action={pendingAction.kind}
           topicNames={pendingAction.names}

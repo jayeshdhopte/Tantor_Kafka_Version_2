@@ -1,3 +1,4 @@
+import { RefreshButton } from '../components/RefreshButton';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
@@ -293,9 +294,9 @@ export function Dashboard() {
           </div>
           <div className="db-hero-actions">
             <span className="db-generated">Last update: {relativeTime(dashboard.generatedAt)}</span>
-            <button className="db-btn ghost" onClick={fetchDashboard} aria-label="Refresh dashboard" title="Refresh">
+            <RefreshButton className="db-btn ghost" onClick={fetchDashboard} aria-label="Refresh dashboard" title="Refresh">
               <RefreshCw size={14} className={loading ? 'spin' : ''} />
-            </button>
+            </RefreshButton>
             {canManage && (
               <button className="db-btn primary" onClick={() => { setDeploymentStep('choice'); setShowDeploymentModal(true); }}>
                 <Plus size={14} />

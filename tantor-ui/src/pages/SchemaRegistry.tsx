@@ -1,3 +1,4 @@
+import { RefreshButton } from '../components/RefreshButton';
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams } from 'react-router-dom';
@@ -1256,9 +1257,9 @@ export function SchemaRegistry() {
                   </button>
                 )}
 
-                <button className="ds-icon-button icon-gray" onClick={() => void fetchWithDiscovery()} disabled={loading} title="Refresh" style={{ width: '35px', height: '35px' }}>
+                <RefreshButton className="ds-icon-button icon-gray" onClick={() => void fetchWithDiscovery()} disabled={loading} title="Refresh" style={{ width: '35px', height: '35px' }}>
                   <RefreshCw size={16} className={loading ? 'spin' : ''} />
-                </button>
+                </RefreshButton>
 
                 {canManage && (
                   <button className="ds-icon-button icon-gray" onClick={() => selectedConn && openConnectionModal(selectedConn)} disabled={!selectedConn} title="Edit connection" style={{ width: '35px', height: '35px' }}>
@@ -1276,7 +1277,7 @@ export function SchemaRegistry() {
               <p style={{ margin: 0, fontFamily: 'Satoshi, sans-serif', fontSize: 'var(--text-md)', fontWeight: 'var(--font-regular)', color: 'var(--text-tertiary)' }}>
                 Schema Registry data is not loaded automatically.
               </p>
-              <button
+              <RefreshButton
                 className="ds-sr-fetch-button"
                 type="button"
                 onClick={() => void fetchWithDiscovery()}
@@ -1300,7 +1301,7 @@ export function SchemaRegistry() {
               >
                 <RefreshCw size={14} className={loading ? 'spin' : ''} />
                 {loading ? 'Fetching Schema Registry...' : 'Fetch Schema Registry for this cluster'}
-              </button>
+              </RefreshButton>
             </div>
           ) : <>
             <div className="ds-metrics ds-sr-metrics">
@@ -1361,11 +1362,11 @@ export function SchemaRegistry() {
                   <tr><th>{selectionMode ? <span className="ds-schema-selectable-name"><input type="checkbox" aria-label="Select all filtered subjects"
                     checked={allSubjectsSelected} disabled={saving || loading || !visibleSubjects.length}
                     ref={element => { if (element) element.indeterminate = selectedSubjectNames.length > 0 && !allSubjectsSelected; }}
-                    onChange={event => setSubjectSelection({ context: selectionContext, enabled: true, names: event.target.checked ? visibleSubjects.map(item => item.subject) : [] })} />Subject</span> : 'Subject'}</th><th>Type</th><th>Latest Version</th><th>Schema ID</th><th>Schema Type</th><th>Compatibility</th>{canManage && <th>Actions</th>}</tr>
+                    onChange={event => setSubjectSelection({ context: selectionContext, enabled: true, names: event.target.checked ? visibleSubjects.map(item => item.subject) : [] })} />Subject</span> : 'Subject'}</th><th>Type</th><th>Latest Version</th><th>Schema ID</th><th>Schema Type</th><th>Compatibility</th><th>Status</th>{canManage && <th>Actions</th>}</tr>
                 </thead>
                 <tbody>
                   {loading && !summary ? (
-                    <tr><td colSpan={canManage ? 7 : 6} className="ds-empty">Loading schemas...</td></tr>
+                    <tr><td colSpan={canManage ? 8 : 7} className="ds-empty">Loading schemas...</td></tr>
                   ) : visibleSubjects.length > 0 ? (
                     visibleSubjects.map(item => (
                       <tr key={item.subject} className="ds-hoverable-row" onClick={() => openSubject(item)} style={{ cursor: 'pointer' }}>
@@ -1373,12 +1374,13 @@ export function SchemaRegistry() {
                           <input type="checkbox" aria-label={`Select ${item.subject}`} checked={selectedSubjectNames.includes(item.subject)}
                             disabled={saving || loading} onClick={event => event.stopPropagation()} onChange={() => toggleSubjectSelection(item.subject)} />
                           <span className="ds-link-button">{item.subject}</span>
-                        </span> : <><span className="ds-link-button">{item.subject}</span>{item.deleted && <span className="ds-subject-deleted-tag">Soft-deleted</span>}</>}</td>
+                        </span> : <span className="ds-link-button">{item.subject}</span>}</td>
                         <td><span className="ds-status">{item.type}</span></td>
                         <td>{item.version || '-'}</td>
                         <td>{item.id || '-'}</td>
                         <td>{item.schemaType}</td>
                         <td title={item.compatibility === 'DEFAULT' ? `Inherits global compatibility (${appliedGlobalCompatibility})` : undefined}>{subjectCompatibilityLevel(item) === 'UNKNOWN' ? 'Unavailable' : subjectCompatibilityLevel(item)}</td>
+                        <td><span className={`ds-schema-version-status ${item.deleted ? 'deleted' : 'active'}`}>{item.deleted ? 'Soft-deleted' : 'Active'}</span></td>
                         {canManage && (
                           <td>
                             <div className="ds-inline-actions" onClick={e => e.stopPropagation()}>
@@ -1394,7 +1396,7 @@ export function SchemaRegistry() {
                       </tr>
                     ))
                   ) : (
-                    <tr><td colSpan={canManage ? 7 : 6} className="ds-empty">{filtersActive ? 'No subjects match your search and filters.' : 'No schemas found in this registry.'}</td></tr>
+                    <tr><td colSpan={canManage ? 8 : 7} className="ds-empty">{filtersActive ? 'No subjects match your search and filters.' : 'No schemas found in this registry.'}</td></tr>
                   )}
                 </tbody>
               </table>
@@ -1499,6 +1501,7 @@ export function SchemaRegistry() {
             <h4 className="ds-section-title">Versions</h4>
             <label><input type="checkbox" checked={showDeletedVersions} onChange={event => setShowDeletedVersions(event.target.checked)} /> Show only soft-deleted versions</label>
           </div>
+          {selected.deleted && canManage && <p className="ds-schema-recovery-guidance" role="note"><Info size={16} aria-hidden="true" /><span>Choose the version whose schema you want to re-register.</span></p>}
           <div className="ds-panel ds-sr-versions-panel">
             <table className="ds-table ds-sr-versions-table">
               <thead>

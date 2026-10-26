@@ -39,7 +39,7 @@ class AgentServiceClaimTest {
     @BeforeEach
     void setUp() {
         service = new AgentService(hostRepository, taskRepository, clusterRepository, new ObjectMapper(),
-                parcelService, activityAlertService, auditService);
+                parcelService, activityAlertService, auditService, org.mockito.Mockito.mock(JobService.class));
         ReflectionTestUtils.setField(service, "taskClaimLeaseSeconds", 120L);
         ReflectionTestUtils.setField(service, "maxTaskClaimAttempts", 3);
     }

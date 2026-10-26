@@ -74,6 +74,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .topic-search {
@@ -118,7 +120,15 @@
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
 }
+
+.topics-toolbar-right .topic-selection-toggle { min-height: 36px; padding: 8px 12px; border: 1px solid #D2D2D7; border-radius: 6px; background: #FFFFFF; color: #3E1363; font-size: 13px; font-weight: 400; line-height: 20px; }
+.topics-toolbar-right .topic-selection-toggle svg { flex: none; }
+.topics-toolbar-right .topic-selection-toggle:hover:not(:disabled) { background: #FAF8FC; border-color: #A995BE; }
+.topics-toolbar-right .topic-selection-toggle:focus-visible { outline: 2px solid #3E1363; outline-offset: 2px; }
+.topics-page .bulk-action-button:disabled { opacity: 0.55; cursor: not-allowed; }
+.topics-page .bulk-actions { flex-wrap: wrap; }
 
 /* Toggle Switch */
 .internal-toggle {

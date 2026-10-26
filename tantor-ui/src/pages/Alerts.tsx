@@ -1,6 +1,7 @@
+import { RefreshButton } from '../components/RefreshButton';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  AlertTriangle, Bell, CheckCircle, RefreshCw,
+  AlertTriangle, Bell, CheckCircle, ChevronDown, RefreshCw,
   Shield, Activity
 } from 'lucide-react';
 import './Alerts.css';
@@ -98,9 +99,9 @@ export function Alerts() {
             <span className={`alerts-status-badge ${error ? 'unavailable' : activeAlerts.length ? 'needs-attention' : 'healthy'}`}>
               {error ? 'Alert status unavailable' : activeAlerts.length ? 'Live system needs attention' : 'No current alerts'}
             </span>
-            <button className="alerts-refresh-btn" onClick={() => fetchAlerts()} aria-label="Refresh alerts">
+            <RefreshButton className="alerts-refresh-btn" onClick={() => fetchAlerts()} aria-label="Refresh alerts">
               <RefreshCw size={14} className={`alerts-refresh-icon ${loading ? 'spin' : ''}`} />
-            </button>
+            </RefreshButton>
           </div>
         </header>
 
@@ -166,6 +167,7 @@ export function Alerts() {
               </div>
               <label className="alerts-view-filter">
                 <span>View</span>
+                <span className="alerts-view-control">
                 <select
                   value={viewMode}
                   onChange={event => setViewMode(event.target.value as 'CURRENT' | 'RESOLVED')}
@@ -174,6 +176,8 @@ export function Alerts() {
                   <option value="CURRENT">Current</option>
                   <option value="RESOLVED">Resolved</option>
                 </select>
+                <ChevronDown className="alerts-view-chevron" size={16} aria-hidden="true" />
+                </span>
               </label>
             </div>
 

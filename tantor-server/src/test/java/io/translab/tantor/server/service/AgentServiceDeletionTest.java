@@ -33,13 +33,14 @@ class AgentServiceDeletionTest {
     @Mock ParcelService parcelService;
     @Mock ActivityAlertService activityAlertService;
     @Mock AuditService auditService;
+    @Mock JobService jobService;
 
     private AgentService service;
 
     @BeforeEach
     void setUp() {
         service = new AgentService(hostRepository, taskRepository, clusterRepository, new ObjectMapper(),
-                parcelService, activityAlertService, auditService);
+                parcelService, activityAlertService, auditService, jobService);
     }
 
     @Test
@@ -129,6 +130,22 @@ class AgentServiceDeletionTest {
         service.processTaskResult(result(task, "FAILED"));
 
         assertThat(cluster.getStatus()).isEqualTo("SUCCESS");
+        verify(clusterRepository, never()).save(cluster);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"SUCCESS", "FAILED"})
+    void deploymentTaskCallbacksNeverOverwriteTheParentJobLifecycle(String status) {
+        UUID clusterId = UUID.randomUUID();
+        Cluster cluster = cluster(clusterId, "host-1");
+        cluster.setStatus("RUNNING");
+        Task task = cleanupTask(clusterId, "host-1");
+        task.setCommand("INSTALL_KAFKA");
+        when(taskRepository.findById(task.getId())).thenReturn(Optional.of(task));
+        when(clusterRepository.findById(clusterId)).thenReturn(Optional.of(cluster));
+        when(jobService.ownsDeploymentTask(task)).thenReturn(true);
+        service.processTaskResult(result(task, status));
+        assertThat(cluster.getStatus()).isEqualTo("RUNNING");
         verify(clusterRepository, never()).save(cluster);
     }
 

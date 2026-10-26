@@ -1,6 +1,7 @@
+import { RefreshButton } from '../components/RefreshButton';
 import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Network, RefreshCw, Trash2, ExternalLink, Plus, MoreVertical, Settings } from 'lucide-react';
+import { Network, RefreshCw, Trash2, ExternalLink, Plus, MoreVertical, Settings, LockKeyhole } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { AnchoredMenu } from '../components/AnchoredMenu';
 import { AddClusterServicesModal } from '../components/AddClusterServicesModal';
@@ -8,6 +9,7 @@ import { ConfigChangeEntryModal } from '../components/ConfigChangeEntryModal';
 import { usePermissions } from '../hooks/usePermissions';
 import { confirmAction, notifyAction } from '../components/confirmUtils';
 import { clusterStatusTone } from '../utils/clusterStatusTone';
+import { isClusterDeploying } from '../utils/clusterDeploymentState';
 import { RollingRestartModal } from '../components/RollingRestartModal';
 import { useActiveClusterJobs, currentJobNode, locksClusterView, clusterJobLabel } from '../hooks/useActiveClusterJobs';
 import './Clusters.css';
@@ -51,6 +53,9 @@ interface ClusterInfo {
   runtimeStatusLabel?: string;
   runtimeStatusReason?: string;
   kafkaHealthChecking?: boolean;
+  deploymentInProgress?: boolean;
+  deploymentFailed?: boolean;
+  deploymentJobId?: string;
 }
 
 const CLUSTER_HEALTH_REFRESH_MS = 15000;
@@ -58,7 +63,8 @@ const CLUSTER_HEALTH_REFRESH_MS = 15000;
 export function Clusters() {
   const navigate = useNavigate();
   const activeJobs = useActiveClusterJobs();
-  const locked = (id: string) => activeJobs.some(job => job.clusterId === id && locksClusterView(job));
+  const locked = (id: string) => activeJobs.some(job => job.clusterId === id && locksClusterView(job))
+    || clusters.some(cluster => cluster.id === id && isClusterDeploying(cluster, activeJobs));
   const [restartCluster, setRestartCluster] = useState<ClusterInfo | null>(null);
   const { canManage } = usePermissions();
   const [clusters, setClusters] = useState<ClusterInfo[]>([]);
@@ -91,6 +97,9 @@ export function Clusters() {
                 runtimeHealth: fresh.runtimeHealth,
                 runtimeStatusLabel: fresh.runtimeStatusLabel,
                 runtimeStatusReason: fresh.runtimeStatusReason,
+                deploymentInProgress: fresh.deploymentInProgress,
+                deploymentFailed: fresh.deploymentFailed,
+                deploymentJobId: fresh.deploymentJobId,
                 managementLevel: fresh.managementLevel,
                 accessLabel: fresh.accessLabel,
                 telemetry: fresh.telemetry,
@@ -183,13 +192,12 @@ export function Clusters() {
     || (c.mode === 'EXTERNAL' && c.status !== 'DELETING'));
 
   const isDeploymentInProgress = (c: ClusterInfo) =>
-    c.mode !== 'EXTERNAL'
-    && ['PENDING', 'RUNNING', 'IN_PROGRESS', 'VALIDATING']
-      .includes(String(c.status || '').toUpperCase());
+    isClusterDeploying(c, activeJobs);
 
   const statusLabel = (c: ClusterInfo) => {
     if (c.status === 'DELETING') return 'Deleting';
     if (c.status === 'DELETE_FAILED') return 'Deletion failed';
+    if (c.deploymentFailed) return 'Kafka Check Failed';
     // For managed clusters, RUNNING describes the deployment job rather than
     // an already-operational Kafka runtime.
     if (isDeploymentInProgress(c)) return 'Deploying';
@@ -207,6 +215,7 @@ export function Clusters() {
   const statusClass = (c: ClusterInfo) => {
     if (c.status === 'DELETING') return 'deleting';
     if (c.status === 'DELETE_FAILED') return 'failed';
+    if (c.deploymentFailed) return 'failed';
     if (isDeploymentInProgress(c)) return 'deploying';
     if (c.kafkaHealthChecking) return 'checking';
     const runtime = (c.runtimeHealth || '').toLowerCase();
@@ -313,9 +322,9 @@ export function Clusters() {
       </div>
       <div className="header-actions">
 
-        <button className="btn outline-icon refresh-btn" onClick={fetchClusters} title="Refresh">
+        <RefreshButton className="btn outline-icon refresh-btn" onClick={fetchClusters} title="Refresh">
           <RefreshCw size={16} className={loading ? 'spin' : ''} />
-        </button>
+        </RefreshButton>
         {canManage && (
           <button className={`btn btn-primary-action add-cluster-btn${clusters.length > 0 ? ' deploy-cluster-btn' : ''}`} onClick={() => setShowDeploymentModal(true)}>
             {clusters.length > 0 ? <><Network size={17} /> Deploy Cluster</> : <><Plus size={17} /> Add Cluster</>}
@@ -377,7 +386,7 @@ export function Clusters() {
                       {clusters.map(cluster => {
                         const host = primaryHost(cluster);
                         const internalHosts = internalHostConnectivity(cluster);
-                        const statusTagTone = isDeploymentInProgress(cluster)
+                        const statusTagTone = cluster.deploymentFailed ? 'state-negative' : isDeploymentInProgress(cluster)
                           ? 'state-deploying'
                           : cluster.status === 'DELETING'
                           ? 'state-deploying'
@@ -396,6 +405,7 @@ export function Clusters() {
                           <tr
                             key={cluster.id}
                             className={!isClickable(cluster) ? 'disabled' : ''}
+                            title={locked(cluster.id) ? 'Cluster locked while its operation is in progress. View progress in Jobs.' : undefined}
                             onClick={() => {
                               if (isClickable(cluster)) window.location.assign(
                                 `/clusters/${cluster.id}/${['DELETING', 'DELETE_FAILED'].includes(cluster.status) ? 'logs' : 'overview'}`
@@ -404,6 +414,7 @@ export function Clusters() {
                           >
                             <td>
                               <div className="cluster-title-cell" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                {locked(cluster.id) && <LockKeyhole size={15} aria-label="Cluster locked" style={{ flexShrink: 0, color: 'var(--button-primary)' }} />}
                                 {cluster.mode === 'EXTERNAL' ? (
                                   <ExternalLink size={15} style={{ color: '#3E1363', flexShrink: 0, marginTop: '1px' }} />
                                 ) : (

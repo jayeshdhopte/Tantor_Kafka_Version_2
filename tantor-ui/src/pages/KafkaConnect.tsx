@@ -1,3 +1,4 @@
+import { RefreshButton } from '../components/RefreshButton';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams } from 'react-router-dom';
@@ -682,7 +683,7 @@ export function KafkaConnect() {
               </button>
             )}
 
-            <button 
+            <RefreshButton
               className="ds-icon-button icon-gray" 
               onClick={() => void fetchWithDiscovery()}
               disabled={loading}
@@ -700,7 +701,7 @@ export function KafkaConnect() {
               title="Refresh"
             >
               <RefreshCw size={16} className={loading ? 'spin' : ''} style={{ color: 'var(--text-neutral)' }} />
-            </button>
+            </RefreshButton>
 
             {canManage && (
               <button
@@ -733,7 +734,7 @@ export function KafkaConnect() {
       {!hasFetched ? (
         <div className="ds-fetch-prompt ds-kafka-connect-fetch-prompt" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 0', gap: 'var(--space-4)' }}>
           <p style={{ margin: 0, fontFamily: 'Satoshi, sans-serif', fontSize: 'var(--text-md)', color: 'var(--text-tertiary)' }}>Kafka Connect data is not loaded automatically.</p>
-          <button 
+          <RefreshButton
             type="button" 
             onClick={() => void fetchWithDiscovery()}
             disabled={loading}
@@ -756,7 +757,7 @@ export function KafkaConnect() {
           >
             <RefreshCw size={14} className={loading ? 'spin' : ''} style={{ display: 'inline-block' }} />
             {loading ? 'Fetching Kafka Connect...' : 'Fetch Kafka Connect for this cluster'}
-          </button>
+          </RefreshButton>
         </div>
       ) : <>
       <div className="ds-metrics ds-kc-metrics" style={{

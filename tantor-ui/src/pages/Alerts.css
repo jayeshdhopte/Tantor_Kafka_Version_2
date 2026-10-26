@@ -327,7 +327,7 @@
   flex-direction: column;
   align-items: stretch;
   gap: 6px;
-  width: 160px;
+  width: 132px;
   max-width: 100%;
   min-width: 0;
   flex-shrink: 0;
@@ -338,8 +338,13 @@
   color: var(--button-primary);
 }
 
+.alerts-view-control { position: relative; display: block; width: 100%; height: 40px; }
+.alerts-view-chevron { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--button-primary); }
+
 .alerts-view-filter select {
-  appearance: auto;
+  appearance: none;
+  -webkit-appearance: none;
+  display: block;
   box-sizing: border-box;
   width: 100%;
   min-width: 0;

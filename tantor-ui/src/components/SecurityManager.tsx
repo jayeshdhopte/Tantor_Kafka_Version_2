@@ -1,3 +1,4 @@
+import { RefreshButton } from './RefreshButton';
 import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -198,7 +199,7 @@ export default function SecurityManager({ clusterId }: Props) {
 
         {/* Right side: Actions */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <button 
+          <RefreshButton
             onClick={fetchAcls} 
             disabled={aclsLoading} 
             style={{
@@ -217,7 +218,7 @@ export default function SecurityManager({ clusterId }: Props) {
             title="Refresh"
           >
             <RefreshCw size={18} className={aclsLoading ? 'spin' : ''} />
-          </button>
+          </RefreshButton>
           {canManage && (
             <button 
               onClick={() => setShowCreateAcl(true)} 

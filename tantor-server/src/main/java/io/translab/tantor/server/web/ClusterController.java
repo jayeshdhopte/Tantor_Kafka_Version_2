@@ -2517,6 +2517,25 @@ public class ClusterController {
         Map<String, Object> health = new LinkedHashMap<>();
         String deploymentStatus = cluster.getStatus() == null ? "" : cluster.getStatus().trim();
 
+        Optional<Job> deployment = jobService.getClusterDeploymentJob(cluster.getId());
+        if (deployment.isPresent() && !List.of("DELETING", "DELETE_FAILED", "DELETED", "ROLLED_BACK").contains(deploymentStatus)) {
+            Job job = deployment.get();
+            boolean inProgress = List.of(JobStatus.PENDING, JobStatus.IN_PROGRESS, JobStatus.ROLLBACK_PENDING, JobStatus.ROLLING_BACK).contains(job.getStatus());
+            boolean failed = List.of(JobStatus.FAILED, JobStatus.PARTIAL_SUCCESS, JobStatus.ROLLBACK_FAILED).contains(job.getStatus())
+                    || job.getStatus() == JobStatus.IN_PROGRESS && jobService.getSteps(job.getId()).stream()
+                    .anyMatch(step -> step.getStatus() == io.translab.tantor.server.domain.JobStepStatus.FAILED);
+            health.put("deploymentJobId", job.getId());
+            health.put("deploymentInProgress", inProgress);
+            health.put("deploymentFailed", failed);
+            if (inProgress || failed) {
+                health.put("runtimeHealth", failed ? "FAILED" : "DEPLOYING");
+                health.put("runtimeStatusLabel", failed ? "Kafka Check Failed" : "Deploying");
+                health.put("runtimeStatusReason", failed ? "A cluster deployment step failed. See the deployment job logs."
+                        : "Cluster deployment is still in progress. Wait for all job steps to complete.");
+                return health;
+            }
+        }
+
         if (!"SUCCESS".equalsIgnoreCase(deploymentStatus)) {
             health.put("runtimeHealth", deploymentStatus.isBlank() ? "UNKNOWN" : deploymentStatus.toUpperCase());
             health.put("runtimeStatusLabel", deploymentStatus.isBlank() ? "Unknown" : deploymentStatus);

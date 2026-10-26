@@ -1,3 +1,4 @@
+import { RefreshButton } from '../components/RefreshButton';
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { RefreshCw } from 'lucide-react';
@@ -81,9 +82,9 @@ export function JobsList() {
           <h2>Job History</h2>
           <p>Track cluster operations and their execution history.</p>
         </div>
-        <button className="refresh-btn" onClick={() => fetchJobs(true)} disabled={loading || refreshing} title="Refresh">
+        <RefreshButton className="refresh-btn" onClick={() => fetchJobs(true)} disabled={loading || refreshing} title="Refresh">
           <RefreshCw size={14} className={refreshing ? 'spin' : ''} />
-        </button>
+        </RefreshButton>
       </header>
 
       {loading && jobs.length === 0 ? (

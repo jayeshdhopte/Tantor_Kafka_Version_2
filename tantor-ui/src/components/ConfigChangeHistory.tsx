@@ -1,3 +1,4 @@
+import { RefreshButton } from './RefreshButton';
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { History, RefreshCw } from 'lucide-react';
@@ -37,7 +38,7 @@ export function ConfigChangeHistory({ clusterId }: { clusterId: string }) {
   const needle = search.toLowerCase().trim();
   const items = result?.items.filter(item => !needle || item.nodes.some(node => node.changes.some(change => change.key.toLowerCase().includes(needle)))) || [];
   return <section className="cc-card node-config-section cc-history" aria-label="Configuration change history">
-    <div className="cc-history-heading"><div className="cc-section-heading node-config-section-title"><span><History size={17} /></span><div><h3>Configuration change history</h3><p>v1, v2 and later changes show the recorded old value → requested new value on each node. Status confirms whether each change completed.</p></div></div><button className="cc-refresh" disabled={loading} onClick={() => void load()}><RefreshCw size={15} className={loading ? 'spin' : ''} /> Refresh history</button></div>
+    <div className="cc-history-heading"><div className="cc-section-heading node-config-section-title"><span><History size={17} /></span><div><h3>Configuration change history</h3><p>v1, v2 and later changes show the recorded old value → requested new value on each node. Status confirms whether each change completed.</p></div></div><RefreshButton className="cc-refresh" disabled={loading} onClick={() => void load()}><RefreshCw size={15} className={loading ? 'spin' : ''} /> Refresh history</RefreshButton></div>
     <div className="cc-config-toolbar"><input type="search" aria-label="Search properties in history" placeholder="Search properties on this history page…" value={search} onChange={event => setSearch(event.target.value)} /><span>{result?.total ?? 0} changes</span></div>
     {error && <p className="cc-error" role="alert">{error}</p>}
     {!result && loading && <p>Loading configuration history…</p>}

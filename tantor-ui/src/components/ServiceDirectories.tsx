@@ -1,3 +1,4 @@
+import { RefreshButton } from './RefreshButton';
 import { useEffect, useId, useState } from 'react';
 import { ChevronDown, RefreshCw } from 'lucide-react';
 import './ServiceDirectories.css';
@@ -60,9 +61,9 @@ export function ServiceDirectories({ clusterId, serviceType, preview = false }: 
           <ChevronDown size={18} aria-hidden="true" className={expanded ? 'expanded' : ''} />
         </button>}
       </h3>
-      <button type="button" title="Refresh service directories" aria-label={`Refresh ${serviceName} directories`} disabled={!current} onClick={() => setAttempt(value => value + 1)}>
+      <RefreshButton type="button" title="Refresh service directories" aria-label={`Refresh ${serviceName} directories`} disabled={!current} onClick={() => setAttempt(value => value + 1)}>
         <RefreshCw size={16} className={!current ? 'spin' : ''} aria-hidden="true" />
-      </button>
+      </RefreshButton>
     </header>
     <div id={contentId} className="service-directories-content" hidden={!preview && !expanded}>
     {!current ? <p role="status">Loading service directories...</p>

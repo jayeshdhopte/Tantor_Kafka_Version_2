@@ -1,3 +1,4 @@
+import { RefreshButton } from '../components/RefreshButton';
 import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { Database, Search, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, RefreshCw } from 'lucide-react';
@@ -122,7 +123,7 @@ export function Partitions() {
               />
             </label>
           </form>
-          <button 
+          <RefreshButton
             type="button"
             onClick={fetchPartitions} 
             disabled={loading} 
@@ -144,7 +145,7 @@ export function Partitions() {
             aria-label="Refresh partitions"
           >
             <RefreshCw className={loading ? 'spin' : ''} size={15} />
-          </button>
+          </RefreshButton>
         </div>
       </div>
 

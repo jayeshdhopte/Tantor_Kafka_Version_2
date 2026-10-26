@@ -89,7 +89,7 @@ class AlertControllerRecoveryTest {
 
         AgentService agentService = new AgentService(hostRepository, taskRepository,
                 clusterRepository, new ObjectMapper(), mock(ParcelService.class),
-                mock(ActivityAlertService.class), mock(AuditService.class));
+                mock(ActivityAlertService.class), mock(AuditService.class), mock(io.translab.tantor.server.service.JobService.class));
         HostHeartbeatDto heartbeat = new HostHeartbeatDto();
         heartbeat.setHostId(host.getId());
         assertThat(agentService.processHeartbeat(heartbeat, "192.168.3.11"))

@@ -1,3 +1,4 @@
+import { RefreshButton } from '../components/RefreshButton';
 import { SchemaRegistryFields, KafkaConnectFields } from '../components/ServiceConfigurationFields';
 import { validateServicePath as validatePath, validateServiceHeap, defaultSchemaRegistryConfig, defaultKafkaConnectConfig, type SchemaRegistryConfig, type KafkaConnectConfig } from '../components/serviceConfiguration';
 import { useState, useEffect, useMemo, useRef, type FormEvent } from 'react';
@@ -2026,9 +2027,9 @@ export function ClusterDeployment({ onClose }: { onClose?: () => void }) {
           <section className="cd-panel">
             <div className="cd-panel-title">
               <h2>Nodes & Roles</h2>
-              <button className="cd-refresh-icon" onClick={loadHosts} title="Refresh">
+              <RefreshButton className="cd-refresh-icon" onClick={loadHosts} title="Refresh">
                 <CustomRefreshIcon size={14} className={loadingHosts ? 'spin' : ''} />
-              </button>
+              </RefreshButton>
             </div>
 
             <div className="cd-node-picker-container" style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignSelf: 'stretch', marginBottom: '16px' }}>

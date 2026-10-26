@@ -1,3 +1,4 @@
+import { RefreshButton } from '../components/RefreshButton';
 import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, RefreshCw, Trash2, X } from 'lucide-react';
@@ -156,9 +157,9 @@ export function Hosts() {
           <p>Manage and monitor physical and virtual nodes</p>
         </div>
         <div className="header-actions">
-          <button className="btn icon-only round" onClick={fetchHosts} title="Refresh" aria-label="Refresh hosts">
+          <RefreshButton className="btn icon-only round" onClick={fetchHosts} title="Refresh" aria-label="Refresh hosts">
             <RefreshCw size={16} className={loading ? 'spin' : ''} />
-          </button>
+          </RefreshButton>
           {canManage && (
             <button className="btn btn-primary-action agent-connectivity-btn" onClick={() => setShowEnrollModal(true)}>
               <Plus size={20} strokeWidth={2} aria-hidden="true" />

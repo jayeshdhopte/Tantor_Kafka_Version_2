@@ -81,7 +81,8 @@ public class JobService {
                     || other.getType() == JobType.ROLLING_RESTART
                     || other.getType() == JobType.EXTERNAL_SERVICES || other.getType() == JobType.ROLLING_CONFIG_UPDATE
                     || other.getType() == JobType.CONFIG_CHANGE || other.getType() == JobType.TARGETED_CONFIG_CHANGE
-                    || incoming == JobType.CLUSTER_DELETION || other.getType() == JobType.CLUSTER_DELETION))
+                    || incoming == JobType.CLUSTER_DELETION || other.getType() == JobType.CLUSTER_DELETION
+                    || other.getType() == JobType.DEPLOYMENT))
                 throw new ClusterOperationConflictException("Another operation is active on this cluster. Wait for job " + other.getId() + " to finish.");
         }
     }
@@ -93,6 +94,24 @@ public class JobService {
 
     public List<Job> getAllJobs() {
         return jobRepository.findAllByOrderByCreatedAtDesc();
+    }
+
+    public Optional<Job> getClusterDeploymentJob(UUID clusterId) {
+        var active = jobRepository.findByResourceKeyAndStatusIn("cluster:" + clusterId,
+                List.of(JobStatus.PENDING, JobStatus.IN_PROGRESS, JobStatus.ROLLBACK_PENDING, JobStatus.ROLLING_BACK))
+                .stream().filter(job -> job.getType() == JobType.DEPLOYMENT && !isServiceAddition(job)).findFirst();
+        return active.isPresent() ? active : jobRepository
+                .findFirstByResourceKeyAndTypeOrderByCreatedAtDesc("cluster:" + clusterId, JobType.DEPLOYMENT)
+                .filter(job -> !isServiceAddition(job));
+    }
+
+    public boolean ownsDeploymentTask(Task task) {
+        // Late callbacks must not undo the result of their parent deployment job.
+        if (task.getId() != null && jobStepRepository.existsByAgentTaskIdAndJob_Type(task.getId(), JobType.DEPLOYMENT)) return true;
+        // A fast agent can report before its task ID has been attached to the step.
+        return task.getClusterId() != null && getClusterDeploymentJob(task.getClusterId())
+                .map(job -> List.of(JobStatus.PENDING, JobStatus.IN_PROGRESS, JobStatus.ROLLBACK_PENDING, JobStatus.ROLLING_BACK)
+                        .contains(job.getStatus())).orElse(false);
     }
 
     public List<Map<String, String>> getActiveClusterJobs() {

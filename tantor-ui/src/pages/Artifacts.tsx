@@ -1,3 +1,4 @@
+import { RefreshButton } from '../components/RefreshButton';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -553,10 +554,10 @@ export function Artifacts() {
               {uploadMsg.text}
             </span>
           )}
-          <button className="btn btn-sync" onClick={refreshAll} disabled={loading || actingKey !== null}>
+          <RefreshButton className="btn btn-sync" onClick={refreshAll} disabled={loading || actingKey !== null}>
             <RefreshCw size={14} className={loading ? 'spin' : ''} />
             Sync
-          </button>
+          </RefreshButton>
           {canManage && (
             <button className="btn btn-primary-action" onClick={() => setShowUploadModal(true)} disabled={uploading}>
               {uploading ? <Loader2 size={14} className="spin" /> : <Upload size={14} />}

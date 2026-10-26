@@ -1,3 +1,4 @@
+import { RefreshButton } from '../components/RefreshButton';
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   History, Info, Package, Search,
@@ -272,9 +273,9 @@ export function AuditLogs() {
     <header className="audit-header">
       <div className="audit-header-title-row">
         <h1>Audit Trail</h1>
-        <button className="btn-icon-only" onClick={fetchLogs} disabled={loading} title="Refresh">
+        <RefreshButton className="btn-icon-only" onClick={fetchLogs} disabled={loading} title="Refresh">
           <RefreshCw size={14} className={loading ? 'spin' : ''} />
-        </button>
+        </RefreshButton>
       </div>
       <p className="audit-subtitle">Who performed each action, on which resource, and whether it succeeded.</p>
     </header>
@@ -325,9 +326,9 @@ export function AuditLogs() {
           <input placeholder="Resource ID" value={resourceId} onChange={e => setResourceId(e.target.value)} />
         </label>
         <div className="audit-filters-actions">
-          <button type="button" className="btn-refresh" onClick={fetchLogs} disabled={loading} title="Refresh">
+          <RefreshButton type="button" className="btn-refresh" onClick={fetchLogs} disabled={loading} title="Refresh">
             <RefreshCw size={14} className={loading ? 'spin' : ''} />
-          </button>
+          </RefreshButton>
           <button className="btn-reset" onClick={resetFilters}>Reset</button>
           <button className="btn-apply" onClick={applyFilters}>Apply Filter</button>
         </div>

@@ -1,3 +1,4 @@
+import { RefreshButton } from '../components/RefreshButton';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -455,7 +456,7 @@ export function TopicDetails() {
                 width="140px"
               />
               <label><Search size={16} /><input value={messageSearch} onChange={event => setMessageSearch(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') void loadMessages(); }} placeholder="Search key or value" /></label>
-              <button className="message-refresh-btn" onClick={() => void loadMessages()} disabled={messagesLoading} aria-label="Refresh messages"><RefreshCw className={messagesLoading ? 'spin' : ''} size={15} /></button>
+              <RefreshButton className="message-refresh-btn" onClick={() => void loadMessages()} disabled={messagesLoading} aria-label="Refresh messages"><RefreshCw className={messagesLoading ? 'spin' : ''} size={15} /></RefreshButton>
             </div>
 
             <div className="detail-table-wrap">
@@ -491,7 +492,7 @@ export function TopicDetails() {
 
         {activeTab === 'consumers' && (
           <div>
-            <div className="tab-toolbar"><label><Search size={16} /><input value={consumerSearch} onChange={event => setConsumerSearch(event.target.value)} placeholder="Search by consumer name" /></label><button onClick={() => loadSimpleTab('consumers')} aria-label="Refresh consumers" title="Refresh"><RefreshCw size={15} /></button></div>
+            <div className="tab-toolbar"><label><Search size={16} /><input value={consumerSearch} onChange={event => setConsumerSearch(event.target.value)} placeholder="Search by consumer name" /></label><RefreshButton onClick={() => loadSimpleTab('consumers')} aria-label="Refresh consumers" title="Refresh"><RefreshCw size={15} /></RefreshButton></div>
             <div className="detail-table-wrap"><table className="detail-table consumers-table"><thead><tr><th>Consumer Group ID</th><th>Active Consumers</th><th>Consumer Lag</th><th>Coordinator</th><th>State</th></tr></thead>
               <tbody>{tabLoading && consumers.length === 0 ? <LoadingRow columns={5} /> : filteredConsumers.length === 0 ? <EmptyRow columns={5} text="No consumer groups use this topic." /> : filteredConsumers.map(group => <tr key={group.groupId}><td>{group.groupId}</td><td>{group.activeConsumers}</td><td>{group.lag.toLocaleString()}</td><td>{group.coordinator || '-'}</td><td>{group.state.charAt(0).toUpperCase() + group.state.slice(1).toLowerCase()}</td></tr>)}</tbody>
             </table></div>
@@ -505,9 +506,9 @@ export function TopicDetails() {
                 <Search size={16} />
                 <input value={configSearch} onChange={event => setConfigSearch(event.target.value)} placeholder="Search key or value" />
               </label>
-              <button onClick={() => loadSimpleTab('configs')} disabled={tabLoading} aria-label="Refresh settings">
+              <RefreshButton onClick={() => loadSimpleTab('configs')} disabled={tabLoading} aria-label="Refresh settings">
                 <RefreshCw className={tabLoading ? 'spin' : ''} size={15} />
-              </button>
+              </RefreshButton>
             </div>
             <div className="detail-table-wrap"><table className="detail-table settings-table"><thead><tr><th>Key</th><th>Value</th><th>Default Value</th><th>Source</th></tr></thead>
               <tbody>{tabLoading && configs.length === 0 ? <LoadingRow columns={4} /> : filteredConfigs.map(config => <tr key={config.name}><td>{config.name}</td><td>{config.sensitive ? '******' : config.value ?? '-'}</td><td>{config.defaultValue ?? '-'}</td><td>{config.source.toLowerCase().split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}</td></tr>)}</tbody>
@@ -522,9 +523,9 @@ export function TopicDetails() {
                 <Search size={16} />
                 <input placeholder="Search key or value" disabled />
               </label>
-              <button onClick={loadStatistics} disabled={statisticsLoading} aria-label="Refresh statistics">
+              <RefreshButton onClick={loadStatistics} disabled={statisticsLoading} aria-label="Refresh statistics">
                 <RefreshCw className={statisticsLoading ? 'spin' : ''} size={15} />
-              </button>
+              </RefreshButton>
             </div>
             <div className="statistics-figma-heading">
               <h3 style={{ margin: 0, color: 'var(--button-primary-hover)', fontSize: 'var(--text-md)', fontWeight: 'var(--font-medium)', fontFamily: 'Satoshi, sans-serif' }}>Messages</h3>
@@ -539,7 +540,7 @@ export function TopicDetails() {
 
         {activeTab === 'acls' && (
           <div>
-            <div className="tab-toolbar"><div><ShieldCheck size={17} /> Topic access control</div><button onClick={() => loadSimpleTab('acls')} aria-label="Refresh access control" title="Refresh"><RefreshCw size={15} /></button></div>
+            <div className="tab-toolbar"><div><ShieldCheck size={17} /> Topic access control</div><RefreshButton onClick={() => loadSimpleTab('acls')} aria-label="Refresh access control" title="Refresh"><RefreshCw size={15} /></RefreshButton></div>
             <div className="detail-table-wrap"><table className="detail-table"><thead><tr><th>Principal</th><th>Host</th><th>Operation</th><th>Permission</th><th>Pattern</th></tr></thead>
               <tbody>{tabLoading && acls.length === 0 ? <LoadingRow columns={5} /> : acls.length === 0 ? <EmptyRow columns={5} text="No ACL entries match this topic." /> : acls.map((acl, index) => <tr key={acl.principal + acl.operation + index}><td><strong>{acl.principal}</strong></td><td>{acl.host}</td><td>{acl.operation}</td><td><span className={'permission-pill ' + acl.permissionType.toLowerCase()}>{acl.permissionType}</span></td><td>{acl.patternType} | {acl.resourceName}</td></tr>)}</tbody>
             </table></div>

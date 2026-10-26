@@ -35,6 +35,7 @@ public class AgentService {
     private final ParcelService parcelService;
     private final ActivityAlertService activityAlertService;
     private final AuditService auditService;
+    private final JobService jobService;
 
     @Value("${tantor.hosts.heartbeat-timeout-seconds:90}")
     private long heartbeatTimeoutSeconds;
@@ -425,6 +426,7 @@ public class AgentService {
     }
 
     private void updateClusterStatus(io.translab.tantor.server.domain.Cluster cluster, Task currentTask) {
+        if (jobService.ownsDeploymentTask(currentTask)) return;
         String command = currentTask.getCommand();
         if ("READ_KAFKA_PROPERTY".equals(command) || "READ_KAFKA_PROPERTIES".equals(command)
                 || "PATCH_KAFKA_CONFIG".equals(command)) {

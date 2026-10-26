@@ -2350,6 +2350,8 @@
 .ds-sr-subjects-panel {
   border-color: #D2D2D7;
   border-radius: 8px;
+  min-width: 0;
+  overflow-x: auto;
 }
 
 .ds-schema-delete-toolbar {
@@ -2371,6 +2373,7 @@
 
 .ds-sr-subjects-table {
   table-layout: fixed;
+  min-width: 1120px;
 }
 
 .ds-sr-subjects-table thead {
@@ -3212,6 +3215,9 @@
 .ds-schema-version-status { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 8px; border-radius: 4px; font-size: 12px; line-height: 18px; white-space: nowrap; }
 .ds-schema-version-status.active { background: #ECFDF3; color: #166534; }
 .ds-schema-version-status.deleted { background: #F2F4F7; color: #667085; }
+.ds-schema-recovery-guidance { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 16px; padding: 10px 12px; border-left: 3px solid var(--button-primary, #3E1363); border-radius: 6px; background: #F7F8FA; color: #475467; font-size: 13px; line-height: 20px; }
+.ds-schema-recovery-guidance svg { flex: 0 0 16px; margin-top: 2px; color: var(--button-primary, #3E1363); }
+.ds-schema-recovery-guidance span { min-width: 0; overflow-wrap: anywhere; }
 .ds-sr-detail-bar .ds-breadcrumb-nav { min-width: 0; max-width: 100%; }
 .ds-sr-detail-bar .ds-detail-back-button { flex: none; }
 .ds-sr-detail-bar .ds-breadcrumb-current { min-width: 0; overflow-wrap: anywhere; }
