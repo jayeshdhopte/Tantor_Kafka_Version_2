@@ -20,8 +20,16 @@ func installBundledFileStream(ctx context.Context, run executor.Executor, source
 	return nil
 }
 
-const bundledFileStreamShell = `set -eu
-root=$(readlink -f -- "$1"); destination=$2/tantor-filestream
+func checkBundledFileStream(ctx context.Context, run executor.Executor, source string, s Settings) error {
+	_, detail, err := run.Run(ctx, "bash", "-c", bundledFileStreamShell, "--", source, s.Plugin, "check")
+	if err != nil {
+		return fmt.Errorf("FileStream precheck failed: %w: %s", err, detail)
+	}
+	return nil
+}
+
+const bundledFileStreamShell = `set -euo pipefail
+root=$(readlink -f -- "$1"); destination=$2/tantor-filestream; mode=${3:-install}
 test -d "$root"
 test ! -L "$2"; test ! -L "$destination"
 found=''
@@ -41,18 +49,30 @@ test "$count" -eq 1 || { echo 'Multiple bundled FileStream JARs found' >&2; exit
 jar=$(readlink -f -- "$found")
 case "$jar" in "$root"/*) ;; *) echo 'FileStream JAR escapes selected distribution' >&2; exit 1;; esac
 test -r "$jar"
+# Validate the entire bundled distribution, including lower-priority trees.
+# A valid libs copy alone must not hide a conflicting vendor copy in plugins.
+for tree in libs share connect-plugins plugins; do
+ test ! -d "$root/$tree" || {
+  find -L "$root/$tree" -type f -name 'connect-file-*.jar' -print | while IFS= read -r bundled; do
+   real=$(readlink -f -- "$bundled")
+   case "$real" in "$root"/*) ;; *) echo "FileStream JAR escapes selected distribution: $bundled" >&2; exit 1;; esac
+   cmp -s -- "$jar" "$bundled" || { echo "Inconsistent FileStream parcel: $bundled differs from $jar; use a corrected runtime-matched parcel" >&2; exit 1; }
+  done
+ }
+done
 # Do not duplicate an already installed copy or overwrite a custom version.
 if [ -d "$2" ]; then
  existing=$(find -L "$2" -type f -name 'connect-file-*.jar' -print)
  if [ -n "$existing" ]; then
   while IFS= read -r installed; do
-   cmp -s -- "$jar" "$installed" || { echo 'Configured plugin path already has a different FileStream version; explicit upgrade required' >&2; exit 1; }
+   cmp -s -- "$jar" "$installed" || { echo "FileStream conflict: existing $installed differs from runtime $jar; preserve custom plugins and use an explicit backed-up migration or a separate plugin directory" >&2; exit 1; }
   done <<EOF
 $existing
 EOF
   exit 0
  fi
 fi
+[ "$mode" != check ] || exit 0
 install -d -m 0755 -- "$destination"
 target=$destination/$(basename -- "$jar")
 test ! -L "$target"

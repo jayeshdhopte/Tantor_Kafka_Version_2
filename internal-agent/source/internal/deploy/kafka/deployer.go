@@ -26,6 +26,7 @@ import (
 	"io.translab/tantor-agent/pkg/api"
 	"io.translab/tantor-agent/pkg/artifactwork"
 	"io.translab/tantor-agent/pkg/checksum"
+	"io.translab/tantor-agent/pkg/filestream"
 	"io.translab/tantor-agent/pkg/logrotation"
 )
 
@@ -284,6 +285,9 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 			return logs.String(), fmt.Errorf("checksum verification failed: %w", err)
 		}
 		log("Checksum verified successfully")
+		if err := filestream.ValidateArchive(destPath); err != nil {
+			return logs.String(), fmt.Errorf("parcel FileStream validation failed before extraction: %w", err)
+		}
 	} else {
 		log("Skipping step (resume mode)")
 	}

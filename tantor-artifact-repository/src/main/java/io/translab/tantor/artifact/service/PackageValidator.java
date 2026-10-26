@@ -119,6 +119,8 @@ public class PackageValidator {
             TarArchiveEntry entry;
             int entries = 0;
             long expanded = 0;
+            byte[] fileStreamDigest = null;
+            String fileStreamName = null;
             byte[] buffer = new byte[8192];
             while ((entry = ti.getNextTarEntry()) != null) {
                 if (++entries > properties.getMaxArchiveEntries()) {
@@ -141,7 +143,10 @@ public class PackageValidator {
                 }
                 int read;
                 long entryBytes = 0;
+                boolean fileStream = entry.isFile() && Path.of(name).getFileName().toString().startsWith("connect-file-") && name.endsWith(".jar");
+                java.security.MessageDigest pluginHash = fileStream ? java.security.MessageDigest.getInstance("SHA-256") : null;
                 while ((read = ti.read(buffer)) != -1) {
+                    if (pluginHash != null) pluginHash.update(buffer, 0, read);
                     entryBytes += read;
                     expanded += read;
                     if (entryBytes > properties.getMaxArchiveEntryBytes() || expanded > properties.getMaxArchiveExpandedBytes()) {
@@ -151,6 +156,15 @@ public class PackageValidator {
                     if (expanded / compressed > properties.getMaxArchiveCompressionRatio()) {
                         throw new PackageValidationException("Archive compression ratio exceeds the configured safety limit");
                     }
+                }
+                if (pluginHash != null) {
+                    byte[] digest = pluginHash.digest();
+                    if (fileStreamDigest != null && !java.util.Arrays.equals(fileStreamDigest, digest)) {
+                        throw new PackageValidationException("Inconsistent FileStream parcel: " + name + " differs from " + fileStreamName
+                                + "; package one runtime-matched FileStream build across libs, share and plugin directories.");
+                    }
+                    fileStreamDigest = digest;
+                    fileStreamName = name;
                 }
             }
         } catch (PackageValidationException e) {

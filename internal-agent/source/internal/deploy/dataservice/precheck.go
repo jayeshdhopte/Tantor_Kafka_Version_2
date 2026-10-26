@@ -86,6 +86,12 @@ func Precheck(ctx context.Context, exec executor.Executor, kind string, task *ap
 			return logs.String() + "[FAIL] " + err.Error(), err
 		} else {
 			logs.WriteString("[PASS] Existing unified Kafka data-service runtime\n")
+			if kind == Connect {
+				if err = checkBundledFileStream(ctx, exec, s.Install, s); err != nil {
+					return logs.String() + "[FAIL] " + err.Error(), err
+				}
+				logs.WriteString("[PASS] Bundled FileStream and existing plugin copies are consistent\n")
+			}
 		}
 	}
 	args := []string{"-c", precheckShell(), "--", kind, strconv.Itoa(s.Port), s.Bootstrap, s.KafkaBin, s.Plugin, s.Working, strconv.Itoa(s.MinDisk), strconv.FormatBool(s.Deferred), s.HAPeers}

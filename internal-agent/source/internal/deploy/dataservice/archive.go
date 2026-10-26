@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"fmt"
 	"io"
+	"io.translab/tantor-agent/pkg/filestream"
 	"os"
 	"path"
 	"strings"
@@ -13,6 +14,11 @@ import (
 // InspectArchive verifies the entire archive before privileged extraction.
 // Internal symlinks are permitted (the unified bundle uses them for Java libs).
 func InspectArchive(filename, kind string) (string, error) {
+	if kind == Connect {
+		if err := filestream.ValidateArchive(filename); err != nil {
+			return "", err
+		}
+	}
 	f, err := os.Open(filename)
 	if err != nil {
 		return "", err
