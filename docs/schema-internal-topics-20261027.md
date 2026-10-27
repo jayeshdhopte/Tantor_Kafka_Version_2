@@ -6,7 +6,7 @@ Existing services retain their encryption/authentication configuration during po
 
 The Topics API filters known platform topics before search, counts and pagination when includeInternal=false. When true, they appear alongside application topics and are marked internal. Exact names include _schemas, _schema_encoders, _dek_registry_keys, standard Connect topics and broker-reported internal topics. Ordinary customer topics beginning with an underscore remain visible. The UI defaults to hiding internal topics and ignores stale responses after toggling.
 
-Validation: 119 UI tests; 380 backend tests (0 failures, 3 optional skips); complete Linux Go suites for both agents; Linux amd64/arm64 builds for both agents. Production UI build is checked separately. No production service or topic was changed during implementation.
+Validation: 119 UI tests; 380 backend tests (0 failures, 3 optional skips); complete Linux Go suites for both agents; Linux amd64/arm64 builds for both agents. Production UI build and systemd startup-guard syntax validation passed. No production service or topic was changed during implementation.
 
 Acceptance checks after deployment:
 1. With Show internal topics off, search for each optional topic: no row and no count contribution.
