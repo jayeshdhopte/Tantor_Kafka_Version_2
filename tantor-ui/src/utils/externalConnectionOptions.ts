@@ -10,8 +10,14 @@ export function validateBootstrapServers(value: string): string {
   const endpoints = value.split(',').map(row => row.trim());
   if (endpoints.length > 30 || endpoints.some(row => {
     const match = /^(\[[0-9a-fA-F:]+\]|[a-zA-Z0-9.-]+):(\d+)$/.exec(row);
-    return !match || Number(match[2]) < 1 || Number(match[2]) > 65535;
-  })) throw new Error('Enter each bootstrap server as host:port. IPv6 uses [address]:port.');
+    if (!match || Number(match[2]) < 1 || Number(match[2]) > 65535) return true;
+    const host = match[1];
+    if (host.startsWith('[')) {
+      try { new URL(`http://${host}`); return false; } catch { return true; }
+    }
+    if (/^[0-9.]+$/.test(host)) return host.split('.').length !== 4 || host.split('.').some(part => !part || Number(part) > 255);
+    return host.length > 253 || host.replace(/\.$/, '').split('.').some(part => !/^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/.test(part));
+  })) throw new Error('Enter a valid IP/hostname and a port from 1 to 65535 for each bootstrap server.');
   return [...new Set(endpoints)].join(',');
 }
 export function validateConnectionOptions(options: ConnectionOptions): void {

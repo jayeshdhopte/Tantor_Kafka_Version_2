@@ -13,3 +13,5 @@
 .connection-service-row { display: grid; grid-template-columns: 1fr 100px 1.5fr 100px auto; gap: 12px; align-items: end; margin: 12px 0; }
 .connection-mask-rule { border: 1px solid var(--border-color, #d6d1dd); border-radius: 8px; padding: 14px; margin: 14px 0; display: grid; gap: 12px; }
 @media(max-width: 900px) { .connection-service-row { grid-template-columns: 1fr 1fr; } .connection-row { flex-wrap: wrap; } }
+
+.bootstrap-server-row .bootstrap-port { flex: 0 0 100px; }

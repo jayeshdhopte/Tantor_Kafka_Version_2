@@ -50,9 +50,9 @@
 .cc-empty-properties { color: #747786; font-size: 13px; }
 .cc-primary { display: inline-flex; gap: 8px; align-items: center; background: #4c1d6f; border: 1px solid #4c1d6f; color: white; padding: 10px 14px; border-radius: 8px; cursor: pointer; font-weight: 700; }
 .cc-primary:disabled { opacity: .5; cursor: not-allowed; }
-.cc-preview { margin-top: 20px; padding: 17px; background: #faf8fc; border: 1px solid #e8dff0; border-radius: 9px; }
-.cc-preview h4 { display: flex; align-items: center; gap: 7px; margin: 0 0 12px; }
-.cc-preview-table>div { display: grid; grid-template-columns: 100px 1fr 1fr; gap: 12px; padding: 9px 11px; border-bottom: 1px solid #e7e1eb; font-size: 13px; }
+.cc-preview { margin-top: 24px; padding: 24px; background: #faf8fc; border: 1px solid #e8dff0; border-radius: 9px; }
+.cc-preview h4 { display: flex; align-items: center; gap: 7px; margin: 0 0 18px; }
+.cc-preview-table>div { display: grid; grid-template-columns: 100px 1fr 1fr; gap: 16px; padding: 12px 16px; border-bottom: 1px solid #e7e1eb; font-size: 13px; }
 .cc-preview-table code { overflow-wrap: anywhere; }
 .cc-error { border: 1px solid #f1cad2; background: #fff5f6; color: #a52c48; padding: 11px 13px; border-radius: 8px; font-size: 13px; }
 .cc-loading { display: flex; align-items: center; gap: 9px; color: #777; }
@@ -297,3 +297,9 @@
 @media (prefers-reduced-motion: reduce) {
   .cc-page .cc-role-grid button { transition: none; }
 }
+
+/* Give each property room while retaining the existing preview layout. */
+.cc-preview > p { margin: 18px 0; line-height: 1.6; }
+.cc-preview-property { margin-top: 24px; margin-bottom: 28px; }
+.cc-preview-property > strong { display: block; margin-bottom: 12px; }
+.cc-preview > .cc-primary { margin-top: 8px; }

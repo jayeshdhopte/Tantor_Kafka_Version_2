@@ -1,5 +1,7 @@
+import { AutoRefreshControl } from '../components/AutoRefreshControl';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { RefreshButton } from '../components/RefreshButton';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { Database, Search, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, RefreshCw } from 'lucide-react';
 import './Partitions.css';
@@ -31,6 +33,7 @@ interface PaginatedResponse {
 export function Partitions() {
   const { id } = useParams<{ id: string }>();
   const [data, setData] = useState<PaginatedResponse | null>(null);
+  const [refreshRate, setRefreshRate] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,9 +41,11 @@ export function Partitions() {
   const [size, setSize] = useState(10);
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const partitionRequest = useRef(0);
   const [sortBy, setSortBy] = useState('topicName');
 
   const fetchPartitions = useCallback(async () => {
+    const request = ++partitionRequest.current;
     setLoading(true);
     setError(null);
     try {
@@ -50,18 +55,23 @@ export function Partitions() {
         throw new Error(errorData.message || `Partitions are not available yet (HTTP ${res.status})`);
       }
       const json = await res.json();
-      setData(json);
+      if (request === partitionRequest.current) setData(json);
     } catch (e: unknown) {
       console.error(e);
+      if (request !== partitionRequest.current) return;
       setError(e instanceof Error ? e.message : "Failed to load partitions");
     } finally {
-      setLoading(false);
+      if (request === partitionRequest.current) setLoading(false);
     }
   }, [id, page, size, searchQuery, sortBy]);
 
   useEffect(() => {
     void (async () => { await fetchPartitions(); })();
+    const requests = partitionRequest;
+    return () => { requests.current++; };
   }, [fetchPartitions]);
+
+  useAutoRefresh(fetchPartitions, refreshRate, !loading, `${id}:${page}:${size}:${searchQuery}:${sortBy}`);
 
   // Handle Search submit
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -123,6 +133,7 @@ export function Partitions() {
               />
             </label>
           </form>
+          <AutoRefreshControl value={refreshRate} onChange={setRefreshRate} label="Partitions" />
           <RefreshButton
             type="button"
             onClick={fetchPartitions} 

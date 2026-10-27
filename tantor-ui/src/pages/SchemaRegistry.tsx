@@ -1,3 +1,5 @@
+import { AutoRefreshControl } from '../components/AutoRefreshControl';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { RefreshButton } from '../components/RefreshButton';
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -341,6 +343,7 @@ export function SchemaRegistry() {
   const [initialSession] = useState(() => readDataServiceSession<SchemaSummary>('schema-registry', id));
   const [view, setView] = useState<View>('list');
   const [summary, setSummary] = useState<SchemaSummary | null>(initialSession?.summary ?? null);
+  const [refreshRate, setRefreshRate] = useState(0);
   const [loading, setLoading] = useState(false);
   const [hasFetched, setHasFetched] = useState(initialSession?.hasFetched ?? false);
   const [saving, setSaving] = useState(false);
@@ -720,6 +723,8 @@ export function SchemaRegistry() {
       if (requestId === loadRequestId.current) setLoading(false);
     }
   };
+
+  useAutoRefresh(() => load(), refreshRate, (hasFetched || savedConnections.length > 0) && !loading && !saving && !showConnection && !showCreate && view === 'list' && !pendingSetting && !pendingDelete && !pendingRecovery && !pendingBulkDelete, `${id}:${selectedConnectionId}`);
 
   const handleInstanceChange = (value: string) => {
     const connectionId = value || null;
@@ -1257,6 +1262,7 @@ export function SchemaRegistry() {
                   </button>
                 )}
 
+                <AutoRefreshControl value={refreshRate} onChange={setRefreshRate} label="Schema Registry" />
                 <RefreshButton className="ds-icon-button icon-gray" onClick={() => void fetchWithDiscovery()} disabled={loading} title="Refresh" style={{ width: '35px', height: '35px' }}>
                   <RefreshCw size={16} className={loading ? 'spin' : ''} />
                 </RefreshButton>

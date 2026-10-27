@@ -1,3 +1,5 @@
+import { AutoRefreshControl } from '../components/AutoRefreshControl';
+import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { RefreshButton } from '../components/RefreshButton';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -152,6 +154,7 @@ export function KafkaConnect() {
   const { canManage } = usePermissions();
   const [initialSession] = useState(() => readDataServiceSession<ConnectSummary>('kafka-connect', id));
   const [summary, setSummary] = useState<ConnectSummary | null>(initialSession?.summary ?? null);
+  const [refreshRate, setRefreshRate] = useState(0);
   const [loading, setLoading] = useState(false);
   const [hasFetched, setHasFetched] = useState(initialSession?.hasFetched ?? false);
   const [saving, setSaving] = useState(false);
@@ -388,6 +391,8 @@ export function KafkaConnect() {
     }
   };
 
+  useAutoRefresh(() => load(), refreshRate, (hasFetched || savedConnections.length > 0) && !loading && !saving && !showConnection && !showCreate && !selectedConnectorName, `${id}:${selectedConnectionId}`);
+
   const handleInstanceChange = (value: string) => {
     const connectionId = value || null;
     if (!connectionId || connectionId === selectedConnectionId) return;
@@ -623,7 +628,7 @@ export function KafkaConnect() {
             </div>
           </div>}
 
-          <div className="ds-buttons-group" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+          <div className="ds-buttons-group" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-2)' }}>
             {/* Ã¢â€â‚¬Ã¢â€â‚¬ Buttons Ã¢â€â‚¬Ã¢â€â‚¬ */}
             {canManage && (
               <button 
@@ -683,7 +688,8 @@ export function KafkaConnect() {
               </button>
             )}
 
-            <RefreshButton
+            <AutoRefreshControl value={refreshRate} onChange={setRefreshRate} label="Kafka Connect" />
+                <RefreshButton
               className="ds-icon-button icon-gray" 
               onClick={() => void fetchWithDiscovery()}
               disabled={loading}

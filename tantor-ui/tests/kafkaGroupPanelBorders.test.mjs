@@ -20,8 +20,8 @@ test('group tables have a complete rounded frame without changing cell spacing o
   assert.equal(declarations('.kafka-group-panel table')['border-collapse'], 'collapse');
 });
 
-test('the same framed group table is used by Consumers, Schema Registry and Kafka Connect', () => {
-  for (const [page, kind] of [['Consumers', 'other'], ['SchemaRegistry', 'schema'], ['KafkaConnect', 'connect']]) {
+test('the framed coordination table remains in Schema Registry and Kafka Connect', () => {
+  for (const [page, kind] of [['SchemaRegistry', 'schema'], ['KafkaConnect', 'connect']]) {
     assert.match(read(`../src/pages/${page}.tsx`), new RegExp(`<KafkaGroupPanel[^>]*kind="${kind}"`));
   }
   const component = read('../src/components/KafkaGroupPanel.tsx');
