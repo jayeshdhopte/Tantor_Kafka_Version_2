@@ -31,13 +31,17 @@ const text = node => typeof node === 'string' || typeof node === 'number' ? Stri
   : React.Children.toArray(node?.props?.children).map(text).join('');
 
 // Exercise the real page and its event handlers without a browser or backend.
-function harness(canManage = true) {
+function harness(canManage = true, fetchImpl) {
   const states = [];
+  const refs = [];
+  let refCursor = 0;
+  let effects = [];
   let cursor = 0;
   let clusterId = 'cluster-1';
   const requests = [], navigation = [];
   const Modal = () => null;
-  const hooks = { ...React, useEffect() {}, useCallback: callback => callback, useMemo: calculate => calculate(),
+  const hooks = { ...React, useEffect(effect) { effects.push(effect); }, useCallback: callback => callback, useMemo: calculate => calculate(),
+    useRef(initial) { const index = refCursor++; return refs[index] ??= { current: initial }; },
     useState(initial) {
       const index = cursor++;
       if (!(index in states)) states[index] = typeof initial === 'function' ? initial() : initial;
@@ -45,7 +49,7 @@ function harness(canManage = true) {
     } };
   const context = vm.createContext({ exports: {}, URL, Blob, navigator: { clipboard: { writeText: async () => {} } },
     window: { localStorage: { getItem: () => null, setItem() {} } },
-    fetch: async (url, options) => { requests.push({ url, options }); return Response.json(options ? {} : page); },
+    fetch: async (url, options) => { requests.push({ url, options }); return fetchImpl ? fetchImpl(url, options) : Response.json(options ? {} : page); },
     require: name => {
       if (name === 'react') return hooks;
       if (name === 'react-dom') return { createPortal: child => child };
@@ -59,13 +63,14 @@ function harness(canManage = true) {
       return require(name);
     } });
   vm.runInContext(compiled, context);
-  const render = () => { cursor = 0; return context.exports.Topics(); };
+  const render = () => { cursor = 0; refCursor = 0; effects = []; return context.exports.Topics(); };
   render();
   states[stateNames.indexOf('data')] = structuredClone(page);
   states[stateNames.indexOf('loading')] = false;
   const button = (tree, label) => all(tree, node => node.type === 'button' && text(node).trim() === label)[0];
   const checkbox = (tree, label) => all(tree, node => node.type === 'input' && node.props['aria-label'] === label)[0];
   return { render, button, checkbox, requests, navigation, Modal,
+    loadEffect: () => effects[0](),
     setCluster: id => { clusterId = id; },
     get: name => states[stateNames.indexOf(name)],
     set: (name, value) => { states[stateNames.indexOf(name)] = value; } };
@@ -94,6 +99,49 @@ test('topic checkboxes are hidden until Select topics, and Cancel clears and hid
   assert.equal(h.button(tree, 'Delete selected'), undefined);
   assert.equal(h.get('topicSelection').names.size, 0);
   assert.deepEqual(h.requests, []);
+});
+
+test('internal topics default off and a late toggle-on response cannot expose them after toggle-off', async () => {
+  const pending = [];
+  const h = harness(true, url => new Promise(resolve => pending.push({ url, resolve })));
+  const toggle = tree => all(tree, node => node.type === 'label' && node.props.className === 'internal-toggle')
+    .flatMap(node => all(node, child => child.type === 'input'))[0];
+  let tree = h.render();
+  assert.equal(toggle(tree).props.checked, false);
+  toggle(tree).props.onChange({ target: { checked: true } });
+  tree = h.render();
+  assert.equal(h.get('data'), null);
+  const cleanupOn = h.loadEffect();
+  assert.match(pending[0].url, /includeInternal=true/);
+  toggle(tree).props.onChange({ target: { checked: false } });
+  cleanupOn();
+  tree = h.render();
+  h.loadEffect();
+  assert.match(pending[1].url, /includeInternal=false/);
+  pending[1].resolve(Response.json(page));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.get('data').content[0].name, 'orders');
+  pending[0].resolve(Response.json({ ...page, content: [{ ...page.content[0], name: '_schema_encoders', internal: true }] }));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.get('data').content[0].name, 'orders');
+  assert.equal(h.get('loading'), false);
+  assert.doesNotMatch(text(h.render()), /_schema_encoders/);
+});
+
+test('toggle-on displays internal badges and toggle-off immediately clears the old rows', async () => {
+  const internalPage = { ...page, content: [{ ...page.content[0], name: '_dek_registry_keys', internal: true }] };
+  const h = harness(true, () => Response.json(internalPage));
+  const toggle = tree => all(tree, node => node.type === 'label' && node.props.className === 'internal-toggle')
+    .flatMap(node => all(node, child => child.type === 'input'))[0];
+  toggle(h.render()).props.onChange({ target: { checked: true } });
+  h.render(); h.loadEffect();
+  await new Promise(resolve => setImmediate(resolve));
+  let tree = h.render();
+  assert.match(text(tree), /_dek_registry_keys/);
+  assert.ok(all(tree, node => node.props.className === 'internal-badge').length);
+  toggle(tree).props.onChange({ target: { checked: false } });
+  assert.equal(h.get('data'), null);
+  assert.doesNotMatch(text(h.render()), /_dek_registry_keys/);
 });
 
 test('select-all, partial selection and checkbox clicks preserve row navigation', () => {

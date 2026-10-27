@@ -162,6 +162,10 @@ func deploySharedDataService(ctx context.Context, exec executor.Executor, s Sett
 		if err != nil {
 			return logs, err
 		}
+		files[0].Content, err = preserveSchemaExtensions(current, files[0].Content)
+		if err != nil {
+			return logs, err
+		}
 	}
 	files[0].Content, err = mergeConnectProperties(current, files[0].Content)
 	if err != nil {

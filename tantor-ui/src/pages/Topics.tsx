@@ -1,5 +1,5 @@
 import { RefreshButton } from '../components/RefreshButton';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
@@ -59,6 +59,7 @@ export function Topics() {
   const [size, setSize] = useState(10);
   const [search, setSearch] = useState('');
   const [includeInternal, setIncludeInternal] = useState(false);
+  const topicRequest = useRef(0);
   const selectionContext = JSON.stringify([id, search, includeInternal]);
   const [topicSelection, setTopicSelection] = useState<{ context: string; enabled: boolean; names: Set<string> }>({ context: '', enabled: false, names: new Set() });
   const selectionMode = canManage && topicSelection.context === selectionContext && topicSelection.enabled;
@@ -97,6 +98,7 @@ export function Topics() {
 
   const fetchTopics = useCallback(async (quiet = false) => {
     if (!id) return;
+    const request = ++topicRequest.current;
     if (quiet) setRefreshing(true);
     else setLoading(true);
     setError(null);
@@ -106,17 +108,24 @@ export function Topics() {
         throw new Error(`Failed to load topics: ${res.statusText}`);
       }
       const jsonData = await res.json();
+      if (request !== topicRequest.current) return;
       setData(jsonData);
     } catch (requestError) {
+      if (request !== topicRequest.current) return;
       setError(requestError instanceof Error ? requestError.message : 'Failed to load topics');
     } finally {
-      if (quiet) setRefreshing(false);
-      else setLoading(false);
+      if (request === topicRequest.current) {
+        setRefreshing(false);
+        setLoading(false);
+      }
     }
   }, [id, includeInternal, page, search, size]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch synchronizes Kafka data
-  useEffect(() => { fetchTopics(); }, [fetchTopics]);
+  useEffect(() => {
+    fetchTopics();
+    return () => { topicRequest.current++; };
+  }, [fetchTopics]);
   useEffect(() => {
     if (!autoRefresh) return;
     const timer = window.setInterval(() => fetchTopics(true), refreshInterval * 1000);
@@ -387,6 +396,10 @@ export function Topics() {
               type="checkbox"
               checked={includeInternal}
               onChange={event => {
+                topicRequest.current++;
+                setData(null);
+                setLoading(true);
+                setRefreshing(false);
                 setIncludeInternal(event.target.checked);
                 setPage(0);
                 cancelTopicSelection();

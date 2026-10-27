@@ -642,7 +642,7 @@ public class KafkaAdminService {
                                 .replicationFactor(replicationFactor)
                                 .underReplicated(underReplicated)
                                 .messageCount(messageCount)
-                                .internal(desc.isInternal())
+                                .internal(desc.isInternal() || isManagedInternalTopic(name))
                                 .build());
                     }
                 }
@@ -664,9 +664,11 @@ public class KafkaAdminService {
         }
     }
 
-    private boolean isManagedInternalTopic(String name) {
+    static boolean isManagedInternalTopic(String name) {
         return "__consumer_offsets".equals(name)
                 || "_schemas".equals(name)
+                || "_schema_encoders".equals(name)
+                || "_dek_registry_keys".equals(name)
                 || "connect-configs".equals(name)
                 || "connect-offsets".equals(name)
                 || "connect-status".equals(name);

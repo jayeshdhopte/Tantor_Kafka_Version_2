@@ -272,7 +272,7 @@ StandardError=journal
 WantedBy=multi-user.target
 `, s.Kind, s.User, s.Group, javaHome, s.Log, heapVariable, s.HeapMin, s.HeapMax, logVariable, loggingPath, s.Working, s.Install, launcher, s.Config, propertyName)
 	if s.Kind == Schema {
-		unit = strings.Replace(unit, "WorkingDirectory=", "UnsetEnvironment=METADATA_ENCODER_SECRET METADATA_ENCODER_OLD_SECRET\nWorkingDirectory=", 1)
+		unit = strings.Replace(unit, "WorkingDirectory=", "UnsetEnvironment=METADATA_ENCODER_SECRET METADATA_ENCODER_OLD_SECRET SCHEMA_REGISTRY_METADATA_ENCODER_SECRET SCHEMA_REGISTRY_METADATA_ENCODER_OLD_SECRET\n"+basicSchemaStartupCheck+"WorkingDirectory=", 1)
 	}
 	return []ConfigFile{{s.Config + "/" + propertyName, properties}, {loggingPath, logging}, {"/etc/systemd/system/" + s.ServiceName + ".service", unit}}
 }
