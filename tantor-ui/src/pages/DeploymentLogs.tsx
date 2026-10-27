@@ -24,6 +24,15 @@ interface ClusterInfo {
   status: string;
 }
 
+// This page is deployment history, not the cluster's general task history.
+const deploymentCommands = new Set([
+  'INSTALL_KAFKA', 'UPGRADE_KAFKA', 'INSTALL_MONITORING',
+  'CHECK_KRAFT_CONNECTIVITY', 'VERIFY_KRAFT_QUORUM', 'VERIFY_ZK_QUORUM',
+  'PRECHECK_SCHEMA', 'INSTALL_SCHEMA', 'VERIFY_SCHEMA_REGISTRY',
+  'PRECHECK_CONNECT', 'INSTALL_CONNECT', 'VERIFY_CONNECT',
+]);
+const isDeploymentTask = (task: Task) => deploymentCommands.has(task.command);
+
 const activeStatus = (status: string) => ['PENDING', 'RUNNING', 'VALIDATING', 'IN_PROGRESS'].includes(String(status).toUpperCase());
 
 const friendlyFailure = (task: Task) => {
@@ -79,7 +88,7 @@ export function DeploymentLogs() {
       if (tasksRes.ok) {
         const nextTasks: Task[] = await tasksRes.json();
         if (!Array.isArray(nextTasks)) throw new Error('Invalid tasks response');
-        const availableTasks = Array.isArray(nextTasks) ? nextTasks : [];
+        const availableTasks = nextTasks.filter(isDeploymentTask);
         setTasks(availableTasks);
         setSelectedTaskId(current => current && availableTasks.some(task => task.id === current) ? current : availableTasks[0]?.id || '');
         succeeded = true;
@@ -164,7 +173,7 @@ export function DeploymentLogs() {
         {feedback}
         <Terminal size={32} />
         <h3>No deployment logs</h3>
-        <p>No task has been executed for this cluster.</p>
+        <p>No deployment task has been recorded for this cluster.</p>
       </div>
     );
   }
