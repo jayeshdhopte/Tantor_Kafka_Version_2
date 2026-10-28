@@ -1462,3 +1462,131 @@
   font-weight: 500;
   text-align: left;
 }
+
+/* Keep bootstrap endpoints aligned with the adjacent setup fields. */
+.external-page .bootstrap-setup-section { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.external-page .bootstrap-setup-section > h3 { margin: 0; color: #4C1D6F; font-family: var(--font-display); font-size: 16px; font-weight: 600; line-height: 24px; }
+.external-page .external-wrapper { min-width: 0; }
+.external-page .external-header { flex-wrap: wrap; gap: 20px; }
+.external-page .external-header-left { min-width: 0; }
+.external-page .external-header h1 { overflow-wrap: anywhere; }
+.external-page .external-tab-switcher { max-width: 100%; box-sizing: border-box; background: #F1EEF5; border-color: #DDD5E7; }
+.external-page .external-tab-switcher .tab-btn { min-width: 0; min-height: 36px; white-space: normal; color: #5F5670; }
+.external-page .external-tab-switcher .tab-btn:hover:not(.active) { background: #E8E0F0; color: #3E1363; }
+.external-page .external-tab-switcher .tab-btn.active { background: #4C1D6F; color: #FFFFFF; box-shadow: 0 1px 3px #3E136326; }
+.external-page .external-tab-switcher .tab-btn:focus-visible { outline: 2px solid #8B72B7; outline-offset: 3px; }
+.external-page .bootstrap-server-card .form-row-three { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); grid-template-areas: 'name endpoints' 'environment endpoints'; grid-template-rows: auto 1fr; gap: 18px 24px; align-items: start; }
+.external-page .bootstrap-server-card .form-row-three > .form-field-group:first-child { grid-area: name; }
+.external-page .bootstrap-server-card .form-row-three > .form-field-group:nth-child(2) { grid-area: environment; }
+.external-page .bootstrap-url-field { grid-area: endpoints; }
+.external-page .external-bootstrap-container .form-field-group { min-width: 0; }
+.external-page .external-bootstrap-container .form-field-group > label { line-height: 20px; }
+.external-page .bootstrap-server-card .form-field-group > :is(input, select) { width: 100%; min-width: 0; height: 40px; box-sizing: border-box; }
+.external-page .bootstrap-url-field > .bootstrap-options { display: flex; flex-direction: column; gap: 14px; border: 1px solid #D6D1DD; border-radius: 8px; padding: 20px; margin: 0; background: #F8FAFC; box-shadow: 0 1px 3px #10182808; }
+.external-page .bootstrap-url-field .bootstrap-options > label { line-height: 20px; font-size: 14px; font-weight: 600; color: #4C1D6F; }
+.external-page .bootstrap-url-field .connection-row { display: grid; grid-template-columns: minmax(0, 1fr) 100px 40px; align-items: end; gap: 12px; margin: 0; }
+.external-page .bootstrap-url-field .bootstrap-endpoint-row > label { display: flex; flex-direction: column; gap: 8px; min-width: 0; line-height: 20px; }
+.external-page .bootstrap-url-field .bootstrap-endpoint-row input { width: 100%; min-width: 0; height: 40px; min-height: 40px; padding: 9px 12px; box-sizing: border-box; font: inherit; font-size: 13px; }
+.external-page .bootstrap-url-field .connection-row > button { width: 40px; height: 40px; padding: 0; border-color: #D4BFE5; background: #F1E9F8; color: #4C1D6F; }
+.external-page .bootstrap-url-field .connection-row > button:hover:not(:disabled) { border-color: #A783C2; background: #E7D7F2; }
+.external-page .bootstrap-url-field .bootstrap-options > button { align-self: flex-start; min-height: 38px; max-width: 100%; white-space: normal; background: #4C1D6F; border-color: #4C1D6F; color: #FFFFFF; box-shadow: 0 1px 3px #3E13631A; }
+.external-page .bootstrap-url-field .bootstrap-options > button:hover:not(:disabled) { background: #3E1363; border-color: #3E1363; }
+.external-page .bootstrap-url-field :is(button, input):focus-visible { outline: 2px solid #8B72B7; outline-offset: 3px; }
+.external-page .external-bootstrap-container .ssl-hostname-field { grid-column: 1 / -1; }
+@media (max-width: 1050px) {
+  .external-page .bootstrap-server-card .form-row-three { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'name' 'environment' 'endpoints'; grid-template-rows: auto; }
+  .external-page .external-bootstrap-container .form-grid-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .external-page .bootstrap-server-card .form-row-three,
+  .external-page .external-bootstrap-container .form-grid-columns { grid-template-columns: minmax(0, 1fr); }
+  .external-page .external-tab-switcher { width: 100%; }
+  .external-page .external-tab-switcher .tab-btn { flex: 1 1 0; padding: 8px; }
+  .external-page .external-bootstrap-container > .external-card { padding: 16px; }
+  .external-page .bootstrap-setup-section > .bootstrap-server-card { padding: 16px; }
+  .external-page .bootstrap-url-field .connection-row { grid-template-columns: minmax(0, 1fr) 76px 40px; gap: 8px; }
+}
+@media (max-width: 420px) {
+  .external-page .bootstrap-url-field .connection-row { grid-template-columns: minmax(0, 1fr) 40px; }
+  .external-page .bootstrap-url-field .bootstrap-endpoint-row > label:first-child { grid-column: 1 / -1; }
+}
+
+/* Browsing settings on the setup page; other shared-form consumers are unchanged. */
+.external-page .external-browsing-settings { min-width: 0; padding-top: 8px; }
+.external-page .external-browsing-settings .connection-options { min-width: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.external-page .external-browsing-settings legend { margin-bottom: 8px; padding: 0; color: #4C1D6F; font-size: 16px; line-height: 24px; font-weight: 600; }
+.external-page .external-browsing-settings p { margin: 8px 0 16px; color: #667085; font-size: 12px; line-height: 20px; overflow-wrap: anywhere; }
+.external-page .external-browsing-settings details { min-width: 0; margin: 16px 0 0; padding: 0 0 18px; border: 0; border-bottom: 1px solid #E4E7EC; }
+.external-page .external-browsing-settings details:not([open]) { padding-bottom: 0; border-bottom: 0; }
+.external-page .external-browsing-settings summary { box-sizing: border-box; min-height: 48px; margin: 0 0 16px; padding: 12px 16px; border: 1px solid #E4E7EC; border-radius: 6px; background: #F8FAFC; color: #344054; font-size: 14px; font-weight: 600; line-height: 24px; overflow-wrap: anywhere; box-shadow: 0 1px 2px #10182805; }
+.external-page .external-browsing-settings details:not([open]) > summary { margin-bottom: 0; }
+.external-page .external-browsing-settings summary::marker { color: #4C1D6F; font-size: 12px; }
+.external-page .external-browsing-settings details[open] > summary { border-color: #DDD0E8; background: #F6F2FA; color: #4C1D6F; box-shadow: inset 3px 0 #4C1D6F; }
+.external-page .external-browsing-settings summary:hover { border-color: #C9B8D8; }
+.external-page .external-browsing-settings summary span { display: inline-block; margin-left: 12px; padding: 1px 8px; border: 1px solid #DDD0E8; border-radius: 4px; background: #F2EAF9; color: #602C82; font-size: 11px; line-height: 20px; font-weight: 500; }
+.external-page .external-browsing-settings label { min-width: 0; gap: 7px; color: #475467; font-size: 12px; font-weight: 500; line-height: 20px; overflow-wrap: anywhere; }
+.external-page .external-browsing-settings input,
+.external-page .external-browsing-settings select { box-sizing: border-box; min-height: 40px; min-width: 0; padding: 9px 12px; border: 1px solid #D0D5DD; border-radius: 6px; background: #FFFFFF; color: #332849; font: inherit; font-size: 13px; line-height: 20px; }
+.external-page .external-browsing-settings :is(input, select):hover:not(:disabled) { border-color: #A797B8; }
+.external-page .external-browsing-settings :is(input, select, button, summary):focus-visible { outline: 2px solid #8B72B7; outline-offset: 3px; }
+.external-page .external-browsing-settings .connection-service-row { grid-template-columns: minmax(0, 1fr) 110px minmax(0, 1.4fr) 100px 40px; align-items: end; gap: 12px; margin: 0 0 16px; padding: 14px; border: 1px solid #E4E7EC; border-radius: 6px; background: #F8FAFC; }
+.external-page .external-browsing-settings .connection-row { gap: 12px; margin: 12px 0; align-items: end; }
+.external-page .external-browsing-settings .ds-button { min-height: 38px; max-width: 100%; padding: 8px 12px; border-color: #D4BFE5; border-radius: 6px; background: #F7F2FB; color: #4C1D6F; font: inherit; font-size: 13px; line-height: 20px; white-space: normal; }
+.external-page .external-browsing-settings .ds-button svg { flex: none; }
+.external-page .external-browsing-settings .ds-button:hover:not(:disabled) { border-color: #A783C2; background: #EDE1F6; }
+.external-page .external-browsing-settings .ds-button[aria-label^='Remove'] { width: 40px; height: 40px; flex: 0 0 40px; padding: 0; background: #F1E9F8; color: #4C1D6F; }
+.external-page .external-browsing-settings fieldset:disabled :is(button, input, select) { opacity: .6; cursor: not-allowed; }
+.external-page .external-browsing-settings .connection-mask-rule { min-width: 0; gap: 14px; margin: 16px 0; padding: 16px; border-color: #E4E7EC; border-radius: 6px; background: #F8FAFC; }
+.external-page .external-browsing-settings .connection-mask-rule .connection-row { margin: 0; }
+@media (max-width: 1000px) {
+  .external-page .external-browsing-settings .connection-service-row { grid-template-columns: minmax(0, 1fr) 110px; }
+}
+@media (max-width: 640px) {
+  .external-page .external-browsing-settings .connection-service-row { grid-template-columns: minmax(0, 1fr); }
+  .external-page .external-browsing-settings .connection-row { flex-wrap: wrap; }
+  .external-page .external-browsing-settings .connection-row > label { flex-basis: 100%; }
+  .external-page .external-browsing-settings summary { padding: 10px 12px; }
+  .external-page .external-browsing-settings summary span { margin-left: 6px; }
+}
+
+/* Discovery setup presentation stays isolated from the connection forms. */
+.external-page .agent-card { min-width: 0; padding: 28px; border-color: #E4E7EC; border-radius: 12px; background: #FFFFFF; }
+.external-page .agent-card .card-header-title { display: flex; align-items: flex-start; gap: 14px; margin: 0; padding: 0; border: 0; background: transparent; }
+.external-page .agent-card .card-header-title > svg { flex: none; margin-top: 2px; color: #1D2939; }
+.external-page .agent-card .card-header-title h3 { margin: 0; color: #332849; font-size: 19px; line-height: 28px; font-weight: 600; }
+.external-page .agent-card .card-header-subtitle { margin: 6px 0 0; color: #667085; font-size: 13px; line-height: 21px; }
+.external-page .agent-card .agent-divider { margin: 24px 0; border-color: #EAECF0; }
+.external-page .agent-card .agent-connectivity-header { gap: 16px; margin-bottom: 16px; padding: 16px 18px; border: 1px solid #DDD0E8; border-left: 3px solid #4C1D6F; border-radius: 8px; background: #F7F4FA; }
+.external-page .agent-card .agent-connectivity-header h3 { margin: 0 0 5px; color: #4C1D6F; font-size: 14px; font-weight: 600; }
+.external-page .agent-card .agent-connectivity-header p { margin: 0; color: #667085; font-size: 13px; line-height: 21px; }
+.external-page .agent-card .agent-connectivity-header .btn { flex: 0 0 40px; width: 40px; height: 40px; padding: 0; border: 1px solid #D4BFE5; border-radius: 6px; background: #FFFFFF; color: #4C1D6F; }
+.external-page .agent-card .agent-connectivity-header .btn:hover:not(:disabled) { background: #EDE1F6; }
+.external-page .agent-card .agent-empty-state { gap: 14px; margin: 0; padding: 22px 18px; border: 1px dashed #D0D5DD; border-radius: 8px; background: #FAFBFC; }
+.external-page .agent-card .agent-empty-state > svg { flex: none; margin-top: 2px; color: #667085; }
+.external-page .agent-card .agent-empty-state strong { color: #344054; font-size: 13px; line-height: 21px; }
+.external-page .agent-card .agent-empty-state span { margin-top: 5px; color: #667085; font-size: 13px; line-height: 21px; }
+.external-page .agent-card .agent-status-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 14px; margin: 0; }
+.external-page .agent-card .agent-status-card { min-width: 0; padding: 18px; border-radius: 8px; box-shadow: 0 1px 3px #10182808; }
+.external-page .agent-card .agent-status-top strong { white-space: normal; overflow-wrap: anywhere; color: #344054; font-size: 13px; line-height: 21px; }
+.external-page .agent-card .agent-status-meta { gap: 6px; color: #475467; font-size: 12px; line-height: 20px; overflow-wrap: anywhere; }
+.external-page .agent-card .agent-flow { gap: 12px; margin: 0 0 24px; }
+.external-page .agent-card .flow-step { align-items: center; gap: 14px; padding: 12px 16px; border: 1px solid #EAECF0; border-radius: 8px; background: #FAFBFC; }
+.external-page .agent-card .step-number { width: 28px; height: 28px; border-color: #DDD0E8; background: #F0E7F7; color: #4C1D6F; font-size: 12px; }
+.external-page .agent-card .step-text { min-width: 0; color: #475467; font-size: 13px; line-height: 22px; overflow-wrap: anywhere; }
+.external-page .agent-card .code-block-container { min-width: 0; margin: 0 0 20px; border: 1px solid #352446; border-radius: 10px; }
+.external-page .agent-card .code-block-header { justify-content: space-between; gap: 12px; height: auto; min-height: 48px; padding: 8px 18px; background: #2C1D3E; color: #EDE4F5; font-size: 12px; font-weight: 500; }
+.external-page .agent-card .copy-btn { flex: none; gap: 7px; min-height: 32px; padding: 6px 10px; border: 1px solid #6C5281; border-radius: 6px; background: #402950; color: #FFFFFF; font: inherit; font-size: 12px; }
+.external-page .agent-card .copy-btn:hover { background: #55366B; border-color: #A78BBA; }
+.external-page .agent-card .code-block-body { min-width: 0; padding: 22px; overflow-x: auto; background: #13101A; }
+.external-page .agent-card .code-block-body pre { margin: 0; color: #EBE7F0; font-size: 13px; line-height: 1.8; white-space: pre; }
+.external-page .agent-card .agent-note { align-items: flex-start; gap: 10px; padding: 14px 16px; border: 1px solid #DDD0E8; border-radius: 8px; background: #F7F4FA; }
+.external-page .agent-card .note-icon { margin-top: 2px; color: #4C1D6F; }
+.external-page .agent-card .note-text { color: #5D5270; font-size: 12px; line-height: 21px; font-weight: 400; overflow-wrap: anywhere; }
+.external-page .agent-card button:focus-visible { outline: 2px solid #8B72B7; outline-offset: 3px; }
+@media (max-width: 640px) {
+  .external-page .agent-card { padding: 18px 14px; }
+  .external-page .agent-card .agent-connectivity-header { padding: 14px 12px; }
+  .external-page .agent-card .flow-step { align-items: flex-start; padding: 12px; }
+  .external-page .agent-card .code-block-header { padding: 8px 12px; flex-wrap: wrap; }
+  .external-page .agent-card .code-block-body { padding: 16px; }
+}

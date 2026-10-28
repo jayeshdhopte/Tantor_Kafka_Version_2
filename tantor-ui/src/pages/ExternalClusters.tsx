@@ -417,10 +417,9 @@ export function ExternalClusters() {
         <section className="external-connect-grid">
           {openPanel === 'bootstrap' && (
             <div className="external-bootstrap-container">
+              <section className="bootstrap-setup-section" aria-labelledby="bootstrap-setup-title">
+                <h3 id="bootstrap-setup-title">Bootstrap server</h3>
               <div className="external-card bootstrap-server-card">
-                <div className="card-header-title">
-                  <h3>Bootstrap server</h3>
-                </div>
                 <div className="form-row-three">
                   <div className="form-field-group">
                     <label>Cluster Name (Optional)</label>
@@ -461,13 +460,13 @@ export function ExternalClusters() {
                     </select>
                   </div>
                   <div className="form-field-group bootstrap-url-field">
-                    <BootstrapServersInput value={form.bootstrapServers} onChange={value => {
+                    <BootstrapServersInput separateFields value={form.bootstrapServers} onChange={value => {
                       setForm(prev => ({ ...prev, bootstrapServers: value })); setBootstrapResult(null);
                     }} disabled={testing || registering} />
                   </div>
                 </div>
               </div>
-
+              </section>
               <div className="external-card security-config-card">
                 <div className="card-header-title">
                   <h3>Security Configuration</h3>
@@ -745,7 +744,9 @@ export function ExternalClusters() {
                 </div>
               )}
 
-              <ExternalConnectionOptionsForm value={connectionOptions} onChange={setConnectionOptions} disabled={registering} />
+              <div className="external-browsing-settings">
+                <ExternalConnectionOptionsForm value={connectionOptions} onChange={setConnectionOptions} disabled={registering} />
+              </div>
               <div className="external-actions-row">
                 <button className="action-btn cancel-btn" onClick={() => navigate('/clusters')}>
                   Cancel
@@ -774,8 +775,11 @@ export function ExternalClusters() {
           {openPanel === 'agent' && (
             <div className="external-card agent-card">
               <div className="card-header-title">
-                <h3>Discovery Agent</h3>
-                <p className="card-header-subtitle">Full management path for restart, host metrics, and config persistence.</p>
+                <Server size={24} aria-hidden="true" />
+                <div>
+                  <h3>Discovery Agent</h3>
+                  <p className="card-header-subtitle">Full management path for restart, host metrics, and config persistence.</p>
+                </div>
               </div>
               <hr className="agent-divider" />
 
@@ -836,8 +840,10 @@ export function ExternalClusters() {
 
               <div className="code-block-container">
                 <div className="code-block-header">
-                  <button className="copy-btn" onClick={copyAgentConfig} title="Copy config">
-                    <Copy size={16} />
+                  <span>Agent configuration</span>
+                  <button type="button" className="copy-btn" onClick={copyAgentConfig} title="Copy config" aria-label="Copy agent configuration">
+                    <Copy size={16} aria-hidden="true" />
+                    <span>Copy config</span>
                   </button>
                 </div>
                 <div className="code-block-body">

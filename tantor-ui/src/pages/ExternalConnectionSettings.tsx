@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { ArrowLeft, CheckCircle2, CircleAlert, Loader2, Save, Settings } from 'lucide-react';
 import { BootstrapServersInput, ExternalConnectionOptionsForm } from '../components/ExternalConnectionOptionsForm';
 import { emptyConnectionOptions, validateBootstrapServers, validateConnectionOptions, type ConnectionOptions } from '../utils/externalConnectionOptions';
 import { usePermissions } from '../hooks/usePermissions';
 import { getValidToken } from '../services/KeycloakService';
+import './ExternalConnectionSettings.css';
 
 export function ExternalConnectionSettings() {
   const { id } = useParams(); const navigate = useNavigate(); const { canManage } = usePermissions();
@@ -37,15 +39,18 @@ export function ExternalConnectionSettings() {
     } catch (failure) { setError(failure instanceof Error ? failure.message : 'Could not save connection settings.'); }
     finally { setSaving(false); }
   };
-  return <main className="connection-options">
-    <button type="button" onClick={() => navigate('/clusters')}>Back to clusters</button>
-    <h2>External cluster connection settings</h2>
-    <p>These are connections and browsing settings. Use Configuration change for Kafka broker properties.</p>
-    {error && <p role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
-    {loading ? <p>Loading connection settings...</p> : loadedId === id && <>
+  return <main className="external-settings-page">
+    <button type="button" className="external-settings-back" onClick={() => navigate('/clusters')}><ArrowLeft size={16} aria-hidden="true" /> Back to clusters</button>
+    <header className="external-settings-header"><Settings size={22} aria-hidden="true" /><div>
+      <h2>External cluster connection settings</h2>
+      <p>These are connections and browsing settings. Use Configuration change for Kafka broker properties.</p>
+    </div></header>
+    {error && <p className="external-settings-notice error" role="alert"><CircleAlert size={18} aria-hidden="true" /><span>{error}</span></p>}
+    {notice && <p className="external-settings-notice success" role="status"><CheckCircle2 size={18} aria-hidden="true" /><span>{notice}</span></p>}
+    {loading ? <p className="external-settings-loading" role="status"><Loader2 size={18} aria-hidden="true" className="external-settings-spin" /> Loading connection settings...</p> : loadedId === id && <>
       <BootstrapServersInput value={bootstrap} onChange={setBootstrap} disabled={!canManage || saving} />
       <ExternalConnectionOptionsForm value={options} onChange={setOptions} disabled={!canManage || saving} />
-      {canManage && <button type="button" className="ds-button outlined" disabled={saving || !bootstrap} onClick={() => void save()}>{saving ? 'Saving and verifying...' : 'Save connection settings'}</button>}
+      {canManage && <footer className="external-settings-footer"><button type="button" className="external-settings-save" disabled={saving || !bootstrap} aria-busy={saving} onClick={() => void save()}>{saving ? <Loader2 size={16} aria-hidden="true" className="external-settings-spin" /> : <Save size={16} aria-hidden="true" />}{saving ? 'Saving and verifying...' : 'Save connection settings'}</button></footer>}
     </>}
   </main>;
 }

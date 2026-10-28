@@ -1,0 +1,18 @@
+.tab-live-refresh { flex: 0 0 auto; min-width: 0; }
+.tab-live-refresh-trigger { display: flex; align-items: center; gap: 8px; box-sizing: border-box; height: 40px; min-width: 132px; padding: 8px 12px; border: 1px solid var(--border-subtle, #E2E8F0); border-radius: 6px; background: #F8FAFC; cursor: pointer; user-select: none; font: inherit; }
+.tab-live-refresh-trigger.active { border-color: var(--button-primary, #3E1363); }
+.tab-live-refresh-label { font-size: 14px; font-weight: 600; color: #334155; white-space: nowrap; }
+.tab-live-refresh-interval { min-width: 24px; margin-left: 2px; font-size: 13px; font-weight: 500; color: #64748B; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tab-live-refresh-dot { display: inline-block; flex: 0 0 8px; width: 8px; height: 8px; border-radius: 50%; background: #94A3B8; }
+.tab-live-refresh-dot.active { background: #10B981; }
+.tab-live-refresh-check { display: flex; align-items: center; justify-content: center; flex: 0 0 16px; box-sizing: border-box; width: 16px; height: 16px; margin-left: 4px; border: 1px solid #CBD5E1; border-radius: 4px; background: #FFFFFF; color: #FFFFFF; }
+.tab-live-refresh-check.active { background: #3B82F6; }
+.tab-live-refresh-menu { box-sizing: border-box; padding: 4px; border: 1px solid #E2E8F0; border-radius: 8px; background: #FFFFFF; box-shadow: 0 4px 12px #0F172A14; }
+.tab-live-refresh-option { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 36px; padding: 8px 12px; border: 0; border-radius: 6px; background: transparent; color: #334155; font: inherit; font-size: 13px; font-weight: 500; text-align: left; cursor: pointer; }
+.tab-live-refresh-option:hover { background: #F1F5F9; }
+.tab-live-refresh-option.selected { background: #F4F2FF; color: #5B21B6; }
+.tab-live-refresh-trigger:focus-visible,
+.tab-live-refresh-option:focus-visible { outline: 2px solid #8B72B7; outline-offset: 2px; }
+.tab-live-refresh-divider { height: 1px; margin: 4px 0; background: #E2E8F0; }
+.ds-buttons-group:has(> .tab-live-refresh) { flex-wrap: wrap; }
+.acl-refresh-toolbar { flex-wrap: wrap; }

@@ -1,4 +1,6 @@
 import { RefreshButton } from '../components/RefreshButton';
+import { LiveRefreshControl } from '../components/LiveRefreshControl';
+import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams } from 'react-router-dom';
@@ -349,11 +351,12 @@ export function KafkaConnect() {
 
   const load = async (
     connectionId: string | null = selectedConnectionId,
-    discovered?: DiscoveredConnection
+    discovered?: DiscoveredConnection,
+    quiet = false,
+    signal?: AbortSignal
   ): Promise<boolean> => {
     const requestId = ++loadRequestId.current;
-    setHasFetched(true);
-    setLoading(true);
+    if (!quiet) { setHasFetched(true); setLoading(true); }
     setError(null);
     try {
       let url = withConnId(`/api/v1/clusters/${id}/data-services/kafka-connect/summary`, connectionId);
@@ -365,10 +368,10 @@ export function KafkaConnect() {
         });
         url += `${url.includes('?') ? '&' : '?'}${params.toString()}`;
       }
-      const res = await fetch(url);
+      const res = await fetch(url, { signal });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Failed to load Kafka Connect.');
-      if (requestId !== loadRequestId.current) return false;
+      if (requestId !== loadRequestId.current || signal?.aborted) return false;
       setSummary(data);
 
       // Persist the successful response directly as well as through the layout
@@ -381,10 +384,10 @@ export function KafkaConnect() {
       });
       return true;
     } catch (e: unknown) {
-      if (requestId === loadRequestId.current) setError(errorMessage(e, 'Failed to load Kafka Connect.'));
+      if (requestId === loadRequestId.current && !signal?.aborted) setError(errorMessage(e, 'Failed to load Kafka Connect.'));
       return false;
     } finally {
-      if (requestId === loadRequestId.current) setLoading(false);
+      if (requestId === loadRequestId.current && !quiet) setLoading(false);
     }
   };
 
@@ -571,6 +574,10 @@ export function KafkaConnect() {
   const connStatusColor = (s: string) =>
     s === 'ONLINE' ? '#80e8a2' : (s === 'OFFLINE' || s === 'ERROR') ? '#e88080' : '#a8c5c0';
 
+  const liveRefresh = useLiveRefresh({ scope: `${id}:kafka-connect`, context: `${selectedConnectionId}:${selectedConnectorName}`,
+    refresh: signal => load(selectedConnectionId, undefined, true, signal),
+    paused: loading || saving || connectSaving || showConnection || showCreate || Boolean(selectedConnectorName) || !hasFetched || !summary });
+
   return (
     <div className="data-services-page ds-kafka-connect-page animate-fade-in" style={{ width: '100%' }}>
       {selectedConnectorName && id && <KafkaConnectorDetails key={`${connectorContext}:${selectedConnectorName}`}
@@ -683,6 +690,7 @@ export function KafkaConnect() {
               </button>
             )}
 
+            <LiveRefreshControl {...liveRefresh} label="Kafka Connect" />
             <RefreshButton
               className="ds-icon-button icon-gray" 
               onClick={() => void fetchWithDiscovery()}

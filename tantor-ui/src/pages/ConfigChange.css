@@ -50,10 +50,37 @@
 .cc-empty-properties { color: #747786; font-size: 13px; }
 .cc-primary { display: inline-flex; gap: 8px; align-items: center; background: #4c1d6f; border: 1px solid #4c1d6f; color: white; padding: 10px 14px; border-radius: 8px; cursor: pointer; font-weight: 700; }
 .cc-primary:disabled { opacity: .5; cursor: not-allowed; }
-.cc-preview { margin-top: 20px; padding: 17px; background: #faf8fc; border: 1px solid #e8dff0; border-radius: 9px; }
-.cc-preview h4 { display: flex; align-items: center; gap: 7px; margin: 0 0 12px; }
-.cc-preview-table>div { display: grid; grid-template-columns: 100px 1fr 1fr; gap: 12px; padding: 9px 11px; border-bottom: 1px solid #e7e1eb; font-size: 13px; }
-.cc-preview-table code { overflow-wrap: anywhere; }
+.cc-preview { display: flex; flex-direction: column; gap: 24px; min-width: 0; margin-top: 20px; padding-top: 24px; border-top: 1px solid #E4E4E7; scroll-margin-top: 24px; }
+.cc-preview-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 12px; min-width: 0; }
+.cc-preview-heading h4 { display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: 16px; line-height: 24px; font-weight: 600; }
+.cc-preview-heading h4 svg { color: var(--button-primary, #3E1363); flex: none; }
+.cc-preview-count { color: #667085; font-size: 13px; }
+.cc-preview-classification { margin-left: auto; max-width: 100%; box-sizing: border-box; padding: 5px 9px; border: 1px solid #DDD5E7; border-radius: 4px; background: #F6F4F8; color: #5B3671; font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
+.cc-preview-classification::first-letter { text-transform: uppercase; }
+.cc-preview .cc-preview-note { margin: -12px 0 0; color: #667085; font-size: 13px; line-height: 20px; }
+.cc-preview-property { min-width: 0; }
+.cc-preview-property h5 { margin: 0 0 12px; font-size: 14px; line-height: 22px; font-weight: 600; overflow-wrap: anywhere; }
+.cc-preview-property > p { margin: 10px 0 0; font-size: 13px; color: #667085; }
+.cc-preview-table { overflow: auto; max-height: 360px; border: 1px solid #D2D2D7; border-radius: 8px; background: #FFFFFF; }
+.cc-preview-table > div { display: grid; grid-template-columns: 100px minmax(0, 1fr) minmax(0, 1fr); gap: 16px; min-width: 440px; padding: 12px 14px; border-bottom: 1px solid #E4E4E7; font-size: 13px; line-height: 20px; }
+.cc-preview-table > div:first-child { position: sticky; top: 0; z-index: 1; background: var(--table-heading-background, #EEF0F3); color: var(--table-heading-color, #5B126D); box-shadow: inset 3px 0 0 var(--table-heading-color, #5B126D); }
+.cc-preview-table > div:last-child { border-bottom: 0; }
+.cc-preview-table > div > * { min-width: 0; overflow-wrap: anywhere; }
+.cc-preview-table code { overflow-wrap: anywhere; white-space: pre-wrap; }
+.cc-preview-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding-top: 20px; border-top: 1px solid #E4E4E7; }
+.cc-preview-health { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid; border-radius: 6px; font-size: 13px; line-height: 20px; }
+.cc-preview-health svg { flex: none; }
+.cc-preview-health span { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+.cc-preview-health.passed { color: #166534; border-color: #BBE3CD; background: #F0FAF4; }
+.cc-preview-health.failed { color: #A52C48; border-color: #F1CAD2; background: #FFF5F6; }
+.cc-preview-lock { color: #855A13; font-size: 13px; line-height: 20px; }
+.cc-preview-footer > button { margin-left: auto; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+@media (max-width: 720px) {
+  .cc-preview { gap: 20px; }
+  .cc-preview-classification { margin-left: 0; }
+  .cc-preview-footer { align-items: stretch; }
+  .cc-preview-footer > button { margin-left: 0; width: 100%; justify-content: center; }
+}
 .cc-error { border: 1px solid #f1cad2; background: #fff5f6; color: #a52c48; padding: 11px 13px; border-radius: 8px; font-size: 13px; }
 .cc-loading { display: flex; align-items: center; gap: 9px; color: #777; }
 .cc-editor-targets { display: flex; gap: 9px; flex-wrap: wrap; }

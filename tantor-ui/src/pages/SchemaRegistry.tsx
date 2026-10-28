@@ -1,4 +1,6 @@
 import { RefreshButton } from '../components/RefreshButton';
+import { LiveRefreshControl } from '../components/LiveRefreshControl';
+import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams } from 'react-router-dom';
@@ -658,30 +660,34 @@ export function SchemaRegistry() {
 
   const loadGlobalCompatibility = async (
     connectionId: string | null = selectedConnectionId,
-    requestId: number = loadRequestId.current
+    requestId: number = loadRequestId.current,
+    signal?: AbortSignal,
+    quiet = false
   ): Promise<string> => {
     try {
-      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/config`, connectionId));
+      const res = await fetch(withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/config`, connectionId), { signal });
       const data = await res.json().catch(() => ({}));
+      if (!res.ok && quiet) return appliedGlobalCompatibility;
       const compatibility = res.ok
         ? data.compatibilityLevel || data.compatibility || 'BACKWARD'
         : 'BACKWARD';
-      if (requestId === loadRequestId.current) { setGlobalCompatibility(compatibility); setAppliedGlobalCompatibility(compatibility); }
+      if (requestId === loadRequestId.current && !signal?.aborted) { setGlobalCompatibility(compatibility); setAppliedGlobalCompatibility(compatibility); }
       return compatibility;
     } catch {
-      if (requestId === loadRequestId.current) setGlobalCompatibility('BACKWARD');
-      return 'BACKWARD';
+      if (!quiet && requestId === loadRequestId.current && !signal?.aborted) setGlobalCompatibility('BACKWARD');
+      return quiet ? appliedGlobalCompatibility : 'BACKWARD';
     }
   };
 
   const load = async (
     connectionId: string | null = selectedConnectionId,
     discovered?: DiscoveredConnection,
-    includeDeleted: boolean = showDeletedSubjects
+    includeDeleted: boolean = showDeletedSubjects,
+    quiet = false,
+    signal?: AbortSignal
   ): Promise<boolean> => {
     const requestId = ++loadRequestId.current;
-    setHasFetched(true);
-    setLoading(true);
+    if (!quiet) { setHasFetched(true); setLoading(true); }
     setError(null);
 
     try {
@@ -695,13 +701,13 @@ export function SchemaRegistry() {
         });
         url += `${url.includes('?') ? '&' : '?'}${params.toString()}`;
       }
-      const res = await fetch(url);
+      const res = await fetch(url, { signal });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Failed to load Schema Registry.');
-      if (requestId !== loadRequestId.current) return false;
+      if (requestId !== loadRequestId.current || signal?.aborted) return false;
       setSummary(data);
-      const compatibility = await loadGlobalCompatibility(connectionId, requestId);
-      if (requestId !== loadRequestId.current) return false;
+      const compatibility = await loadGlobalCompatibility(connectionId, requestId, signal, quiet);
+      if (requestId !== loadRequestId.current || signal?.aborted) return false;
 
       // Persist the successful response directly as well as through the layout
       // effect below. This makes the fetched snapshot durable even if the user
@@ -714,10 +720,10 @@ export function SchemaRegistry() {
       });
       return true;
     } catch (e: unknown) {
-      if (requestId === loadRequestId.current) setError(errorMessage(e, 'Failed to load Schema Registry.'));
+      if (requestId === loadRequestId.current && !signal?.aborted) setError(errorMessage(e, 'Failed to load Schema Registry.'));
       return false;
     } finally {
-      if (requestId === loadRequestId.current) setLoading(false);
+      if (requestId === loadRequestId.current && !quiet) setLoading(false);
     }
   };
 
@@ -1158,6 +1164,11 @@ export function SchemaRegistry() {
     void confirmSetting({ kind: 'compatibility', value, oldValue, subject, connectionId: selectedConnectionId }, true);
   };
 
+  const liveRefresh = useLiveRefresh({ scope: `${id}:schema-registry`, context: `${selectedConnectionId}:${showDeletedSubjects}:${view}`,
+    refresh: signal => load(selectedConnectionId, undefined, showDeletedSubjects, true, signal),
+    paused: loading || loadingDetails || saving || connectSaving || showConnection || showCreate || showDeleteConfirm
+      || Boolean(pendingSetting || pendingDelete || pendingRecovery || pendingBulkDelete) || view !== 'list' || !hasFetched || !summary });
+
   const connStatusColor = (s: string) =>
     s === 'ONLINE' ? '#80e8a2' : (s === 'OFFLINE' || s === 'ERROR') ? '#e88080' : '#a8c5c0';
 
@@ -1257,6 +1268,7 @@ export function SchemaRegistry() {
                   </button>
                 )}
 
+                <LiveRefreshControl {...liveRefresh} label="Schema Registry" />
                 <RefreshButton className="ds-icon-button icon-gray" onClick={() => void fetchWithDiscovery()} disabled={loading} title="Refresh" style={{ width: '35px', height: '35px' }}>
                   <RefreshCw size={16} className={loading ? 'spin' : ''} />
                 </RefreshButton>

@@ -23,7 +23,7 @@ function harness(t, load = async () => {}) {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const state = { busy: false, calls: 0, updates: 0 };
   const context = vm.createContext({
-    loading: false, window: { setTimeout }, manualRefreshInFlight: { current: false }, manualRefreshSequence: { current: 0 },
+    loading: false, window: { setTimeout }, activeRequest: { current: null }, manualRefreshInFlight: { current: false }, manualRefreshSequence: { current: 0 },
     setManualRefreshing: value => { state.busy = value; state.updates += 1; },
     fetchGroups: async () => { state.calls += 1; await load(); },
   });
@@ -77,7 +77,7 @@ test('refresh clears its busy state after failure without updating after unmount
   assert.equal(h.state.updates, updates);
 });
 
-test('only the inner focus ring is removed and the button owns its animation', () => {
+test('the original outer focus ring and manual refresh animation are retained', () => {
   const css = postcss.parse(readFileSync(new URL('../src/pages/Consumers.css', import.meta.url), 'utf8'));
   const declarations = selector => {
     const result = {};
@@ -88,11 +88,8 @@ test('only the inner focus ring is removed and the button owns its animation', (
     });
     return result;
   };
-  for (const selector of ['.consumer-refresh-rate select:focus', '.consumer-refresh-rate select:focus-visible']) {
-    assert.equal(declarations(selector)['box-shadow'], 'none');
-    assert.equal(declarations(selector).outline, 'none');
-  }
   assert.match(declarations('.consumer-refresh-rate:focus-within').outline, /2px solid/);
+  assert.doesNotMatch(source, /<select aria-label="Consumer groups refresh rate"/);
   let animation;
   css.walkRules('.consumer-refresh-button .consumer-refresh-spin', rule => {
     if (rule.parent.type === 'root') animation = rule.nodes.find(node => node.prop === 'animation')?.value;
@@ -102,6 +99,20 @@ test('only the inner focus ring is removed and the button owns its animation', (
   assert.match(source, /onClick=\{handleManualRefresh\}/);
   assert.match(source, /aria-busy=\{loading \|\| manualRefreshing\}/);
   assert.match(source, /disabled=\{loading \|\| manualRefreshing\}/);
-  assert.match(source, /\[2, 5, 10, 15\]\.map/);
-  assert.match(source, /refreshInterval \* 1000/);
+  assert.match(source, /<LiveRefreshControl \{\.\.\.liveRefresh\} label="Consumers"/);
+  assert.match(source, /useLiveRefresh\(\{ scope: `\$\{id\}:consumers`/);
+});
+
+test('the previous transparent native-select overlay is removed', () => {
+  const css = postcss.parse(readFileSync(new URL('../src/pages/Consumers.css', import.meta.url), 'utf8'));
+  const declarations = selector => {
+    const result = {};
+    css.walkRules(selector, rule => rule.walkDecls(declaration => { result[declaration.prop] = declaration.value; }));
+    return result;
+  };
+  assert.equal(declarations('.consumer-refresh-rate').height, '40px');
+  assert.equal(declarations('.consumer-refresh-rate').cursor, 'pointer');
+  assert.equal(declarations('.consumer-refresh-rate select').opacity, undefined);
+  assert.equal(declarations('.consumer-refresh-rate select').position, undefined);
+  assert.doesNotMatch(source, /consumer-refresh-value/);
 });

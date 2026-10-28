@@ -4,6 +4,8 @@ import { useParams } from 'react-router-dom';
 import { Users, Search, ChevronLeft, ChevronRight, X, ArrowUp, RefreshCw } from 'lucide-react';
 import './Consumers.css';
 import { KafkaGroupPanel } from '../components/KafkaGroupPanel';
+import { LiveRefreshControl } from '../components/LiveRefreshControl';
+import { useLiveRefresh } from '../hooks/useLiveRefresh';
 
 interface ConsumerGroupSummaryDto {
   groupId: string;
@@ -57,7 +59,6 @@ export function Consumers() {
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('totalLag');
-  const [refreshInterval, setRefreshInterval] = useState(0);
   const activeRequest = useRef<{ key: string; controller: AbortController } | null>(null);
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const manualRefreshInFlight = useRef(false);
@@ -68,13 +69,16 @@ export function Consumers() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailData, setDetailData] = useState<ConsumerGroupDetailDto | null>(null);
 
-  const fetchGroups = useCallback(async () => {
+  const fetchGroups = useCallback(async (quiet = false, signal?: AbortSignal) => {
     const key = JSON.stringify([id, page, size, searchQuery, sortBy]);
-    if (activeRequest.current?.key === key) return;
+    if (activeRequest.current?.key === key && !activeRequest.current.controller.signal.aborted) return;
     activeRequest.current?.controller.abort();
     const controller = new AbortController();
+    const cancel = () => controller.abort();
+    signal?.addEventListener('abort', cancel, { once: true });
+    if (signal?.aborted) controller.abort();
     activeRequest.current = { key, controller };
-    setLoading(true);
+    if (!quiet) setLoading(true);
     setError(null);
     try {
       const res = await fetch(`/api/v1/clusters/${id}/consumer-groups?page=${page}&size=${size}&search=${encodeURIComponent(searchQuery)}&sortBy=${sortBy}`, { signal: controller.signal });
@@ -90,6 +94,7 @@ export function Consumers() {
         setError(e instanceof Error ? e.message : 'Failed to load consumer groups');
       }
     } finally {
+      signal?.removeEventListener('abort', cancel);
       if (activeRequest.current?.controller === controller) {
         activeRequest.current = null;
         setLoading(false);
@@ -104,6 +109,7 @@ export function Consumers() {
     setManualRefreshing(true);
     const minimumSpin = new Promise<void>(resolve => window.setTimeout(resolve, 500));
     try {
+      activeRequest.current?.controller.abort();
       await fetchGroups();
     } finally {
       await minimumSpin;
@@ -124,13 +130,8 @@ export function Consumers() {
     return () => { activeRequest.current?.controller.abort(); activeRequest.current = null; };
   }, [fetchGroups]);
 
-  useEffect(() => {
-    if (!refreshInterval) return;
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === 'visible' && !activeRequest.current) void fetchGroups();
-    }, refreshInterval * 1000);
-    return () => window.clearInterval(timer);
-  }, [fetchGroups, refreshInterval]);
+  const liveRefresh = useLiveRefresh({ scope: `${id}:consumers`, context: `${page}:${size}:${searchQuery}:${sortBy}`,
+    refresh: signal => fetchGroups(true, signal), paused: loading || manualRefreshing || Boolean(selectedGroupId) });
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -176,12 +177,7 @@ export function Consumers() {
             </label>
           </form>
           <div className="consumer-refresh-controls">
-          <label className="consumer-refresh-rate"><span>Refresh rate:</span>
-            <select aria-label="Consumer groups refresh rate" value={refreshInterval} onChange={event => setRefreshInterval(Number(event.target.value))}>
-              <option value={0}>Off</option>
-              {[2, 5, 10, 15].map(seconds => <option key={seconds} value={seconds}>{seconds} sec</option>)}
-            </select>
-          </label>
+          <LiveRefreshControl {...liveRefresh} label="Consumers" />
           <button
             type="button"
             className="consumer-refresh-button"

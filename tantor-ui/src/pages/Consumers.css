@@ -88,7 +88,7 @@
 }
 
 .consumer-refresh-controls { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }
-.consumer-refresh-rate { display: flex; align-items: center; gap: 6px; height: 40px; box-sizing: border-box; padding: 0 12px; border: 1px solid #CCCCCC; border-radius: 8px; background: var(--bg-surface); color: var(--text-primary); font-size: 14px; white-space: nowrap; }
+.consumer-refresh-rate { display: flex; align-items: center; gap: 6px; height: 40px; box-sizing: border-box; padding: 0 12px; border: 1px solid #CCCCCC; border-radius: 8px; background: var(--bg-surface); color: var(--text-primary); font-size: 14px; white-space: nowrap; cursor: pointer; }
 .consumer-refresh-rate select { border: 0; background: transparent; color: inherit; font: inherit; padding: 6px 4px; cursor: pointer; }
 .consumer-refresh-rate select:focus,
 .consumer-refresh-rate select:focus-visible { outline: none; box-shadow: none; }

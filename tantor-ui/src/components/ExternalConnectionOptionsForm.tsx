@@ -2,15 +2,27 @@ import { Plus, Trash2 } from 'lucide-react';
 import type { ConnectionOptions, ServiceConnection, MaskRule } from '../utils/externalConnectionOptions';
 import './ExternalConnectionOptionsForm.css';
 
-export function BootstrapServersInput({ value, onChange, disabled = false }: { value: string; onChange: (value: string) => void; disabled?: boolean }) {
+export function BootstrapServersInput({ value, onChange, disabled = false, separateFields = false }: { value: string; onChange: (value: string) => void; disabled?: boolean; separateFields?: boolean }) {
   const rows = value.split(',');
+  const updateEndpoint = (index: number, host: string, port: string) =>
+    onChange(rows.map((item, position) => position === index ? (host || port ? `${host}:${port}` : '') : item).join(','));
   return <div className="connection-options bootstrap-options"><label>Bootstrap servers</label>
-    {rows.map((row, index) => <div className="connection-row" key={index}>
-      <input aria-label={`Bootstrap server ${index + 1}`} placeholder="broker.example.com:9092" value={row} disabled={disabled}
-        onChange={event => onChange(rows.map((item, position) => position === index ? event.target.value : item).join(','))} />
+    {rows.map((row, index) => {
+      const endpoint = /^(\[[^\]]*\]|[^:]*)(?::(.*))?$/.exec(row);
+      const host = endpoint?.[1] ?? row;
+      const port = endpoint?.[2] ?? '';
+      return <div className={`connection-row${separateFields ? ' bootstrap-endpoint-row' : ''}`} key={index}>
+      {separateFields ? <>
+        <label>IP / Hostname<input type="text" aria-label={`Bootstrap server ${index + 1} hostname`} placeholder="broker.example.com" value={host} disabled={disabled}
+          onChange={event => updateEndpoint(index, event.target.value, port)} /></label>
+        <label>Port<input type="text" inputMode="numeric" aria-label={`Bootstrap server ${index + 1} port`} placeholder="9092" value={port} disabled={disabled}
+          onChange={event => updateEndpoint(index, host, event.target.value)} /></label>
+      </> : <input aria-label={`Bootstrap server ${index + 1}`} placeholder="broker.example.com:9092" value={row} disabled={disabled}
+        onChange={event => onChange(rows.map((item, position) => position === index ? event.target.value : item).join(','))} />}
       <button type="button" className="ds-button outlined" aria-label={`Remove bootstrap server ${index + 1}`} disabled={disabled || rows.length === 1}
         onClick={() => onChange(rows.filter((_, position) => position !== index).join(','))}><Trash2 size={16} /></button>
-    </div>)}
+    </div>;
+    })}
     <button type="button" className="ds-button outlined" disabled={disabled || rows.length >= 30} onClick={() => onChange(`${value},`)}><Plus size={16} /> Add bootstrap server</button>
   </div>;
 }
