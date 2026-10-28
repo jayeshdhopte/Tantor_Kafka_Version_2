@@ -75,6 +75,13 @@ func reconfigurePorts(ctx context.Context, exec executor.Executor, s Settings, t
 	if err != nil {
 		return "", fmt.Errorf("existing runtime has no readable configuration at %s: %w: %s", file.Path, err, detail)
 	}
+	// A port-only retry must not disable an existing encryption/authentication profile.
+	if s.Kind == Schema {
+		file.Content, err = preserveSchemaExtensions(current, file.Content)
+		if err != nil {
+			return "", err
+		}
+	}
 	updated, err := portConfiguration(current, file.Content, s.SharedConnect || s.SharedSchema)
 	if err != nil {
 		return "", err

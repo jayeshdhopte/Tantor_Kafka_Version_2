@@ -2,20 +2,22 @@ import { Plus, Trash2 } from 'lucide-react';
 import type { ConnectionOptions, ServiceConnection, MaskRule } from '../utils/externalConnectionOptions';
 import './ExternalConnectionOptionsForm.css';
 
-export function BootstrapServersInput({ value, onChange, disabled = false, separateFields = false }: { value: string; onChange: (value: string) => void; disabled?: boolean; separateFields?: boolean }) {
+export function BootstrapServersInput({ value, onChange, disabled = false, separateFields = true }: { value: string; onChange: (value: string) => void; disabled?: boolean; separateFields?: boolean }) {
   const rows = value.split(',');
-  const updateEndpoint = (index: number, host: string, port: string) =>
-    onChange(rows.map((item, position) => position === index ? (host || port ? `${host}:${port}` : '') : item).join(','));
+  const updateEndpoint = (index: number, host: string, port: string) => {
+    const address = host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
+    onChange(rows.map((item, position) => position === index ? (host || port ? `${address}:${port}` : '') : item).join(','));
+  };
   return <div className="connection-options bootstrap-options"><label>Bootstrap servers</label>
     {rows.map((row, index) => {
       const endpoint = /^(\[[^\]]*\]|[^:]*)(?::(.*))?$/.exec(row);
-      const host = endpoint?.[1] ?? row;
+      const host = (endpoint?.[1] ?? row).replace(/^\[|\]$/g, '');
       const port = endpoint?.[2] ?? '';
-      return <div className={`connection-row${separateFields ? ' bootstrap-endpoint-row' : ''}`} key={index}>
+      return <div className={`connection-row${separateFields ? ' bootstrap-endpoint-row bootstrap-server-row' : ''}`} key={index}>
       {separateFields ? <>
         <label>IP / Hostname<input type="text" aria-label={`Bootstrap server ${index + 1} hostname`} placeholder="broker.example.com" value={host} disabled={disabled}
           onChange={event => updateEndpoint(index, event.target.value, port)} /></label>
-        <label>Port<input type="text" inputMode="numeric" aria-label={`Bootstrap server ${index + 1} port`} placeholder="9092" value={port} disabled={disabled}
+        <label className="bootstrap-port">Port<input type="number" min="1" max="65535" step="1" aria-label={`Bootstrap server ${index + 1} port`} placeholder="9092" value={port} disabled={disabled}
           onChange={event => updateEndpoint(index, host, event.target.value)} /></label>
       </> : <input aria-label={`Bootstrap server ${index + 1}`} placeholder="broker.example.com:9092" value={row} disabled={disabled}
         onChange={event => onChange(rows.map((item, position) => position === index ? event.target.value : item).join(','))} />}

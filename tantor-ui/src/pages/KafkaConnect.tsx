@@ -630,7 +630,7 @@ export function KafkaConnect() {
             </div>
           </div>}
 
-          <div className="ds-buttons-group" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+          <div className="ds-buttons-group" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 'var(--space-2)' }}>
             {/* Ã¢â€â‚¬Ã¢â€â‚¬ Buttons Ã¢â€â‚¬Ã¢â€â‚¬ */}
             {canManage && (
               <button 

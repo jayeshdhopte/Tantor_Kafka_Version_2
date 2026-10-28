@@ -10,7 +10,7 @@ import {emptyConnectionOptions, validateBootstrapServers, validateConnectionOpti
 
 test('multiple bootstrap endpoints normalize and reject incomplete rows and URLs',()=>{
  assert.equal(validateBootstrapServers(' a:9092, b:9093,a:9092,[::1]:9092'),'a:9092,b:9093,[::1]:9092');
- for(const value of ['a:0','a:65536','a:9092,','http://a:9092','user@a:9092','a:9092/path'])assert.throws(()=>validateBootstrapServers(value));
+ for(const value of ['a:0','a:65536','a:9092,','http://a:9092','user@a:9092','a:9092/path','999.1.1.1:9092','bad..host:9092','-host:9092','[abc]:9092'])assert.throws(()=>validateBootstrapServers(value));
 });
 test('service names must be unique and masking rules need fields and a topic scope',()=>{
  const options=emptyConnectionOptions();validateConnectionOptions(options);
@@ -45,13 +45,13 @@ function splitInputs(value, onChange) {
  return React.Children.toArray(fields.props.children).map(label=>React.Children.toArray(label.props.children).find(child=>child.type==='input'));
 }
 
-test('setup-only split fields render hostname and port without changing the default combined field',()=>{
+test('split fields render hostname and port and retain the explicit combined-field option',()=>{
  const html=renderToStaticMarkup(React.createElement(context.exports.BootstrapServersInput,{value:'broker.test:9092',onChange(){},separateFields:true}));
  assert.match(html,/IP \/ Hostname/);assert.match(html,/>Port</);
  assert.match(html,/aria-label="Bootstrap server 1 hostname"/);
  assert.match(html,/aria-label="Bootstrap server 1 port"/);
  assert.match(html,/value="broker.test"/);assert.match(html,/value="9092"/);
- const defaultHtml=renderToStaticMarkup(React.createElement(context.exports.BootstrapServersInput,{value:'broker.test:9092',onChange(){}}));
+ const defaultHtml=renderToStaticMarkup(React.createElement(context.exports.BootstrapServersInput,{value:'broker.test:9092',onChange(){},separateFields:false}));
  assert.match(defaultHtml,/value="broker.test:9092"/);
  assert.doesNotMatch(defaultHtml,/IP \/ Hostname/);
 });
@@ -59,7 +59,7 @@ test('setup-only split fields render hostname and port without changing the defa
 test('split-field edits preserve comma-separated endpoints, bracketed IPv6 and incomplete user input',()=>{
  const changes=[];
  const fields=splitInputs('[2001:db8::1]:9092,second:9093',value=>changes.push(value));
- assert.equal(fields[0].props.value,'[2001:db8::1]');assert.equal(fields[1].props.value,'9092');
+ assert.equal(fields[0].props.value,'2001:db8::1');assert.equal(fields[1].props.value,'9092');
  fields[0].props.onChange({target:{value:'new.test'}});
  fields[1].props.onChange({target:{value:'9094'}});
  assert.deepEqual(changes,['new.test:9092,second:9093','[2001:db8::1]:9094,second:9093']);
@@ -70,7 +70,17 @@ test('split-field edits preserve comma-separated endpoints, bracketed IPv6 and i
  assert.equal(changes.at(-1),'pending.test:');
  assert.throws(()=>validateBootstrapServers(changes.at(-1)));
  const ipv6HostOnly=splitInputs('[::1]',()=>{});
- assert.equal(ipv6HostOnly[0].props.value,'[::1]');assert.equal(ipv6HostOnly[1].props.value,'');
+ assert.equal(ipv6HostOnly[0].props.value,'::1');assert.equal(ipv6HostOnly[1].props.value,'');
+});
+
+test('default bootstrap fields preserve upstream IPv6 serialization and numeric port constraints',()=>{
+ const changes=[];
+ const fields=splitInputs('first:9092,[::1]:9093',value=>changes.push(value));
+ fields[0].props.onChange({target:{value:'2001:db8::2'}});
+ assert.equal(validateBootstrapServers(changes[0]),'[2001:db8::2]:9092,[::1]:9093');
+ const html=renderToStaticMarkup(React.createElement(context.exports.BootstrapServersInput,{value:'first:9092',onChange(){}}));
+ assert.match(html,/IP \/ Hostname/);
+ assert.match(html,/type="number" min="1" max="65535"/);
 });
 
 test('split inputs retain disabled controls and last-row removal protection',()=>{

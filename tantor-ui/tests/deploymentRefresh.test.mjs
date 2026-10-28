@@ -23,7 +23,7 @@ function callback(name) {
   }).outputText;
 }
 
-const originalTask = { id: 'task-1', status: 'SUCCESS', logOutput: '[2026-10-23T06:00:00Z] Done' };
+const originalTask = { id: 'task-1', command: 'INSTALL_KAFKA', status: 'SUCCESS', logOutput: '[2026-10-23T06:00:00Z] Done' };
 const flush = async () => { for (let i = 0; i < 20; i += 1) await Promise.resolve(); };
 
 function harness(t, taskResponse, clusterResponse = { ok: true, json: async () => ({ status: 'SUCCESS' }) }) {
@@ -46,6 +46,14 @@ function harness(t, taskResponse, clusterResponse = { ok: true, json: async () =
       value => { state[key] = typeof value === 'function' ? value(state[key]) : value; },
     ])),
   });
+  for (const name of ['deploymentCommands', 'isDeploymentTask']) {
+    const statement = ast.statements.find(node => ts.isVariableStatement(node)
+      && node.declarationList.declarations.some(decl => decl.name.getText(ast) === name));
+    assert.ok(statement);
+    vm.runInContext(ts.transpileModule(statement.getText(ast), {
+      compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
+    }).outputText, context);
+  }
   vm.runInContext(callback('showNotice'), context);
   vm.runInContext(callback('fetchTasks'), context);
   return { state, calls, context, refresh: () => context.fetchTasks(true) };
@@ -138,4 +146,32 @@ test('refresh button and feedback remain accessible; copy uses the same toast', 
   assert.match(source, /className=\{loading \|\| refreshing \? 'spin' : ''\}/);
   assert.match(source, /showNotice\('Copied to clipboard'\)/);
   assert.match(source, /role=\{notice.error \? 'alert' : 'status'\}/);
+});
+
+
+test('deployment history excludes config reads and maintenance from count, selection and output', async t => {
+  const commands = ['READ_KAFKA_PROPERTIES', 'READ_KAFKA_PROPERTY', 'PATCH_KAFKA_CONFIG',
+    'BACKUP_KAFKA_CONFIG', 'RESTART_SERVICE', 'DELETE_CLUSTER', 'UNKNOWN_COMMAND'];
+  const unrelated = commands.map((command, i) => ({ ...originalTask, id: `other-${i}`, command, logOutput: 'config-read output' }));
+  const deployments = ['INSTALL_KAFKA', 'CHECK_KRAFT_CONNECTIVITY', 'VERIFY_KRAFT_QUORUM',
+    'VERIFY_ZK_QUORUM', 'PRECHECK_SCHEMA', 'INSTALL_SCHEMA', 'VERIFY_SCHEMA_REGISTRY',
+    'PRECHECK_CONNECT', 'INSTALL_CONNECT', 'VERIFY_CONNECT', 'INSTALL_MONITORING', 'UPGRADE_KAFKA']
+    .map((command, i) => ({ ...originalTask, id: `deploy-${i}`, command }));
+  const h = harness(t, async () => ({ ok: true, json: async () => [...unrelated, ...deployments] }));
+  h.state.selectedTaskId = 'other-0';
+  const pending = h.refresh();
+  await flush(); t.mock.timers.tick(500); await pending;
+  assert.deepEqual(Array.from(h.state.tasks, task => task.command), deployments.map(task => task.command));
+  assert.equal(h.state.selectedTaskId, 'deploy-0');
+  assert.ok(h.state.tasks.every(task => task.logOutput === originalTask.logOutput));
+});
+
+test('a cluster with only configuration reads has no deployment log to select', async t => {
+  const h = harness(t, async () => ({ ok: true, json: async () => [
+    { ...originalTask, command: 'READ_KAFKA_PROPERTIES' },
+  ] }));
+  const pending = h.refresh();
+  await flush(); t.mock.timers.tick(500); await pending;
+  assert.equal(h.state.tasks.length, 0);
+  assert.equal(h.state.selectedTaskId, '');
 });

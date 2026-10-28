@@ -324,3 +324,10 @@
 @media (prefers-reduced-motion: reduce) {
   .cc-page .cc-role-grid button { transition: none; }
 }
+
+/* Give each property room while retaining the existing preview layout. */
+.cc-preview > p { margin: 18px 0; line-height: 1.6; }
+.cc-preview-property { margin-top: 24px; margin-bottom: 28px; }
+.cc-preview-property > strong { display: block; margin-bottom: 12px; }
+.cc-page .cc-preview-footer { display: flex; flex-direction: column; align-items: flex-start; gap: 24px; margin-top: 24px; }
+.cc-page .cc-preview-footer > p { margin: 0; line-height: 1.6; }

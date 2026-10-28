@@ -121,6 +121,35 @@ class TargetedConfigChangeServiceTest {
     }
 
     @Test
+    void staticBatchQueuesAllNodeReadsBeforeWaitingAndReusesThemAcrossProperties() {
+        var one = controller(201); one.setRole("broker");
+        var two = controller(202); two.setRole("broker");
+        cluster.setServices(List.of(one, two));
+        when(kafka.getBrokerConfigs(clusterId)).thenReturn(Map.of(
+                201, Map.of("num.network.threads", Map.of("value", "3", "isReadOnly", true),
+                        "num.io.threads", Map.of("value", "8", "isReadOnly", true)),
+                202, Map.of("num.network.threads", Map.of("value", "3", "isReadOnly", true),
+                        "num.io.threads", Map.of("value", "8", "isReadOnly", true))));
+        UUID first = UUID.randomUUID(), second = UUID.randomUUID();
+        when(deployment.readKafkaProperties(eq(clusterId), anyString(), anyString(), eq("201"), anyString(), anyString())).thenReturn(first);
+        when(deployment.readKafkaProperties(eq(clusterId), anyString(), anyString(), eq("202"), anyString(), anyString())).thenReturn(second);
+        Task read = new Task(); read.setLogOutput("{\"properties\":{\"num.network.threads\":\"3\",\"num.io.threads\":\"8\"}}");
+        when(awaiter.await(first, 90)).thenReturn(read);
+        when(awaiter.await(second, 90)).thenReturn(read);
+        var request = request("BROKER", "ALL", List.of(), null, null);
+        request.setChanges(Map.of("num.network.threads", "5", "num.io.threads", "12"));
+        var plan = service.preview(clusterId, request);
+        assertThat((List<?>) plan.get("properties")).hasSize(2);
+        assertThat((List<?>) plan.get("targets")).hasSize(2);
+        var order = org.mockito.Mockito.inOrder(deployment, awaiter);
+        order.verify(deployment).readKafkaProperties(eq(clusterId), anyString(), anyString(), eq("201"), anyString(), anyString());
+        order.verify(deployment).readKafkaProperties(eq(clusterId), anyString(), anyString(), eq("202"), anyString(), anyString());
+        order.verify(awaiter).await(first, 90);
+        order.verify(awaiter).await(second, 90);
+        order.verifyNoMoreInteractions();
+    }
+
+    @Test
     void batchPreviewGroupsChangesByNodeAndRejectsMixedPolicies() {
         var request = request("BROKER", "ALL", List.of(), null, null);
         when(kafka.getBrokerConfigs(clusterId)).thenReturn(Map.of(201, Map.of(

@@ -273,7 +273,7 @@ export function ConfigChange() {
           {property.targets.length === 0 && <p>Already matches the requested value.</p>}
         </div>)}
         <div className="cc-preview-footer"><div className={`cc-preview-health ${staticPreview.healthy ? 'passed' : 'failed'}`}><ShieldCheck size={18} /><span>Cluster health <strong>{staticPreview.healthy ? 'Passed' : 'Failed'}</strong></span></div>{staticPreview.clusterLocked && <span className="cc-preview-lock">Another cluster job is active</span>}
-          <button className="cc-primary" disabled={!canManage || !staticPreview.healthy || staticPreview.clusterLocked || !!busy} onClick={() => void applyStatic()}>{busy === 'static-apply' ? 'Queueing…' : `Start rolling change on ${staticPreview.targets.length} node${staticPreview.targets.length === 1 ? '' : 's'}`}</button>
+          <button className="cc-primary" disabled={!canManage || !staticPreview.healthy || staticPreview.clusterLocked || !!busy} onClick={() => void applyStatic()}>{busy === 'static-apply' ? 'Rechecking nodes and queueing…' : `Start rolling change on ${staticPreview.targets.length} node${staticPreview.targets.length === 1 ? '' : 's'}`}</button>
         </div>
         {!staticPreview.healthy && <p className="cc-error">{Object.values(staticPreview.healthFailures).join('; ')}</p>}
       </div>}

@@ -388,7 +388,7 @@ export function ExternalClusters() {
               <ChevronLeft size={24} className="back-arrow-icon" />
               <h1>External Kafka Clusters</h1>
             </div>
-            <p>Connect an external Kafka cluster using its bootstrap URL.</p>
+            <p>Connect an external Kafka cluster using its bootstrap servers.</p>
           </div>
 
           <div className="external-tab-switcher">

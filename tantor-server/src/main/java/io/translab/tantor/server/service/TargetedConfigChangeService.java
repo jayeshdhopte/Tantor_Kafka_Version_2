@@ -299,6 +299,12 @@ public class TargetedConfigChangeService {
                         .thenComparingInt(Integer::intValue));
             }
         }
+        // Queue one full-file read on every target before waiting. Batch properties
+        // share these snapshots instead of serializing agent round trips per node.
+        if (!dynamic && context != null) {
+            List<Integer> missing = targets.stream().filter(nodeId -> !context.files().containsKey(nodeId)).toList();
+            if (!missing.isEmpty()) context.files().putAll(readStaticProperties(clusterId, role, missing));
+        }
         List<Map<String, Object>> changes = new ArrayList<>();
         for (Integer nodeId : targets) {
             Map<String, Object> change = new LinkedHashMap<>();

@@ -1,0 +1,2 @@
+.tab-auto-refresh { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; border: 1px solid var(--border-default); border-radius: var(--radius-md); padding: 7px 10px; background: var(--bg-surface); color: var(--text-primary); font-size: 14px; }
+.tab-auto-refresh select { border: 0; background: transparent; color: inherit; font: inherit; padding: 3px; cursor: pointer; }

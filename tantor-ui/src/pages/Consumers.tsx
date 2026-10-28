@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom';
 import { useParams } from 'react-router-dom';
 import { Users, Search, ChevronLeft, ChevronRight, X, ArrowUp, RefreshCw } from 'lucide-react';
 import './Consumers.css';
-import { KafkaGroupPanel } from '../components/KafkaGroupPanel';
 import { LiveRefreshControl } from '../components/LiveRefreshControl';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
 
@@ -192,7 +191,6 @@ export function Consumers() {
         </div>
       </div>
 
-      <KafkaGroupPanel clusterId={id} kind="other" />
       {error && (
         <div className="error-alert" style={{ marginBottom: '1rem' }}>
           {error}
