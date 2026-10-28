@@ -13,7 +13,7 @@ class ConfigRecoveryCheckpointTest {
     final JobRepository jobs=mock(JobRepository.class);
     final JobStepRepository steps=mock(JobStepRepository.class);
     final ObjectMapper mapper=new ObjectMapper();
-    final JobService service=new JobService(jobs,steps,mapper,mock(ClusterRepository.class),mock(ExternalClusterRepository.class));
+    final JobService service=new JobService(jobs,steps,mapper,mock(ClusterRepository.class),mock(ExternalClusterRepository.class), org.mockito.Mockito.mock(io.translab.tantor.server.service.RollingRestartMappingService.class));
     JobStep step() {
         Job job=new Job();job.setType(JobType.TARGETED_CONFIG_CHANGE);
         JobStep step=new JobStep();step.setId(UUID.randomUUID());step.setJob(job);step.setPayload("{}");

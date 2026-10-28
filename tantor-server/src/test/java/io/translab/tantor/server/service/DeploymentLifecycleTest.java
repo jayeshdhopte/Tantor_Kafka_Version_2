@@ -28,7 +28,7 @@ class DeploymentLifecycleTest {
     final UUID clusterId = UUID.randomUUID();
 
     @BeforeEach void setUp() {
-        service = new JobService(jobs, steps, new ObjectMapper(), clusters, externalClusters);
+        service = new JobService(jobs, steps, new ObjectMapper(), clusters, externalClusters, org.mockito.Mockito.mock(io.translab.tantor.server.service.RollingRestartMappingService.class));
     }
 
     Job job(JobStatus status, boolean servicesOnly) {

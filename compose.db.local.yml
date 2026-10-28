@@ -1,0 +1,38 @@
+services:
+  database:
+    image: docker.io/library/postgres:16.14@sha256:95206741a5b214807675e14165369d05b93a9cf692223b616d07cca227e74b0b
+    container_name: tantor-kafka-v2-db-local
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: tantor
+      POSTGRES_USER: ${TANTOR_LOCAL_DB_USER:-tantor_dev}
+      POSTGRES_PASSWORD: ${TANTOR_LOCAL_DB_PASSWORD:?Set TANTOR_LOCAL_DB_PASSWORD in .env.db.local}
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - tantor-kafka-v2-local-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    image: flyway/flyway:10.10.0@sha256:fc300581f2747a9edb3329ae667fe8ca56ce0ddb475e2bd04220cc8d75bf44a6
+    profiles: ["tools"]
+    depends_on:
+      database:
+        condition: service_healthy
+    environment:
+      FLYWAY_URL: jdbc:postgresql://database:5432/tantor
+      FLYWAY_USER: ${TANTOR_LOCAL_DB_USER:-tantor_dev}
+      FLYWAY_PASSWORD: ${TANTOR_LOCAL_DB_PASSWORD:?Set TANTOR_LOCAL_DB_PASSWORD in .env.db.local}
+      FLYWAY_CLEAN_DISABLED: "true"
+      FLYWAY_BASELINE_ON_MIGRATE: "false"
+      FLYWAY_VALIDATE_ON_MIGRATE: "true"
+    volumes:
+      - ./tantor-server/src/main/resources/db/migration:/flyway/sql:ro
+    command: ["-connectRetries=30", "migrate"]
+
+volumes:
+  tantor-kafka-v2-local-db:

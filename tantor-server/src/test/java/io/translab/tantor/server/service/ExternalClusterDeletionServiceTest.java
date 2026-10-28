@@ -20,7 +20,7 @@ class ExternalClusterDeletionServiceTest {
     final ExternalClusterRepository clusters=mock(ExternalClusterRepository.class);
     final ClusterRepository mirrors=mock(ClusterRepository.class);
     final ObjectMapper mapper=new ObjectMapper();
-    final ExternalClusterDeletionService deletion=new ExternalClusterDeletionService(jobs,services,tasks,manager,external,clusters,mirrors,mapper);
+    final ExternalClusterDeletionService deletion=new ExternalClusterDeletionService(jobs,services,tasks,manager,external,clusters,mirrors,mapper, org.mockito.Mockito.mock(io.translab.tantor.server.service.AddServiceMappingService.class));
     final UUID id=UUID.randomUUID();
     final ExternalCluster cluster=new ExternalCluster();
     @BeforeEach void setup() throws Exception {

@@ -68,6 +68,8 @@ class ClusterControllerHostReleaseTest {
     @Mock DiscoveryAgentRepository discoveryAgentRepository;
     @Mock RoleAuthenticationUtil roleAuthenticationUtil;
 
+    @org.mockito.Mock io.translab.tantor.server.service.AddServiceMappingService addServiceMapping;
+
     @InjectMocks
     ClusterController controller;
 

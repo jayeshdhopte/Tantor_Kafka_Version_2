@@ -22,6 +22,7 @@ public class ExternalClusterDeletionService {
     private final ExternalClusterRepository clusters;
     private final ClusterRepository mirrors;
     private final ObjectMapper mapper;
+    private final AddServiceMappingService addServiceMapping;
 
     @Transactional
     public UUID queue(ExternalCluster cluster, String actor, boolean force) {
@@ -75,6 +76,7 @@ public class ExternalClusterDeletionService {
                 }
                 String output=await(task.getId());
                 service.setStatus("DELETED"); service.setLastError(null); services.save(service);
+                addServiceMapping.updateStatus(service.getId(),service.getStatus(),job.getRequestedBy());
                 jobs.completeStep(step.getId(),output);
             } catch (Exception error) {
                 if (error instanceof InterruptedException) Thread.currentThread().interrupt();

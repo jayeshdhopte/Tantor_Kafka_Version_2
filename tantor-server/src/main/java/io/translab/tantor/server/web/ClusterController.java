@@ -63,6 +63,7 @@ public class ClusterController {
     private final io.translab.tantor.server.service.ExternalClusterService externalClusterService;
     private final io.translab.tantor.server.service.KafkaAdminService kafkaAdminService;
     private final JobService jobService;
+    private final io.translab.tantor.server.service.AddServiceMappingService addServiceMapping;
     private final io.translab.tantor.server.service.ClusterDeletionHistoryService deletionHistory;
     private final io.translab.tantor.server.service.ExternalClusterDeletionService externalDeletion;
     private final io.translab.tantor.server.audit.AuditService auditService;
@@ -641,7 +642,7 @@ public class ClusterController {
         clusterRepository.save(cluster);
         List<Map<String, Object>> dataServices = prepareDataServicePayloads(request.getAddons(), request.getServices(), cluster, deploymentConfig);
         addDataServiceAssignments(cluster, dataServices);
-        clusterRepository.save(cluster);
+        recordDataServiceMappings(clusterRepository.saveAndFlush(cluster), dataServices, username);
 
         // Update host cluster_id references
         for (ServiceAssignmentReq sa : request.getServices()) {
@@ -753,7 +754,7 @@ public class ClusterController {
         for (Map<String, Object> service : dataServices) appendDataServiceSteps(steps, service);
         addDataServiceAssignments(cluster, dataServices);
         cluster.setUpdatedBy(username);
-        clusterRepository.save(cluster);
+        recordDataServiceMappings(clusterRepository.saveAndFlush(cluster), dataServices, username);
         Job job = new Job();
         job.setType(JobType.DEPLOYMENT);
         job.setStatus(JobStatus.PENDING);
@@ -1379,6 +1380,15 @@ public class ClusterController {
             payload.put("instance_connection", true);
         }
         return result;
+    }
+
+    private void recordDataServiceMappings(Cluster cluster, List<Map<String, Object>> payloads, String actor) {
+        for (ClusterServiceAssignment service : cluster.getServices()) {
+            if (payloads.stream().anyMatch(payload -> java.util.Objects.equals(payload.get("host_id"), service.getHostId())
+                    && java.util.Objects.equals(payload.get("role"), service.getRole()))) {
+                addServiceMapping.recordManaged(service, actor);
+            }
+        }
     }
 
     private void addDataServiceAssignments(Cluster cluster, List<Map<String, Object>> payloads) {

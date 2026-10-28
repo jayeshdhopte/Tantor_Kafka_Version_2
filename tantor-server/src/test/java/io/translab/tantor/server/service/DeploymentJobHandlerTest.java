@@ -36,7 +36,7 @@ class DeploymentJobHandlerTest {
                 .thenReturn(Optional.of(new io.translab.tantor.server.domain.DataServiceConnection()));
         var handler = new DeploymentJobHandler(mock(JobService.class), mock(DeploymentService.class), mock(AgentTaskAwaiter.class),
                 mock(ClusterRepository.class), mock(HostRepository.class), new ObjectMapper(), mock(PrometheusMonitoringService.class),
-                mock(KafkaAdminService.class), connections, mock(ClusterServiceAssignmentRepository.class));
+                mock(KafkaAdminService.class), connections, mock(ClusterServiceAssignmentRepository.class), org.mockito.Mockito.mock(io.translab.tantor.server.service.AddServiceMappingService.class));
         var config = Map.<String, Object>of("host_id", "host-2", "host_name", "192.168.3.213", "rest_port", 18083, "instance_connection", true);
         org.springframework.test.util.ReflectionTestUtils.invokeMethod(handler, "executeBackendConnectOperation", clusterId,
                 Map.of("requestedBy", "operator"), Map.of("operation", "save_connect_connection", "host_id", "host-2", "serviceConfig", config));
@@ -58,7 +58,7 @@ class DeploymentJobHandlerTest {
         when(deployment.deleteClusterFromHost(eq(clusterId), eq("host-2"), eq("4.3.0"), eq("{}"), anyList(), eq(false))).thenReturn(taskId);
         when(awaiter.await(taskId)).thenReturn(new io.translab.tantor.server.domain.Task());
         var handler = new DeploymentJobHandler(jobs, deployment, awaiter, mock(ClusterRepository.class), mock(HostRepository.class),
-                mapper, mock(PrometheusMonitoringService.class), mock(KafkaAdminService.class), mock(DataServiceConnectionService.class), mock(ClusterServiceAssignmentRepository.class));
+                mapper, mock(PrometheusMonitoringService.class), mock(KafkaAdminService.class), mock(DataServiceConnectionService.class), mock(ClusterServiceAssignmentRepository.class), org.mockito.Mockito.mock(io.translab.tantor.server.service.AddServiceMappingService.class));
         handler.rollback(job);
         verify(deployment).deleteClusterFromHost(eq(clusterId), eq("host-2"), eq("4.3.0"), eq("{}"),
                 argThat(services -> services.size() == 1 && "kafka_connect".equals(services.get(0).get("kind"))
@@ -97,7 +97,7 @@ class DeploymentJobHandlerTest {
         when(awaiter.await(secondTask)).thenThrow(new IllegalStateException("Second worker failed"));
         var connections = mock(DataServiceConnectionService.class);
         var handler = new DeploymentJobHandler(jobs, deployment, awaiter, clusters, mock(HostRepository.class), mapper,
-                mock(PrometheusMonitoringService.class), mock(KafkaAdminService.class), connections, assignments);
+                mock(PrometheusMonitoringService.class), mock(KafkaAdminService.class), connections, assignments, org.mockito.Mockito.mock(io.translab.tantor.server.service.AddServiceMappingService.class));
         assertThatThrownBy(() -> handler.execute(job)).hasMessageContaining("Second worker failed");
         assertThat(primary.getStatus()).isEqualTo("ONLINE");
         assertThat(secondary.getStatus()).isEqualTo("FAILED");
@@ -142,7 +142,7 @@ class DeploymentJobHandlerTest {
         when(awaiter.await(taskId)).thenThrow(new IllegalStateException("Connect start failed"));
         var handler = new DeploymentJobHandler(jobs, deployment, awaiter, clusters, mock(HostRepository.class),
                 mapper, mock(PrometheusMonitoringService.class), mock(KafkaAdminService.class),
-                mock(DataServiceConnectionService.class), assignments);
+                mock(DataServiceConnectionService.class), assignments, org.mockito.Mockito.mock(io.translab.tantor.server.service.AddServiceMappingService.class));
 
         assertThatThrownBy(() -> handler.execute(job)).hasMessageContaining("Connect start failed");
         assertThat(cluster.getStatus()).isEqualTo(servicesOnly ? "SUCCESS" : "DEGRADED");
@@ -187,7 +187,7 @@ class DeploymentJobHandlerTest {
                 mock(KafkaAdminService.class),
                 mock(DataServiceConnectionService.class),
                 mock(ClusterServiceAssignmentRepository.class)
-        );
+        , org.mockito.Mockito.mock(io.translab.tantor.server.service.AddServiceMappingService.class));
 
         handler.execute(job);
 

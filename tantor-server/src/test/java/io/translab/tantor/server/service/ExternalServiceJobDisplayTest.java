@@ -12,7 +12,7 @@ class ExternalServiceJobDisplayTest {
     final DiscoveryAgentRepository agents=mock(DiscoveryAgentRepository.class);
     final ExternalDataServiceRepository services=mock(ExternalDataServiceRepository.class);
     final ObjectMapper mapper=new ObjectMapper();
-    final ExternalDataServiceManager manager=new ExternalDataServiceManager(null,agents,services,null,null,null,mapper);
+    final ExternalDataServiceManager manager=new ExternalDataServiceManager(null,agents,services,null,null,null,mapper, org.mockito.Mockito.mock(io.translab.tantor.server.service.AddServiceMappingService.class));
 
     ExternalDataService service() {
         var service=new ExternalDataService();service.setId(UUID.randomUUID());service.setAgentId("agent-id");

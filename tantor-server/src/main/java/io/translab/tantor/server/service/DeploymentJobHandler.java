@@ -36,6 +36,7 @@ public class DeploymentJobHandler implements JobHandler {
     private final KafkaAdminService kafkaAdminService;
     private final DataServiceConnectionService dataServiceConnectionService;
     private final ClusterServiceAssignmentRepository clusterServiceAssignmentRepository;
+    private final AddServiceMappingService addServiceMapping;
 
     @Override
     public boolean supports(JobType type) {
@@ -79,14 +80,14 @@ public class DeploymentJobHandler implements JobHandler {
                 continue;
             }
             try {
-                if (isSchemaOperation(payload)) markSchemaService(clusterId, payload, "DEPLOYING", null);
-                if (isConnectOperation(payload)) markConnectService(clusterId, payload, "DEPLOYING", null);
+                if (isSchemaOperation(payload)) markSchemaService(clusterId, payload, "DEPLOYING", null, job.getRequestedBy());
+                if (isConnectOperation(payload)) markConnectService(clusterId, payload, "DEPLOYING", null, job.getRequestedBy());
                 if (isBackendSchemaOperation(payload)) {
                     jobService.startStep(step.getId());
                     String output = executeBackendSchemaOperation(clusterId, jobPayload, payload);
                     jobService.completeStep(step.getId(), output);
                     if ("save_schema_connection".equals(operation(payload))) {
-                        markSchemaService(clusterId, payload, "ONLINE", null);
+                        markSchemaService(clusterId, payload, "ONLINE", null, job.getRequestedBy());
                     }
                     jobService.appendLog(job.getId(), step.getName() + " completed.");
                     i++;
@@ -97,7 +98,7 @@ public class DeploymentJobHandler implements JobHandler {
                     String output = executeBackendConnectOperation(clusterId, jobPayload, payload);
                     jobService.completeStep(step.getId(), output);
                     if ("save_connect_connection".equals(operation(payload))) {
-                        markConnectService(clusterId, payload, "ONLINE", null);
+                        markConnectService(clusterId, payload, "ONLINE", null, job.getRequestedBy());
                     }
                     jobService.appendLog(job.getId(), step.getName() + " completed.");
                     i++;
@@ -118,10 +119,10 @@ public class DeploymentJobHandler implements JobHandler {
             } catch (Exception e) {
                 jobService.failStep(step.getId(), e.getMessage());
                 if (isSchemaOperation(payload)) {
-                    markSchemaService(clusterId, payload, "FAILED", e.getMessage());
+                    markSchemaService(clusterId, payload, "FAILED", e.getMessage(), job.getRequestedBy());
                     saveClusterStatus(cluster, "DEGRADED", job);
                 } else if (isConnectOperation(payload)) {
-                    markConnectService(clusterId, payload, "FAILED", e.getMessage());
+                    markConnectService(clusterId, payload, "FAILED", e.getMessage(), job.getRequestedBy());
                     saveClusterStatus(cluster, "DEGRADED", job);
                 } else {
                     saveClusterStatus(cluster, "FAILED", job);
@@ -203,8 +204,8 @@ public class DeploymentJobHandler implements JobHandler {
                     jobService.attachAgentTask(step.getId(), taskId);
                     Task completed = taskAwaiter.await(taskId);
                     jobService.rolledBackStep(step.getId(), taskOutput(completed));
-                    if ("install_schema".equals(operation)) markSchemaService(clusterId, payload, "ROLLED_BACK", null);
-                    else markConnectService(clusterId, payload, "ROLLED_BACK", null);
+                    if ("install_schema".equals(operation)) markSchemaService(clusterId, payload, "ROLLED_BACK", null, job.getRequestedBy());
+                    else markConnectService(clusterId, payload, "ROLLED_BACK", null, job.getRequestedBy());
                     continue;
                 }
 				if (!"deploy".equals(operation)) {
@@ -391,19 +392,21 @@ public class DeploymentJobHandler implements JobHandler {
                 || "save_connect_connection".equals(operation(payload));
     }
 
-    private void markSchemaService(UUID clusterId, Map<String, Object> payload, String status, String error) {
+    private void markSchemaService(UUID clusterId, Map<String, Object> payload, String status, String error, String actor) {
         clusterServiceAssignmentRepository.findByClusterIdAndRoleAndHostId(clusterId, "schema_registry", required(payload, "host_id")).ifPresent(service -> {
             service.setStatus(status);
             service.setLastError(error);
             clusterServiceAssignmentRepository.save(service);
+            addServiceMapping.updateStatus(service.getId(), status, actor);
         });
     }
 
-    private void markConnectService(UUID clusterId, Map<String, Object> payload, String status, String error) {
+    private void markConnectService(UUID clusterId, Map<String, Object> payload, String status, String error, String actor) {
         clusterServiceAssignmentRepository.findByClusterIdAndRoleAndHostId(clusterId, "kafka_connect", required(payload, "host_id")).ifPresent(service -> {
             service.setStatus(status);
             service.setLastError(error);
             clusterServiceAssignmentRepository.save(service);
+            addServiceMapping.updateStatus(service.getId(), status, actor);
         });
     }
 

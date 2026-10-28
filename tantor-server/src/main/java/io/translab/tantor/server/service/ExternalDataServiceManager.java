@@ -21,6 +21,7 @@ public class ExternalDataServiceManager {
  private final JobService jobs;
  private final ExternalServiceArtifacts artifacts;
  private final ObjectMapper mapper;
+ private final AddServiceMappingService addServiceMapping;
  static final Set<String> ROLES=Set.of("schema_registry","kafka_connect");
  static String value(Map<String,?> p,String k,String fallback) { Object v=p.get(k); return v==null||v.toString().isBlank()?fallback:v.toString().trim(); }
  static String blocked(DiscoveryAgent a) {
@@ -100,7 +101,7 @@ public class ExternalDataServiceManager {
    }
   }
   List<JobStep> steps=new ArrayList<>();
-  for(var s:additions) { services.saveAndFlush(s); for(String op:List.of("PRECHECK","TOPICS","INSTALL","SAVE")) {
+  for(var s:additions) { services.saveAndFlush(s); addServiceMapping.recordExternal(s,username); for(String op:List.of("PRECHECK","TOPICS","INSTALL","SAVE")) {
    JobStep step=new JobStep(); step.setStepOrder(steps.size()+1); step.setTargetId(s.getAgentId());
    var payload=serviceStepPayload(s,op);step.setName(serviceStepName(payload));step.setPayload(json(payload));steps.add(step);
   } }

@@ -26,6 +26,7 @@ public class JobService {
     private final ObjectMapper objectMapper;
     private final io.translab.tantor.server.repository.ClusterRepository clusterRepository;
     private final io.translab.tantor.server.repository.ExternalClusterRepository externalClusterRepository;
+    private final RollingRestartMappingService restartMapping;
 
     @Transactional
     public Job createJob(Job job, List<JobStep> steps) {
@@ -151,6 +152,7 @@ public class JobService {
             job.setStartTime(Instant.now());
             job.setEndTime(null);
             jobRepository.save(job);
+            syncRollingRestart(job, null, "ROLLING_RESTART_STARTED");
             return Optional.of(new ClaimedJob(job.getId(), false));
         }
 
@@ -182,7 +184,9 @@ public class JobService {
         if (isTerminal(status)) {
             job.setEndTime(Instant.now());
         }
-        return jobRepository.save(job);
+        Job saved = jobRepository.save(job);
+        syncRollingRestart(job, null, status == JobStatus.SUCCESS ? "ROLLING_RESTART_COMPLETED" : "ROLLING_RESTART_" + status.name());
+        return saved;
     }
 
     @Transactional
@@ -369,7 +373,9 @@ public class JobService {
         job.setEndTime(null);
         appendLog(id, retryRollback ? "Rollback retry requested." : "Retry requested; completed steps will be preserved.");
         refreshProgress(id);
-        return jobRepository.save(job);
+        Job saved = jobRepository.save(job);
+        syncRollingRestart(job, currentRequester(), "ROLLING_RESTART_RETRY_REQUESTED");
+        return saved;
     }
 
     @Transactional
@@ -426,6 +432,7 @@ public class JobService {
             job.setStatus(JobStatus.PENDING);
             job.setEndTime(null);
             jobRepository.save(job);
+            syncRollingRestart(job, null, "ROLLING_RESTART_RECOVERED");
             appendLog(job.getId(), "Backend restarted; job returned to the durable execution queue.");
         }
         for (Job job : jobRepository.findByStatus(JobStatus.ROLLING_BACK)) {
@@ -457,6 +464,10 @@ public class JobService {
     private JobStep getStep(UUID stepId) {
         return jobStepRepository.findById(stepId)
                 .orElseThrow(() -> new RuntimeException("Job step not found: " + stepId));
+    }
+
+    private void syncRollingRestart(Job job, String actor, String action) {
+        if (job.getType() == JobType.ROLLING_RESTART) restartMapping.synchronizeStatus(job, actor, action);
     }
 
     private String currentRequester() {

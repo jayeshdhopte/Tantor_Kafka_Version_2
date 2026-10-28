@@ -12,7 +12,7 @@ import static org.mockito.Mockito.*;
 class RollingRestartJobSafetyTest {
     @Test void retryPreservesCompletedStepsAndRestartEvidenceAndRejectsRollback() {
         var jobs = mock(JobRepository.class); var steps = mock(JobStepRepository.class); var clusters = mock(ClusterRepository.class);
-        var service = new JobService(jobs, steps, new ObjectMapper(), clusters, mock(ExternalClusterRepository.class));
+        var service = new JobService(jobs, steps, new ObjectMapper(), clusters, mock(ExternalClusterRepository.class), org.mockito.Mockito.mock(io.translab.tantor.server.service.RollingRestartMappingService.class));
         Job job = new Job(); job.setId(UUID.randomUUID()); job.setType(JobType.ROLLING_RESTART); job.setStatus(JobStatus.PARTIAL_SUCCESS);
         job.setResourceKey("cluster:" + UUID.randomUUID()); job.setRollbackSupported(true);
         JobStep done = new JobStep(); done.setStatus(JobStepStatus.SUCCESS);
@@ -32,7 +32,7 @@ class RollingRestartJobSafetyTest {
     @Test void agentBaselineIsStoredInPayloadWithoutUsingExternalTaskForeignKey() throws Exception {
         var jobs = mock(JobRepository.class); var steps = mock(JobStepRepository.class);
         ObjectMapper mapper = new ObjectMapper();
-        var service = new JobService(jobs, steps, mapper, mock(ClusterRepository.class), mock(ExternalClusterRepository.class));
+        var service = new JobService(jobs, steps, mapper, mock(ClusterRepository.class), mock(ExternalClusterRepository.class), org.mockito.Mockito.mock(io.translab.tantor.server.service.RollingRestartMappingService.class));
         Job job = new Job(); job.setType(JobType.ROLLING_RESTART);
         JobStep step = new JobStep(); step.setId(UUID.randomUUID()); step.setJob(job);
         step.setPayload(mapper.writeValueAsString(Map.of("hostId", "one", "role", "broker", "nodeId", 1)));
@@ -53,7 +53,7 @@ class RollingRestartJobSafetyTest {
         var steps = mock(JobStepRepository.class);
         var mapper = new ObjectMapper();
         var service = new JobService(mock(JobRepository.class), steps, mapper,
-                mock(ClusterRepository.class), mock(ExternalClusterRepository.class));
+                mock(ClusterRepository.class), mock(ExternalClusterRepository.class), org.mockito.Mockito.mock(io.translab.tantor.server.service.RollingRestartMappingService.class));
         JobStep step = new JobStep(); step.setId(UUID.randomUUID());
         when(steps.findById(step.getId())).thenReturn(Optional.of(step));
         UUID taskId = UUID.randomUUID();
@@ -66,7 +66,7 @@ class RollingRestartJobSafetyTest {
 
     @Test void queuedRestartLocksSameClusterButNotAnotherCluster() {
         var jobs = mock(JobRepository.class); var clusters = mock(ClusterRepository.class);
-        var service = new JobService(jobs, mock(JobStepRepository.class), new ObjectMapper(), clusters, mock(ExternalClusterRepository.class));
+        var service = new JobService(jobs, mock(JobStepRepository.class), new ObjectMapper(), clusters, mock(ExternalClusterRepository.class), org.mockito.Mockito.mock(io.translab.tantor.server.service.RollingRestartMappingService.class));
         UUID cluster = UUID.randomUUID(); Job active = new Job(); active.setId(UUID.randomUUID()); active.setType(JobType.ROLLING_RESTART);
         when(jobs.findByResourceKeyAndStatusIn(eq("cluster:" + cluster), anyList())).thenReturn(List.of(active));
         assertThatThrownBy(() -> service.assertClusterMutable(cluster)).isInstanceOf(ClusterOperationConflictException.class);
@@ -77,7 +77,7 @@ class RollingRestartJobSafetyTest {
                 JobType.ROLLING_CONFIG_UPDATE)) {
             var jobs = mock(JobRepository.class);
             var service = new JobService(jobs, mock(JobStepRepository.class), new ObjectMapper(),
-                    mock(ClusterRepository.class), mock(ExternalClusterRepository.class));
+                    mock(ClusterRepository.class), mock(ExternalClusterRepository.class), org.mockito.Mockito.mock(io.translab.tantor.server.service.RollingRestartMappingService.class));
             UUID clusterId = UUID.randomUUID();
             Job active = new Job(); active.setId(UUID.randomUUID()); active.setType(type);
             when(jobs.findByResourceKeyAndStatusIn(eq("cluster:" + clusterId), anyList())).thenReturn(List.of(active));

@@ -19,6 +19,7 @@ public class ExternalServicesJobHandler implements JobHandler {
  private final ExternalServiceTaskRepository tasks;
  private final KafkaAdminService kafka;
  private final DataServiceConnectionService connections;
+ private final AddServiceMappingService addServiceMapping;
  public boolean supports(JobType type) { return type==JobType.EXTERNAL_SERVICES; }
  public void execute(Job job) {
   for(JobStep step:jobs.getSteps(job.getId())) {
@@ -29,6 +30,7 @@ public class ExternalServicesJobHandler implements JobHandler {
    try {
     manager.requireCluster(s.getClusterId()); var agent=manager.requireAgent(s.getClusterId(),s.getAgentId());
     s.setStatus("DEPLOYING"); s.setLastError(null); services.save(s);
+    addServiceMapping.updateStatus(s.getId(),s.getStatus(),job.getRequestedBy());
     var p=manager.read(s.getConfigJson()); String op=payload.get("operation"); String output;
     switch(op) {
      case "PRECHECK", "INSTALL" -> {
@@ -42,13 +44,16 @@ public class ExternalServicesJobHandler implements JobHandler {
       var saved=connections.saveConnection(s.getClusterId(),s.getRole().toUpperCase(Locale.ROOT),req,job.getRequestedBy());
       if(!"ONLINE".equals(saved.getStatus())) throw new IllegalStateException("Service started but management-server REST verification failed: "+saved.getLastError());
       s.setStatus("ONLINE"); services.save(s); output="Service verified and connection associated with the external cluster.";
+      addServiceMapping.updateStatus(s.getId(),s.getStatus(),job.getRequestedBy());
      }
      default -> throw new IllegalArgumentException("Unsupported external service operation");
     }
     jobs.completeStep(step.getId(),output);
    } catch(Exception e) {
     if(e instanceof InterruptedException) Thread.currentThread().interrupt();
-    s.setStatus("FAILED"); s.setLastError(e.getMessage()); services.save(s); jobs.failStep(step.getId(),e.getMessage());
+    s.setStatus("FAILED"); s.setLastError(e.getMessage()); services.save(s);
+    addServiceMapping.updateStatus(s.getId(),s.getStatus(),job.getRequestedBy());
+    jobs.failStep(step.getId(),e.getMessage());
     throw new IllegalStateException("External service deployment failed: "+e.getMessage(),e);
    }
   }

@@ -29,6 +29,7 @@ public class ClusterActionsController {
     private final AuditService auditService;
     private final RoleAuthenticationUtil roleAuthenticationUtil;
     private final io.translab.tantor.server.service.RestartNodeDisplayService restartDisplay;
+    private final io.translab.tantor.server.service.RollingRestartMappingService restartMapping;
 
     @GetMapping("/rolling-restart/topology")
     public ResponseEntity<?> restartTopology(@RequestHeader(value = "Authorization", required = false) String authorization,
@@ -91,6 +92,7 @@ public class ClusterActionsController {
             }
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) { throw new IllegalStateException("Unable to save restart plan", e); }
         Job saved = jobService.createJob(job, steps);
+        restartMapping.record(saved, cluster, steps);
         return ResponseEntity.ok(Map.of("jobId", saved.getId().toString(), "status", saved.getStatus().name()));
     }
 

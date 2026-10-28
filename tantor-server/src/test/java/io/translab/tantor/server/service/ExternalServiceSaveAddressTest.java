@@ -12,7 +12,8 @@ class ExternalServiceSaveAddressTest {
  @Test void retrySaveUsesCurrentAgentIpAndPreservesOldConnectionName(){
   var jobs=mock(JobService.class);var manager=mock(ExternalDataServiceManager.class);
   var services=mock(ExternalDataServiceRepository.class);var connections=mock(DataServiceConnectionService.class);
-  var handler=new ExternalServicesJobHandler(jobs,manager,services,mock(ExternalServiceTaskRepository.class),mock(KafkaAdminService.class),connections);
+  var mappings=mock(AddServiceMappingService.class);
+  var handler=new ExternalServicesJobHandler(jobs,manager,services,mock(ExternalServiceTaskRepository.class),mock(KafkaAdminService.class),connections,mappings);
   UUID cluster=UUID.randomUUID(),serviceId=UUID.randomUUID();
   var job=new Job();job.setId(UUID.randomUUID());job.setRequestedBy("operator");
   var step=new JobStep();step.setId(UUID.randomUUID());step.setStatus(JobStepStatus.FAILED);step.setPayload("step");
@@ -27,5 +28,8 @@ class ExternalServiceSaveAddressTest {
   verify(connections).saveConnection(eq(cluster),eq("SCHEMA_REGISTRY"),argThat(r->r.getIsDefault()==null&&"192.168.3.174".equals(r.getHost())&&r.getPort()==8088&&"Deployed schema_registry on node174.translab.io:8088".equals(r.getConnectionName())),eq("operator"));
   verify(jobs).completeStep(eq(step.getId()),anyString());
   verify(manager,never()).enqueue(any(),anyString());
+  var order=inOrder(mappings);
+  order.verify(mappings).updateStatus(serviceId,"DEPLOYING","operator");
+  order.verify(mappings).updateStatus(serviceId,"ONLINE","operator");
  }
 }

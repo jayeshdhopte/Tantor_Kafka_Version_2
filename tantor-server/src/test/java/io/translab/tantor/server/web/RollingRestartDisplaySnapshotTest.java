@@ -15,7 +15,8 @@ import static org.mockito.Mockito.*;
 class RollingRestartDisplaySnapshotTest {
  @Test void jobSavesHumanLabelsWithoutReplacingExternalDispatchTargets() {
   var clusters=mock(ClusterRepository.class);var jobs=mock(JobService.class);var display=mock(RestartNodeDisplayService.class);var auth=mock(RoleAuthenticationUtil.class);var deployment=mock(DeploymentService.class);
-  var controller=new ClusterActionsController(deployment,clusters,jobs,new ObjectMapper(),mock(AuditService.class),auth,display);
+  var summary=mock(io.translab.tantor.server.service.RollingRestartMappingService.class);
+  var controller=new ClusterActionsController(deployment,clusters,jobs,new ObjectMapper(),mock(AuditService.class),auth,display,summary);
   UUID id=UUID.randomUUID();String target="external:"+UUID.randomUUID();String second="external:"+UUID.randomUUID();
   var cluster=new Cluster();cluster.setId(id);cluster.setMode("kraft");cluster.setStatus("SUCCESS");
   var one=new ClusterServiceAssignment();one.setHostId(target);one.setRole("broker");one.setNodeId(1);
@@ -31,5 +32,6 @@ class RollingRestartDisplaySnapshotTest {
    && steps.getFirst().getName().equals("Restart broker node 1 - node229.translab.io (192.168.3.229)")
    && steps.getFirst().getPayload().contains(target) && steps.getFirst().getPayload().contains("hostname") && steps.getFirst().getPayload().contains("ipAddress")));
   verifyNoInteractions(deployment);
+  verify(summary).record(argThat(job->job.getType()==JobType.ROLLING_RESTART && job.getId()!=null),eq(cluster),argThat(steps->steps.size()==2));
  }
 }

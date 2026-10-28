@@ -24,6 +24,7 @@ class AddClusterServicesTest {
     private final ClusterController controller = mock(ClusterController.class, CALLS_REAL_METHODS);
     private final ClusterRepository clusters = mock(ClusterRepository.class);
     private final JobService jobs = mock(JobService.class);
+    private final io.translab.tantor.server.service.AddServiceMappingService mappings = mock(io.translab.tantor.server.service.AddServiceMappingService.class);
     private final RoleAuthenticationUtil auth = mock(RoleAuthenticationUtil.class);
     private final Cluster cluster = new Cluster();
 
@@ -31,6 +32,12 @@ class AddClusterServicesTest {
     void setup() {
         ReflectionTestUtils.setField(controller, "clusterRepository", clusters);
         ReflectionTestUtils.setField(controller, "jobService", jobs);
+        ReflectionTestUtils.setField(controller, "addServiceMapping", mappings);
+        when(clusters.saveAndFlush(any())).thenAnswer(invocation -> {
+            Cluster saved = invocation.getArgument(0);
+            saved.getServices().forEach(service -> { if (service.getId() == null) service.setId(UUID.randomUUID()); });
+            return saved;
+        });
         ReflectionTestUtils.setField(controller, "roleAuthenticationUtil", auth);
         ReflectionTestUtils.setField(controller, "objectMapper", new ObjectMapper());
         ReflectionTestUtils.setField(controller, "hostRepository", mock(HostRepository.class));
@@ -77,6 +84,9 @@ class AddClusterServicesTest {
         var response = controller.addServicesToCluster("token", cluster.getId(), request());
         assertThat(response.getStatusCode().value()).isEqualTo(200);
         assertThat(response.getBody()).containsKeys("id", "jobId");
+        verify(mappings).recordManaged(argThat(s -> "schema_registry".equals(s.getRole()) && s.getId() != null), eq("operator"));
+        verify(mappings).recordManaged(argThat(s -> "kafka_connect".equals(s.getRole()) && s.getId() != null), eq("operator"));
+        verifyNoMoreInteractions(mappings);
         var job = ArgumentCaptor.forClass(Job.class);
         @SuppressWarnings("unchecked") ArgumentCaptor<List<JobStep>> steps = ArgumentCaptor.forClass(List.class);
         verify(jobs).createJob(job.capture(), steps.capture());
@@ -124,6 +134,8 @@ class AddClusterServicesTest {
         verify(jobs).createJob(any(), steps.capture());
         assertThat(steps.getValue()).hasSize(5).allSatisfy(step -> assertThat(step.getTargetId()).isEqualTo("host-2"));
         assertThat(existing.getStatus()).isEqualTo("ONLINE");
+        verify(mappings).recordManaged(argThat(s -> "host-2".equals(s.getHostId()) && "kafka_connect".equals(s.getRole())), eq("operator"));
+        verifyNoMoreInteractions(mappings);
         assertThat(cluster.getServices().stream().filter(service -> "kafka_connect".equals(service.getRole()))).hasSize(2);
     }
 

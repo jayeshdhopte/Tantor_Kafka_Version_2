@@ -25,6 +25,8 @@ import static org.mockito.Mockito.*;
 class ClusterDeploymentStatusTest {
     @Mock JobService jobService;
     @Mock BrokerMetricsCacheService brokerMetricsCacheService;
+    @org.mockito.Mock io.translab.tantor.server.service.AddServiceMappingService addServiceMapping;
+
     @InjectMocks ClusterController controller;
 
     Cluster cluster() { Cluster c = new Cluster(); c.setId(UUID.randomUUID()); c.setStatus("SUCCESS"); return c; }
