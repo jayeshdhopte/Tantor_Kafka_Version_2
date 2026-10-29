@@ -38,25 +38,61 @@ test('form renders only the requested integrations and clearly identifies actual
  assert.ok(!html.includes('Serdes'));assert.ok(!html.includes('KSQL'));
 });
 
-test('bootstrap host and port edits preserve other endpoints and serialize IPv6 correctly',()=>{
- let value='first:9092,[::1]:9093';
- const render=()=>context.exports.BootstrapServersInput({value,onChange(next){value=next;}});
- const inputs=tree=>{
-  const found=[];
-  const walk=node=>{if(!node||typeof node!=='object')return;if(node.type==='input')found.push(node);React.Children.forEach(node.props?.children,walk);};
-  walk(tree);return found;
- };
- let fields=inputs(render());
- assert.equal(fields.length,4);assert.equal(fields[0].props.value,'first');assert.equal(fields[1].props.value,'9092');
- assert.equal(fields[2].props.value,'::1');assert.equal(fields[3].props.type,'number');
- fields[0].props.onChange({target:{value:'broker.example.com'}});
- assert.equal(value,'broker.example.com:9092,[::1]:9093');
- fields=inputs(render());fields[1].props.onChange({target:{value:'9094'}});
- assert.equal(value,'broker.example.com:9094,[::1]:9093');
- fields=inputs(render());fields[2].props.onChange({target:{value:'2001:db8::2'}});
- assert.equal(validateBootstrapServers(value),'broker.example.com:9094,[2001:db8::2]:9093');
- fields=inputs(render());fields[3].props.onChange({target:{value:''}});assert.throws(()=>validateBootstrapServers(value));
+function splitInputs(value, onChange) {
+ const tree=context.exports.BootstrapServersInput({value,onChange,separateFields:true});
+ const row=React.Children.toArray(tree.props.children).find(child=>child.props.className?.includes('bootstrap-endpoint-row'));
+ const fields=React.Children.toArray(row.props.children).find(child=>child.type===React.Fragment);
+ return React.Children.toArray(fields.props.children).map(label=>React.Children.toArray(label.props.children).find(child=>child.type==='input'));
+}
+
+test('split fields render hostname and port and retain the explicit combined-field option',()=>{
+ const html=renderToStaticMarkup(React.createElement(context.exports.BootstrapServersInput,{value:'broker.test:9092',onChange(){},separateFields:true}));
+ assert.match(html,/IP \/ Hostname/);assert.match(html,/>Port</);
+ assert.match(html,/aria-label="Bootstrap server 1 hostname"/);
+ assert.match(html,/aria-label="Bootstrap server 1 port"/);
+ assert.match(html,/value="broker.test"/);assert.match(html,/value="9092"/);
+ const defaultHtml=renderToStaticMarkup(React.createElement(context.exports.BootstrapServersInput,{value:'broker.test:9092',onChange(){},separateFields:false}));
+ assert.match(defaultHtml,/value="broker.test:9092"/);
+ assert.doesNotMatch(defaultHtml,/IP \/ Hostname/);
+});
+
+test('split-field edits preserve comma-separated endpoints, bracketed IPv6 and incomplete user input',()=>{
+ const changes=[];
+ const fields=splitInputs('[2001:db8::1]:9092,second:9093',value=>changes.push(value));
+ assert.equal(fields[0].props.value,'2001:db8::1');assert.equal(fields[1].props.value,'9092');
+ fields[0].props.onChange({target:{value:'new.test'}});
+ fields[1].props.onChange({target:{value:'9094'}});
+ assert.deepEqual(changes,['new.test:9092,second:9093','[2001:db8::1]:9094,second:9093']);
+ assert.equal(validateBootstrapServers(changes[1]),changes[1]);
+ const pending=splitInputs('',value=>changes.push(value));
+ assert.equal(pending[0].props.value,'');assert.equal(pending[1].props.value,'');
+ pending[0].props.onChange({target:{value:'pending.test'}});
+ assert.equal(changes.at(-1),'pending.test:');
+ assert.throws(()=>validateBootstrapServers(changes.at(-1)));
+ const ipv6HostOnly=splitInputs('[::1]',()=>{});
+ assert.equal(ipv6HostOnly[0].props.value,'::1');assert.equal(ipv6HostOnly[1].props.value,'');
+});
+
+test('default bootstrap fields preserve upstream IPv6 serialization and numeric port constraints',()=>{
+ const changes=[];
+ const fields=splitInputs('first:9092,[::1]:9093',value=>changes.push(value));
+ fields[0].props.onChange({target:{value:'2001:db8::2'}});
+ assert.equal(validateBootstrapServers(changes[0]),'[2001:db8::2]:9092,[::1]:9093');
  const html=renderToStaticMarkup(React.createElement(context.exports.BootstrapServersInput,{value:'first:9092',onChange(){}}));
- assert.ok(html.includes('IP / Hostname'));assert.ok(html.includes('Bootstrap server 1 port'));
- assert.ok(html.includes('min="1" max="65535"'));
+ assert.match(html,/IP \/ Hostname/);
+ assert.match(html,/type="number" min="1" max="65535"/);
+});
+
+test('split inputs retain disabled controls and last-row removal protection',()=>{
+ const html=renderToStaticMarkup(React.createElement(context.exports.BootstrapServersInput,{value:'one:9092',onChange(){},separateFields:true,disabled:true}));
+ assert.match(html,/aria-label="Bootstrap server 1 hostname"[^>]*disabled/);
+ assert.match(html,/aria-label="Bootstrap server 1 port"[^>]*disabled/);
+ assert.match(html,/aria-label="Remove bootstrap server 1" disabled/);
+ const changes=[];
+ const tree=context.exports.BootstrapServersInput({value:'one:9092,two:9093',onChange:value=>changes.push(value),separateFields:true});
+ const children=React.Children.toArray(tree.props.children);
+ const row=children.find(child=>child.props.className?.includes('bootstrap-endpoint-row'));
+ React.Children.toArray(row.props.children).find(child=>child.type==='button').props.onClick();
+ children.find(child=>child.type==='button').props.onClick();
+ assert.deepEqual(changes,['two:9093','one:9092,two:9093,']);
 });

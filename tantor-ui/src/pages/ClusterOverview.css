@@ -150,6 +150,14 @@
   overflow-wrap: anywhere;
 }
 
+.overview-directory-value {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 /* Table container matching Figma specification */
 .overview-table-wrap {
   width: 100%;

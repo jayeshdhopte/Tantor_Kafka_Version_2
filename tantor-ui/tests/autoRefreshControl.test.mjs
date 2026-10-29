@@ -37,5 +37,9 @@ test('Consumers omit the auxiliary panel while Schema and Connect retain their c
  assert.ok(!read('pages/Consumers.tsx').includes('KafkaGroupPanel'));
  assert.ok(read('pages/SchemaRegistry.tsx').includes('kind="schema"'));
  assert.ok(read('pages/KafkaConnect.tsx').includes('kind="connect"'));
- for(const page of ['KafkaConnect','SchemaRegistry','Partitions'])assert.ok(read('pages/'+page+'.tsx').includes('<AutoRefreshControl'));
+ for(const page of ['KafkaConnect','SchemaRegistry','Partitions']) {
+  const source = read('pages/'+page+'.tsx');
+  assert.equal((source.match(/<LiveRefreshControl/g)||[]).length, 1);
+  assert.ok(!source.includes('useAutoRefresh('), 'Do not run a second polling timer');
+ }
 });

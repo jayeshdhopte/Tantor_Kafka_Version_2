@@ -1,7 +1,7 @@
-import { AutoRefreshControl } from '../components/AutoRefreshControl';
-import { useAutoRefresh } from '../hooks/useAutoRefresh';
 import { RefreshButton } from '../components/RefreshButton';
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { LiveRefreshControl } from '../components/LiveRefreshControl';
+import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import { useParams } from 'react-router-dom';
 import { Database, Search, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, RefreshCw } from 'lucide-react';
 import './Partitions.css';
@@ -33,7 +33,6 @@ interface PaginatedResponse {
 export function Partitions() {
   const { id } = useParams<{ id: string }>();
   const [data, setData] = useState<PaginatedResponse | null>(null);
-  const [refreshRate, setRefreshRate] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -41,37 +40,42 @@ export function Partitions() {
   const [size, setSize] = useState(10);
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const partitionRequest = useRef(0);
   const [sortBy, setSortBy] = useState('topicName');
+  const activeRequest = useRef<AbortController | null>(null);
 
-  const fetchPartitions = useCallback(async () => {
-    const request = ++partitionRequest.current;
-    setLoading(true);
+  const fetchPartitions = useCallback(async (quiet = false, signal?: AbortSignal) => {
+    if (quiet && activeRequest.current) return;
+    activeRequest.current?.abort();
+    const controller = new AbortController();
+    activeRequest.current = controller;
+    const cancel = () => controller.abort();
+    signal?.addEventListener('abort', cancel, { once: true });
+    if (signal?.aborted) controller.abort();
+    if (!quiet) setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/v1/clusters/${id}/partitions?page=${page}&size=${size}&search=${encodeURIComponent(searchQuery)}&sortBy=${sortBy}`);
+      const res = await fetch(`/api/v1/clusters/${id}/partitions?page=${page}&size=${size}&search=${encodeURIComponent(searchQuery)}&sortBy=${sortBy}`, { signal: controller.signal });
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
         throw new Error(errorData.message || `Partitions are not available yet (HTTP ${res.status})`);
       }
       const json = await res.json();
-      if (request === partitionRequest.current) setData(json);
+      if (!controller.signal.aborted) setData(json);
     } catch (e: unknown) {
-      console.error(e);
-      if (request !== partitionRequest.current) return;
-      setError(e instanceof Error ? e.message : "Failed to load partitions");
+      if (!controller.signal.aborted) setError(e instanceof Error ? e.message : "Failed to load partitions");
     } finally {
-      if (request === partitionRequest.current) setLoading(false);
+      signal?.removeEventListener('abort', cancel);
+      if (activeRequest.current === controller) { activeRequest.current = null; setLoading(false); }
     }
   }, [id, page, size, searchQuery, sortBy]);
 
   useEffect(() => {
     void (async () => { await fetchPartitions(); })();
-    const requests = partitionRequest;
-    return () => { requests.current++; };
+    return () => { activeRequest.current?.abort(); activeRequest.current = null; };
   }, [fetchPartitions]);
 
-  useAutoRefresh(fetchPartitions, refreshRate, !loading, `${id}:${page}:${size}:${searchQuery}:${sortBy}`);
+  const liveRefresh = useLiveRefresh({ scope: `${id}:partitions`, context: `${page}:${size}:${searchQuery}:${sortBy}`,
+    refresh: signal => fetchPartitions(true, signal), paused: loading });
 
   // Handle Search submit
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -99,8 +103,8 @@ export function Partitions() {
         <h2 className="cluster-section-heading">Partitions Dashboard</h2>
         
         {/* -- Figma Toolbar Search Bar & Refresh Button -- */}
-        <div className="tab-toolbar" style={{ display: 'flex', gap: 'var(--space-6)', alignItems: 'center', width: '100%', height: '40px' }}>
-          <form onSubmit={handleSearchSubmit} style={{ margin: 0 }}>
+        <div className="tab-toolbar" style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-6)', alignItems: 'center', width: '100%', minHeight: '40px' }}>
+          <form onSubmit={handleSearchSubmit} style={{ margin: 0, flex: '1 1 260px', minWidth: 0 }}>
             <label style={{
               boxSizing: 'border-box',
               display: 'flex',
@@ -108,7 +112,7 @@ export function Partitions() {
               alignItems: 'center',
               padding: '6px 8px',
               gap: 'var(--space-2)',
-              width: '612px',
+              width: '100%',
               height: '36px',
               background: "var(--bg-surface)",
               border: '1px solid var(--border-default)',
@@ -133,10 +137,9 @@ export function Partitions() {
               />
             </label>
           </form>
-          <AutoRefreshControl value={refreshRate} onChange={setRefreshRate} label="Partitions" />
           <RefreshButton
             type="button"
-            onClick={fetchPartitions} 
+            onClick={() => fetchPartitions()}
             disabled={loading} 
             style={{
               boxSizing: 'border-box',
@@ -157,6 +160,7 @@ export function Partitions() {
           >
             <RefreshCw className={loading ? 'spin' : ''} size={15} />
           </RefreshButton>
+          <LiveRefreshControl {...liveRefresh} label="Partitions" />
         </div>
       </div>
 

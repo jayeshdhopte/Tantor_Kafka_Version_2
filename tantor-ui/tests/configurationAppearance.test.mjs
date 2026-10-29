@@ -16,6 +16,33 @@ function declarations(selector, media) {
   return result;
 }
 
+test('change previews separate the heading, properties, health result and actions without changing apply guards', () => {
+  const page = read('pages/ConfigChange.tsx');
+  assert.equal((page.match(/className="cc-preview-heading"/g) || []).length, 2);
+  assert.equal((page.match(/className="cc-preview-property"/g) || []).length, 2);
+  assert.equal((page.match(/className="cc-preview-footer"/g) || []).length, 2);
+  for (const preview of ['staticPreview', 'preview']) {
+    assert.ok(page.includes(`${preview}.classification.replaceAll('_', ' ').toLowerCase()`));
+    assert.ok(page.includes(`${preview}.healthy ? 'passed' : 'failed'`));
+    assert.ok(page.includes(`disabled={!canManage || !${preview}.healthy || ${preview}.clusterLocked || !!busy}`));
+  }
+  assert.match(page, /onClick=\{\(\) => void applyStatic\(\)\}/);
+  assert.match(page, /onClick=\{\(\) => void apply\(\)\}/);
+  assert.equal((page.match(/target.oldValue \?\? 'Unset'/g) || []).length, 3);
+  assert.equal((page.match(/target.newValue === '' \? '\(Empty\)' : target.newValue/g) || []).length, 2);
+});
+
+test('preview tables have spaced headings, rounded frames, wrapped values and responsive actions', () => {
+  assert.equal(declarations('.cc-preview').gap, '24px');
+  assert.equal(declarations('.cc-preview-property h5').margin, '0 0 12px');
+  assert.equal(declarations('.cc-preview-table')['border-radius'], '8px');
+  assert.equal(declarations('.cc-preview-table').overflow, 'auto');
+  assert.equal(declarations('.cc-preview-table code')['white-space'], 'pre-wrap');
+  assert.equal(declarations('.cc-preview-health.passed').color, '#166534');
+  assert.equal(declarations('.cc-preview-health.failed').color, '#A52C48');
+  assert.equal(declarations('.cc-preview-footer > button', '(max-width: 720px)').width, '100%');
+});
+
 test('configuration tables have rounded, fully framed scroll containers and continuous header edges', () => {
   const frame = declarations('.cc-page .cc-table-wrap');
   assert.equal(frame['border-radius'], '8px');
