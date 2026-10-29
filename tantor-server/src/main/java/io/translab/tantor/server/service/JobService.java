@@ -27,6 +27,7 @@ public class JobService {
     private final io.translab.tantor.server.repository.ClusterRepository clusterRepository;
     private final io.translab.tantor.server.repository.ExternalClusterRepository externalClusterRepository;
     private final RollingRestartMappingService restartMapping;
+    private final ConfigChangeMappingService configMapping;
 
     @Transactional
     public Job createJob(Job job, List<JobStep> steps) {
@@ -43,6 +44,7 @@ public class JobService {
             step.setJob(saved);
         }
         jobStepRepository.saveAll(steps);
+        if (ConfigChangeMappingService.supports(saved)) configMapping.record(saved, steps);
         refreshProgress(saved.getId());
         return saved;
     }
@@ -163,6 +165,7 @@ public class JobService {
             job.setStatus(JobStatus.ROLLING_BACK);
             job.setEndTime(null);
             jobRepository.save(job);
+            if (ConfigChangeMappingService.supports(job)) configMapping.status(job);
             return Optional.of(new ClaimedJob(job.getId(), true));
         }
         return Optional.empty();
@@ -213,6 +216,7 @@ public class JobService {
         step.setStartTime(Instant.now());
         step.setEndTime(null);
         JobStep saved = jobStepRepository.save(step);
+        if (ConfigChangeMappingService.supports(step.getJob())) configMapping.step(step);
         refreshProgress(step.getJob().getId());
         return saved;
     }
@@ -294,7 +298,7 @@ public class JobService {
     }
 
     private void saveConfigPayload(JobStep step, Map<String, Object> payload) {
-        try { step.setPayload(objectMapper.writeValueAsString(payload)); jobStepRepository.saveAndFlush(step); }
+        try { step.setPayload(objectMapper.writeValueAsString(payload)); jobStepRepository.saveAndFlush(step); configMapping.step(step); }
         catch (com.fasterxml.jackson.core.JsonProcessingException e) { throw new IllegalStateException("Cannot persist configuration recovery state", e); }
     }
 
@@ -341,6 +345,7 @@ public class JobService {
         String current = step.getLogs() == null ? "" : step.getLogs();
         step.setLogs(current + "[" + Instant.now() + "] " + output + "\n");
         jobStepRepository.save(step);
+        if (ConfigChangeMappingService.supports(step.getJob())) configMapping.step(step);
     }
 
     @Transactional
@@ -364,6 +369,7 @@ public class JobService {
                     step.setEndTime(null);
                     step.setRetryCount(step.getRetryCount() + 1);
                     jobStepRepository.save(step);
+                    if (ConfigChangeMappingService.supports(job)) configMapping.step(step);
                 }
             }
         }
@@ -395,6 +401,7 @@ public class JobService {
         job.setStatus(JobStatus.ROLLBACK_PENDING);
         job.setEndTime(null);
         appendLog(id, "Rollback requested by " + currentRequester() + "; restoring this job's pre-change checkpoint.");
+        if (ConfigChangeMappingService.supports(job)) configMapping.status(job);
         return jobRepository.save(job);
     }
 
@@ -439,12 +446,14 @@ public class JobService {
             job.setStatus(JobStatus.ROLLBACK_PENDING);
             job.setEndTime(null);
             jobRepository.save(job);
+            if (ConfigChangeMappingService.supports(job)) configMapping.status(job);
             appendLog(job.getId(), "Backend restarted; rollback returned to the durable execution queue.");
         }
         for (JobStep step : jobStepRepository.findAll()) {
             if (step.getStatus() == JobStepStatus.IN_PROGRESS && step.getAgentTaskId() == null) {
                 step.setStatus(JobStepStatus.PENDING);
                 jobStepRepository.save(step);
+                if (ConfigChangeMappingService.supports(step.getJob())) configMapping.step(step);
             }
         }
     }
@@ -458,6 +467,7 @@ public class JobService {
             step.setLogs(current + output + (output.endsWith("\n") ? "" : "\n"));
         }
         jobStepRepository.save(step);
+        if (ConfigChangeMappingService.supports(step.getJob())) configMapping.step(step);
         refreshProgress(step.getJob().getId());
     }
 
@@ -468,6 +478,36 @@ public class JobService {
 
     private void syncRollingRestart(Job job, String actor, String action) {
         if (job.getType() == JobType.ROLLING_RESTART) restartMapping.synchronizeStatus(job, actor, action);
+        if (ConfigChangeMappingService.supports(job)) configMapping.status(job);
+    }
+
+    @Transactional
+    public void recordConfigVerification(UUID stepId, String key, Object value, String source) {
+        configMapping.verified(getStep(stepId), key, value, source);
+    }
+
+    @Transactional
+    public void recordConfigHealth(UUID stepId, String phase, RollingRestartHealthService.HealthSnapshot snapshot) {
+        JobStep step = getStep(stepId);
+        Map<String,Object> metrics = objectMapper.convertValue(snapshot, new com.fasterxml.jackson.core.type.TypeReference<Map<String,Object>>() {});
+        configMapping.health(step.getJob(), step, phase, metrics, snapshot.healthy(), snapshot.healthy()?null:snapshot.failureReason());
+    }
+
+    @Transactional
+    public void recordConfigPlanHealth(UUID jobId, Map<String,Object> plan) {
+        Map<String,Object> metrics = new java.util.LinkedHashMap<>();metrics.put("healthy",plan.get("healthy"));metrics.put("failures",plan.get("healthFailures"));
+        configMapping.health(getJob(jobId), null, "PREVIEW", metrics,
+                Boolean.TRUE.equals(plan.get("healthy")), null);
+    }
+
+    @Transactional
+    public void recordConfigBackup(UUID stepId, Map<String,Object> metadata, Map<String,Object> previous, String output) {
+        configMapping.backup(getStep(stepId), metadata, previous, output);
+    }
+
+    @Transactional
+    public void recordConfigTargetVerification(UUID stepId, Map<String,Object> target, String key, Object value, String source) {
+        configMapping.verifiedTarget(getStep(stepId), target, key, value, source);
     }
 
     private String currentRequester() {

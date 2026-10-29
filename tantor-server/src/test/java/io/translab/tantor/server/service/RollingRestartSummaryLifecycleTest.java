@@ -18,7 +18,7 @@ class RollingRestartSummaryLifecycleTest {
     final JobStepRepository steps = mock(JobStepRepository.class);
     final RollingRestartMappingService mapping = mock(RollingRestartMappingService.class);
     final JobService service = new JobService(jobs, steps, new ObjectMapper(), mock(ClusterRepository.class),
-            mock(ExternalClusterRepository.class), mapping);
+            mock(ExternalClusterRepository.class), mapping, org.mockito.Mockito.mock(io.translab.tantor.server.service.ConfigChangeMappingService.class));
     Job job(JobStatus status) {
         var job = new Job(); job.setId(UUID.randomUUID()); job.setType(JobType.ROLLING_RESTART);
         job.setStatus(status); job.setRequestedBy("alice"); return job;

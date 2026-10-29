@@ -78,6 +78,7 @@ public class RollingConfigUpdateJobHandler implements JobHandler {
                 if (step.getName().equals("PREFLIGHT")) {
                     try {
                         var snapshot = healthService.inspect(clusterId, expectedBrokerCount, java.util.Set.of());
+                        jobService.recordConfigHealth(step.getId(), "PREFLIGHT", snapshot);
                         if (!snapshot.healthy()) throw new IllegalStateException(snapshot.failureReason());
                         if (controllerChange) verifyQuorum(clusterId);
                         jobService.completeStep(step.getId(), "Preflight Validation Passed");
@@ -102,6 +103,7 @@ public class RollingConfigUpdateJobHandler implements JobHandler {
                             break;
                         }
                         jobService.appendStepLog(step.getId(), "Checkpoint on " + host + ": " + backupResult.get("backupFilePath"));
+                        jobService.recordConfigBackup(step.getId(), mappingTarget(change), Map.of(), "Checkpoint on " + host + ": " + backupResult.get("backupFilePath"));
                     }
                     if (success) jobService.completeStep(step.getId(), "All configurations backed up");
                     else return;
@@ -109,7 +111,9 @@ public class RollingConfigUpdateJobHandler implements JobHandler {
                     String host = step.getTargetId();
                     Map<String, Object> change = findChangeForHost(changes, host);
                     if (change != null) {
-                        if (!healthService.inspect(clusterId, expectedBrokerCount, java.util.Set.of()).healthy()) {
+                        var before = healthService.inspect(clusterId, expectedBrokerCount, java.util.Set.of());
+                        jobService.recordConfigHealth(step.getId(), "PRECHECK", before);
+                        if (!before.healthy()) {
                             failJob(job, "Cluster health precheck failed before writing " + host);
                         }
                         if (controllerChange) verifyQuorum(clusterId);
@@ -139,7 +143,9 @@ public class RollingConfigUpdateJobHandler implements JobHandler {
                     String host = step.getTargetId();
                     Map<String, Object> change = findChangeForHost(changes, host);
                     if (change != null) {
-                        if (!healthService.inspect(clusterId, expectedBrokerCount, java.util.Set.of()).healthy()) {
+                        var before = healthService.inspect(clusterId, expectedBrokerCount, java.util.Set.of());
+                        jobService.recordConfigHealth(step.getId(), "PRECHECK", before);
+                        if (!before.healthy()) {
                             failJob(job, "Cluster health precheck failed before restarting " + host);
                         }
                         if (controllerChange) verifyQuorum(clusterId);
@@ -157,7 +163,7 @@ public class RollingConfigUpdateJobHandler implements JobHandler {
                     String host = step.getTargetId();
                     Map<String, Object> change = findChangeForHost(changes, host);
                     if (change != null) {
-                        boolean healthy = verifyHealthWithTimeout(clusterId, expectedBrokerCount, 90);
+                        boolean healthy = verifyHealthWithTimeout(step, clusterId, expectedBrokerCount, 90);
                         if (healthy && controllerChange) {
                             try { verifyQuorum(clusterId); }
                             catch (Exception e) { healthy = false; }
@@ -187,9 +193,10 @@ public class RollingConfigUpdateJobHandler implements JobHandler {
                             if (!actual.equals(desired) || (desired.isEmpty() && readResult.containsKey(property.get("key")))) {
                                 failJob(job, "Final value verification failed for " + property.get("key") + " on " + host);
                             }
+                            jobService.recordConfigTargetVerification(step.getId(), mappingTarget(change), String.valueOf(property.get("key")), desired.isEmpty()?null:actual, "FILE");
                         }
                     }
-                    if (!verifyHealthWithTimeout(clusterId, expectedBrokerCount, 10)) {
+                    if (!verifyHealthWithTimeout(step, clusterId, expectedBrokerCount, 10)) {
                         failJob(job, "Cluster health did not pass final verification.");
                     }
                     jobService.completeStep(step.getId(), "All node values and cluster health verified");
@@ -219,11 +226,23 @@ public class RollingConfigUpdateJobHandler implements JobHandler {
         return null;
     }
     
-    private boolean verifyHealthWithTimeout(UUID clusterId, int expectedBrokerCount, int secondsToWait) {
+    private Map<String,Object> mappingTarget(Map<String,Object> change) {
+        var target = new java.util.LinkedHashMap<String,Object>();
+        target.put("hostId",change.get("host"));target.put("nodeId",change.get("nodeId"));target.put("configPath",change.get("configFilePath"));
+        var desired = new java.util.LinkedHashMap<String,Object>();
+        if(change.get("properties") instanceof List<?> properties) for(Object raw:properties) {
+            if(raw instanceof Map<?,?> property && property.get("key")!=null) desired.put(String.valueOf(property.get("key")),property.get("newValue"));
+        }
+        target.put("changes",desired);return target;
+    }
+
+    private boolean verifyHealthWithTimeout(JobStep step, UUID clusterId, int expectedBrokerCount, int secondsToWait) {
         long end = System.currentTimeMillis() + (secondsToWait * 1000L);
         while (System.currentTimeMillis() < end) {
             try {
-                if (healthService.inspect(clusterId, expectedBrokerCount, java.util.Set.of()).healthy()) return true;
+                var snapshot = healthService.inspect(clusterId, expectedBrokerCount, java.util.Set.of());
+                jobService.recordConfigHealth(step.getId(), "POST_RESTART", snapshot);
+                if (snapshot.healthy()) return true;
             } catch (Exception e) {
                 try { Thread.sleep(2000); } catch (InterruptedException ignored) {}
             }

@@ -452,6 +452,7 @@ public class TargetedConfigChangeService {
         job.setPayload(json(Map.of("clusterId", clusterId.toString(), "role", plan.get("role"), "scope", plan.get("scope"),
                 "classification", plan.get("classification"), "key", plan.get("key"))));
         Job saved = jobService.createJob(job, steps);
+        jobService.recordConfigPlanHealth(saved.getId(), plan);
         return Map.of("jobId", saved.getId().toString(), "status", saved.getStatus().name());
     }
 

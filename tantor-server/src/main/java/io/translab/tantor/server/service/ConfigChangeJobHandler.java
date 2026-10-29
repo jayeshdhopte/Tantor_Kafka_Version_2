@@ -53,7 +53,7 @@ public class ConfigChangeJobHandler implements JobHandler {
                 if (step.getStatus() == JobStepStatus.IN_PROGRESS && step.getAgentTaskId() != null) {
                     Task completed = taskAwaiter.await(step.getAgentTaskId());
                     if ("patch_service".equals(payload.get("operation"))) {
-                        waitForHealth(clusterId, required(payload, "hostId"));
+                        waitForHealth(step, clusterId, required(payload, "hostId"));
                         assertRoleSafety(clusterId, required(payload, "role").toLowerCase(),
                                 Integer.parseInt(required(payload, "nodeId")));
                     }
@@ -133,7 +133,7 @@ public class ConfigChangeJobHandler implements JobHandler {
                 throw new IllegalStateException("Combined broker/controller processes are not eligible for role-only rolling restart.");
             }
             assertRoleSafety(clusterId, role, Integer.parseInt(required(payload, "nodeId")));
-            waitForHealth(clusterId, required(payload, "hostId"));
+            waitForHealth(step, clusterId, required(payload, "hostId"));
             @SuppressWarnings("unchecked")
             Map<String, Object> changes = (Map<String, Object>) payload.get("changes");
             @SuppressWarnings("unchecked")
@@ -149,7 +149,7 @@ public class ConfigChangeJobHandler implements JobHandler {
             jobService.attachAgentTask(step.getId(), taskId);
             Task task = taskAwaiter.await(taskId);
             jobService.appendStepLog(step.getId(), task.getLogOutput());
-            waitForHealth(clusterId, required(payload, "hostId"));
+            waitForHealth(step, clusterId, required(payload, "hostId"));
             assertRoleSafety(clusterId, role, Integer.parseInt(required(payload, "nodeId")));
             return;
         }
@@ -258,6 +258,7 @@ public class ConfigChangeJobHandler implements JobHandler {
                 backupConfigJson(config), path, key, snapshot, "dynamic-" + step.getId());
         Task backup = taskAwaiter.await(taskId);
         jobService.appendStepLog(step.getId(), backup.getLogOutput());
+        jobService.recordConfigBackup(step.getId(), Map.of("brokerId",brokerId,"hostId",node.getHostId(),"role",node.getRole(),"configPath",path,"key",key,"value",value), Map.of(key,previous), backup.getLogOutput());
         if (Thread.currentThread().isInterrupted()) throw new IllegalStateException("Interrupted before configuration change");
         Map<String, Object> latest = kafkaAdminService.getBrokerConfigs(clusterId).get(brokerId);
         if (latest == null || !java.util.Objects.equals(previous, latest.get(key))) throw new IllegalStateException("Broker value changed while backing up; refresh the plan.");
@@ -280,7 +281,7 @@ public class ConfigChangeJobHandler implements JobHandler {
         return String.valueOf(value);
     }
 
-    private void waitForHealth(UUID clusterId, String hostId) {
+    private void waitForHealth(JobStep step, UUID clusterId, String hostId) {
         int expectedBrokers = clusterRepository.findWithServicesById(clusterId)
                 .map(cluster -> (int) cluster.getServices().stream()
                         .filter(service -> service.getRole() != null && service.getRole().contains("broker"))
@@ -288,6 +289,7 @@ public class ConfigChangeJobHandler implements JobHandler {
         String lastReason = "Kafka health did not recover";
         for (int attempt = 0; attempt < 45; attempt++) {
             var snapshot = health.inspect(clusterId, Math.max(1, expectedBrokers), Set.of(hostId));
+            jobService.recordConfigHealth(step.getId(), "EXECUTION", snapshot);
             if (snapshot.healthy()) return;
             lastReason = snapshot.failureReason();
             try { Thread.sleep(2000); }
