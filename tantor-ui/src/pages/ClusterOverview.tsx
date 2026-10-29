@@ -189,19 +189,19 @@ export function ClusterOverview() {
               <>
                 <div className="overview-item">
                   <div className="overview-label">Install directory</div>
-                  <div className="overview-value">{overview.installDirectory || '-'}</div>
+                  <div className="overview-value overview-directory-value">{overview.installDirectory || '-'}</div>
                 </div>
                 <div className="overview-item">
                   <div className="overview-label">Config directory</div>
-                  <div className="overview-value">{overview.configDirectory || '-'}</div>
+                  <div className="overview-value overview-directory-value">{overview.configDirectory || '-'}</div>
                 </div>
                 <div className="overview-item">
                   <div className="overview-label">Data directory</div>
-                  <div className="overview-value">{overview.dataDirectory || '-'}</div>
+                  <div className="overview-value overview-directory-value">{overview.dataDirectory || '-'}</div>
                 </div>
                 <div className="overview-item">
                   <div className="overview-label">Log directory</div>
-                  <div className="overview-value">{overview.logDirectory || '-'}</div>
+                  <div className="overview-value overview-directory-value">{overview.logDirectory || '-'}</div>
                 </div>
               </>
             )}

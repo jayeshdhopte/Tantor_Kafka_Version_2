@@ -97,9 +97,9 @@ export async function cleanupTask(clusterId: string, taskId: string): Promise<un
 }
 
 // ── Security - ACLs ──────────────────────────────────
-export const getAcls = (clusterId: string, params?: AclQueryParams) => {
+export const getAcls = (clusterId: string, params?: AclQueryParams, signal?: AbortSignal) => {
   const query = new URLSearchParams(params as Record<string, string>).toString();
-  return fetchWithAuth(`/api/v1/clusters/${clusterId}/security/acls${query ? '?' + query : ''}`);
+  return fetchWithAuth(`/api/v1/clusters/${clusterId}/security/acls${query ? '?' + query : ''}`, { signal });
 };
 
 export const createAcl = (clusterId: string, data: AclPayload) =>

@@ -1,5 +1,7 @@
 import { RefreshButton } from './RefreshButton';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { LiveRefreshControl } from './LiveRefreshControl';
+import { useLiveRefresh } from '../hooks/useLiveRefresh';
 import { createPortal } from 'react-dom';
 import {
   Plus, Trash2, RefreshCw, Loader2, Search, AlertCircle, X,
@@ -46,22 +48,37 @@ export default function SecurityManager({ clusterId }: Props) {
   const [aclToDelete, setAclToDelete] = useState<AclEntry | null>(null);
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
 
-  const fetchAcls = useCallback(async () => {
-    setAclsLoading(true);
+  const activeRequest = useRef<AbortController | null>(null);
+  const fetchAcls = useCallback(async (quiet = false, signal?: AbortSignal) => {
+    if (quiet && activeRequest.current) return;
+    activeRequest.current?.abort();
+    const controller = new AbortController();
+    activeRequest.current = controller;
+    const cancel = () => controller.abort();
+    signal?.addEventListener('abort', cancel, { once: true });
+    if (signal?.aborted) controller.abort();
+    if (!quiet) setAclsLoading(true);
     setAclsError('');
     try {
-      const data = await getAcls(clusterId);
-      setAcls(data.acls || []);
+      const data = await getAcls(clusterId, undefined, controller.signal);
+      if (!controller.signal.aborted) setAcls(data.acls || []);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to load ACLs';
       const axErr = err as { response?: { data?: { detail?: string } } };
-      setAclsError(axErr.response?.data?.detail || msg);
+      if (!controller.signal.aborted) setAclsError(axErr.response?.data?.detail || msg);
     } finally {
-      setAclsLoading(false);
+      signal?.removeEventListener('abort', cancel);
+      if (activeRequest.current === controller) { activeRequest.current = null; setAclsLoading(false); }
     }
   }, [clusterId]);
 
-  useEffect(() => { void (async () => { await fetchAcls(); })(); }, [fetchAcls]);
+  useEffect(() => {
+    void (async () => { await fetchAcls(); })();
+    return () => { activeRequest.current?.abort(); activeRequest.current = null; };
+  }, [fetchAcls]);
+
+  const liveRefresh = useLiveRefresh({ scope: `${clusterId}:acls`, refresh: signal => fetchAcls(true, signal),
+    paused: aclsLoading || aclCreating || showCreateAcl || Boolean(aclToDelete) });
 
   const handleCreateAcl = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -147,7 +164,7 @@ export default function SecurityManager({ clusterId }: Props) {
 
   return (
     <div className="security-manager" style={{ padding: '0px 10px' }}>
-      <div style={{
+      <div className="acl-refresh-toolbar" style={{
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
@@ -200,7 +217,7 @@ export default function SecurityManager({ clusterId }: Props) {
         {/* Right side: Actions */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <RefreshButton
-            onClick={fetchAcls} 
+            onClick={() => fetchAcls()}
             disabled={aclsLoading} 
             style={{
               display: 'flex',
@@ -219,6 +236,7 @@ export default function SecurityManager({ clusterId }: Props) {
           >
             <RefreshCw size={18} className={aclsLoading ? 'spin' : ''} />
           </RefreshButton>
+          <LiveRefreshControl {...liveRefresh} label="ACLs" />
           {canManage && (
             <button 
               onClick={() => setShowCreateAcl(true)} 

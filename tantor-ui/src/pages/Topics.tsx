@@ -121,10 +121,11 @@ export function Topics() {
     }
   }, [id, includeInternal, page, search, size]);
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch synchronizes Kafka data
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch synchronizes Kafka data
     fetchTopics();
-    return () => { topicRequest.current++; };
+    const requests = topicRequest;
+    return () => { requests.current++; };
   }, [fetchTopics]);
   useEffect(() => {
     if (!autoRefresh) return;

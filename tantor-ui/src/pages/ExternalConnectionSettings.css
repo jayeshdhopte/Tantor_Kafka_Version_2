@@ -1,0 +1,85 @@
+.external-settings-page {
+  min-width: 0;
+  margin: 20px;
+  padding: 24px;
+  border: 1px solid #E4E7EC;
+  border-radius: 8px;
+  background: #FFFFFF;
+  color: #332849;
+}
+.external-settings-page button,
+.external-settings-page input,
+.external-settings-page select { font: inherit; font-size: 13px; }
+.external-settings-page button { cursor: pointer; }
+.external-settings-page .external-settings-back { display: inline-flex; align-items: center; gap: 8px; padding: 6px 0; margin-bottom: 18px; border: 0; background: transparent; color: var(--button-primary, #3E1363); font-weight: 500; }
+.external-settings-back:hover { text-decoration: underline; text-underline-offset: 4px; }
+.external-settings-header { display: flex; align-items: flex-start; gap: 14px; padding: 4px 0 22px; border: 0; border-bottom: 1px solid #E4E7EC; border-radius: 0; background: transparent; }
+.external-settings-header > svg { flex: none; width: 22px; height: 22px; padding: 0; margin-top: 4px; border: 0; background: transparent; color: #000000; }
+.external-settings-header > div { min-width: 0; }
+.external-settings-header h2 { margin: 0; font-size: 22px; font-weight: 600; line-height: 30px; color: #282F49; overflow-wrap: anywhere; }
+.external-settings-header p { max-width: 760px; margin: 7px 0 0; font-size: 13px; line-height: 21px; color: #667085; }
+.external-settings-page .connection-options { min-width: 0; padding: 0; margin: 24px 0 0; border: 0; border-radius: 0; background: transparent; }
+.external-settings-page .bootstrap-options { padding-bottom: 24px; border-bottom: 1px solid #E4E7EC; }
+.external-settings-page .bootstrap-options > label { margin-bottom: 14px; color: #332849; font-size: 15px; font-weight: 600; }
+.external-settings-page .connection-options legend { padding: 0; margin-bottom: 8px; color: #332849; font-size: 15px; font-weight: 600; line-height: 24px; }
+.external-settings-page .connection-options p { margin: 8px 0 16px; color: #667085; font-size: 12px; line-height: 20px; }
+.external-settings-page .connection-options label { color: #475467; font-size: 12px; font-weight: 500; gap: 7px; overflow-wrap: anywhere; }
+.external-settings-page .connection-options input,
+.external-settings-page .connection-options select { min-height: 40px; padding: 9px 12px; border: 1px solid #D0D5DD; border-radius: 6px; background: #FFFFFF; color: #332849; line-height: 20px; box-shadow: 0 1px 2px #10182805; transition: border-color .15s, box-shadow .15s; }
+.external-settings-page .connection-options input:hover:not(:disabled),
+.external-settings-page .connection-options select:hover:not(:disabled) { border-color: #A797B8; }
+.external-settings-page .connection-options :is(input, select):focus-visible { border-color: #80649C; box-shadow: 0 0 0 3px #F0EAF7; }
+.external-settings-page :is(button, input, select, summary):focus-visible { outline: 2px solid #8B72B7; outline-offset: 3px; }
+.external-settings-page :is(button, input, select):disabled,
+.external-settings-page fieldset:disabled :is(button, input, select) { cursor: not-allowed; opacity: .6; }
+.external-settings-page .connection-options .ds-button { min-height: 38px; box-sizing: border-box; padding: 8px 12px; border: 1px solid #D8C8E8; border-radius: 6px; background: #FFFFFF; color: var(--button-primary, #3E1363); font-size: 13px; line-height: 20px; }
+.external-settings-page .connection-options .ds-button svg { flex: none; }
+.external-settings-page .connection-options .ds-button:hover:not(:disabled) { background: #F6F3F9; border-color: #8B72B7; }
+.external-settings-page .connection-options .ds-button[aria-label^='Remove'] { background: #F2EAF9; border-color: #DDCBEA; color: #602C82; box-shadow: 0 1px 2px #3E13630A; }
+.external-settings-page .connection-options .ds-button[aria-label^='Remove']:hover:not(:disabled) { background: #E8DAF3; border-color: #B799D0; color: #3E1363; }
+.external-settings-page .connection-row { align-items: flex-end; gap: 12px; margin: 12px 0; }
+.external-settings-page .connection-row > input { min-width: 0; }
+.external-settings-page .connection-row > .ds-button { width: 40px; height: 40px; flex: 0 0 40px; padding: 0; }
+.external-settings-page .bootstrap-options > .connection-row { padding: 12px; border: 1px solid #E4E7EC; border-radius: 6px; background: #F8FAFC; }
+.external-settings-page .connection-options details { padding: 0 0 18px; border: 0; border-bottom: 1px solid #E4E7EC; margin-top: 18px; }
+.external-settings-page .connection-options summary { box-sizing: border-box; min-height: 48px; padding: 12px 16px; margin: 0 0 16px; border: 1px solid #E4E7EC; border-radius: 6px; background: #F8FAFC; color: #344054; font-size: 14px; font-weight: 600; line-height: 24px; overflow-wrap: anywhere; box-shadow: 0 1px 2px #10182805; }
+.external-settings-page .connection-options details:not([open]) { padding-bottom: 0; border-bottom: 0; }
+.external-settings-page .connection-options details:not([open]) > summary { margin-bottom: 0; }
+.external-settings-page .connection-options summary::marker { color: var(--button-primary, #3E1363); font-size: 12px; }
+.external-settings-page .connection-options details[open] > summary { background: #F6F2FA; border-color: #DDD0E8; box-shadow: inset 3px 0 var(--button-primary, #3E1363); color: var(--button-primary, #3E1363); }
+.external-settings-page .connection-options summary:hover { background: #F1F3F6; }
+.external-settings-page .connection-options summary span { display: inline-block; padding: 1px 8px; margin-left: 12px; border: 1px solid #DDD0E8; border-radius: 4px; background: #F2EAF9; color: #602C82; font-size: 11px; font-weight: 500; line-height: 20px; }
+.external-settings-page .connection-service-row { grid-template-columns: minmax(0, 1fr) 110px minmax(0, 1.3fr) 100px 40px; align-items: end; gap: 12px; padding: 14px; margin: 0 0 16px; border: 1px solid #E4E7EC; border-radius: 6px; background: #F8FAFC; }
+.external-settings-page .connection-service-row > .ds-button { width: 40px; height: 40px; padding: 0; }
+.external-settings-page .connection-mask-rule { padding: 16px; margin: 16px 0; border-color: #E4E7EC; border-radius: 6px; background: #FAFBFC; gap: 14px; }
+.external-settings-page .connection-mask-rule .connection-row { margin: 0; }
+.external-settings-footer { display: flex; justify-content: flex-end; padding: 16px 0 0; margin-top: 24px; border-top: 1px solid #E4E7EC; }
+.external-settings-save { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; max-width: 100%; padding: 10px 16px; border: 1px solid var(--button-primary, #3E1363); border-radius: 6px; background: var(--button-primary, #3E1363); color: #FFFFFF; line-height: 20px; overflow-wrap: anywhere; box-shadow: 0 2px 4px #3E136326; }
+.external-settings-save:hover:not(:disabled) { filter: brightness(.92); }
+.external-settings-notice { display: flex; align-items: flex-start; gap: 10px; margin: 20px 0; padding: 12px 14px; border: 1px solid; border-radius: 6px; font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
+.external-settings-notice svg { flex: none; margin-top: 1px; }
+.external-settings-notice span { min-width: 0; }
+.external-settings-notice.error { background: #FFF5F6; border-color: #F1CAD2; color: #A52C48; }
+.external-settings-notice.success { background: #F0FAF4; border-color: #BBE3CD; color: #166534; }
+.external-settings-loading { display: flex; align-items: center; gap: 10px; padding: 24px 0; color: #667085; font-size: 13px; }
+.external-settings-spin { animation: external-settings-spin .8s linear infinite; }
+@keyframes external-settings-spin { to { transform: rotate(360deg); } }
+@media (max-width: 1000px) {
+  .external-settings-page .connection-service-row { grid-template-columns: minmax(0, 1fr) 110px; }
+}
+@media (max-width: 640px) {
+  .external-settings-page { margin: 12px; padding: 16px; }
+  .external-settings-header { padding: 0 0 18px; gap: 10px; }
+  .external-settings-header h2 { font-size: 18px; line-height: 26px; }
+  .external-settings-page .connection-row { flex-wrap: wrap; }
+  .external-settings-page .connection-row > label { flex-basis: 100%; }
+  .external-settings-page .bootstrap-options .connection-row > input { flex-basis: calc(100% - 52px); }
+  .external-settings-page .connection-service-row { grid-template-columns: minmax(0, 1fr); }
+  .external-settings-page .connection-options summary { padding: 10px 12px; }
+  .external-settings-page .connection-options summary span { margin-left: 6px; }
+  .external-settings-save { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .external-settings-spin { animation: none; }
+  .external-settings-page .connection-options :is(input, select) { transition: none; }
+}
