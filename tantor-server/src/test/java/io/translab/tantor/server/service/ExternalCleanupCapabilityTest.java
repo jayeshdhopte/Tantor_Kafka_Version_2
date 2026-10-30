@@ -13,7 +13,7 @@ import static org.mockito.ArgumentMatchers.*;
 class ExternalCleanupCapabilityTest {
  @Test void requiresUpdatedAgentBeforeDispatchingDestructiveCleanup() {
   var agents=mock(DiscoveryAgentRepository.class);var tasks=mock(ExternalServiceTaskRepository.class);
-  var manager=new ExternalDataServiceManager(mock(ExternalClusterRepository.class),agents,mock(ExternalDataServiceRepository.class),tasks,mock(JobService.class),mock(ExternalServiceArtifacts.class),new ObjectMapper(), org.mockito.Mockito.mock(io.translab.tantor.server.service.AddServiceMappingService.class));
+  var manager=new ExternalDataServiceManager(mock(ExternalClusterRepository.class),agents,mock(ExternalDataServiceRepository.class),tasks,mock(JobService.class),mock(ExternalServiceArtifacts.class),new ObjectMapper(), org.mockito.Mockito.mock(io.translab.tantor.server.service.AddServiceMappingService.class), org.mockito.Mockito.mock(io.translab.tantor.server.repository.ClusterServiceAssignmentRepository.class));
   UUID cluster=UUID.randomUUID();var service=new ExternalDataService();service.setId(UUID.randomUUID());service.setClusterId(cluster);service.setAgentId("agent");
   var agent=new DiscoveryAgent();agent.setId("agent");agent.setClusterId(cluster);agent.setStatus("ONLINE");agent.setLastHeartbeat(OffsetDateTime.now());agent.setCanDeployServices(true);agent.setVersion("3.4.0-dataservices.2-paths.1");
   when(agents.findById("agent")).thenReturn(Optional.of(agent));
