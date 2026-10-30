@@ -362,7 +362,7 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
 
     private void checkHealth(JobStep step, UUID clusterId, int expectedBrokers, String hostId) {
         var snapshot = health.inspect(clusterId, expectedBrokers, Set.of(hostId));
-        jobs.recordConfigHealth(step.getId(), step.getJob()!=null && step.getJob().getStatus() == JobStatus.ROLLING_BACK ? "ROLLBACK" : "EXECUTION", snapshot);
+        jobs.recordConfigExecutionHealth(step.getId(), snapshot);
         if (!snapshot.healthy()) throw new IllegalStateException(snapshot.failureReason());
     }
 

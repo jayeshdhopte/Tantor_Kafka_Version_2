@@ -488,7 +488,18 @@ public class JobService {
 
     @Transactional
     public void recordConfigHealth(UUID stepId, String phase, RollingRestartHealthService.HealthSnapshot snapshot) {
+        recordConfigHealth(getStep(stepId), phase, snapshot);
+    }
+
+    @Transactional
+    public void recordConfigExecutionHealth(UUID stepId, RollingRestartHealthService.HealthSnapshot snapshot) {
+        // Worker steps are detached. Resolve their parent status while this transaction is open.
         JobStep step = getStep(stepId);
+        String phase = step.getJob().getStatus() == JobStatus.ROLLING_BACK ? "ROLLBACK" : "EXECUTION";
+        recordConfigHealth(step, phase, snapshot);
+    }
+
+    private void recordConfigHealth(JobStep step, String phase, RollingRestartHealthService.HealthSnapshot snapshot) {
         Map<String,Object> metrics = objectMapper.convertValue(snapshot, new com.fasterxml.jackson.core.type.TypeReference<Map<String,Object>>() {});
         configMapping.health(step.getJob(), step, phase, metrics, snapshot.healthy(), snapshot.healthy()?null:snapshot.failureReason());
     }
