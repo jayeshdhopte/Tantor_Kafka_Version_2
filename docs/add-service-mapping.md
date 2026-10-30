@@ -6,12 +6,18 @@ Local implementation for Schema Registry and Kafka Connect on `VERSION_2_LATEST`
 
 V91 adds `public.kf_add_service` to the existing local database (`127.0.0.1:5433`, database `tantor`). It has the diagram's 16 fields. Only `add_service_id` is required. There are no foreign keys, CHECK constraints or defaults. The diagram did not specify SQL types: identifiers use UUID, `created_time` uses TIMESTAMPTZ, `secured` uses BOOLEAN and other fields use TEXT.
 
+V93 adds `kafka_cluster_id` and V94 adds nullable TEXT `cluster_origin`, bringing the current total to 18 fields. `cluster_origin` is `EXTERNAL` when the UUID belongs to external-cluster inventory; otherwise the saved internal inventory `origin_type` supplies `INTERNAL` or `EXTERNAL`. Unclassifiable/missing inventory stays NULL. External inventory takes precedence over its internal mirror.
+
+V94 fills the new origin field for existing rows whose inventory proves their classification. No prior field or audit row is changed. An insert/update trigger also resolves it for future writes and cluster reassignment; status/retry updates preserve it. Both Schema Registry and Kafka Connect use this behavior, without changing existing Java entities, application SQL, API responses or deployment commands.
+
 The diagram's `host_id/fqdn` label is represented by `host_id`. The following meanings were explicitly approved:
 
 | Field | Meaning/source |
 |---|---|
 | add_service_id | Existing `kf_cluster_services.id` or `kf_external_services.id`; one mapping per deployed instance |
 | cluster_id | Existing assignment's cluster ID, stored as a plain ID |
+| kafka_cluster_id | Actual native Kafka ID from saved cluster inventory; V93 snapshot rules apply |
+| cluster_origin | INTERNAL / EXTERNAL from saved inventory; NULL when unknown |
 | created_time | Actual time the new assignment is mapped; preserved on retry |
 | status | Existing assignment's deployment status |
 | host_id | Managed host ID or external discovery agent ID |

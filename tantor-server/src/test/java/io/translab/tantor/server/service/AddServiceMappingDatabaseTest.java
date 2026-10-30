@@ -34,7 +34,7 @@ class AddServiceMappingDatabaseTest {
             service.setConfigJson("{\"bootstrap_servers\":\"a:9092,b:9092\",\"service_user\":\"root\"}");
             mappings.recordExternal(service, "creator");
             var created = jdbc.queryForMap("SELECT * FROM kf_add_service WHERE add_service_id = ?", schemaId);
-            assertThat(created).hasSize(17).containsEntry("broker_ip", "a:9092,b:9092")
+            assertThat(created).hasSize(18).containsEntry("broker_ip", "a:9092,b:9092")
                     .containsEntry("user", "root").containsEntry("host_id", "mapping-test-agent");
             for (String field : new String[]{"secured", "security_protocol", "security_mechanism",
                     "trust_store_location", "user_security", "password_security"}) assertThat(created.get(field)).isNull();

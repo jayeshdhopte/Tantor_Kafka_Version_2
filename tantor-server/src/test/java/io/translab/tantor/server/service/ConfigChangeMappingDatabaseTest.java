@@ -252,6 +252,56 @@ class ConfigChangeMappingDatabaseTest {
         });
     }
 
+    @Test void mirroredExternalDynamicChangesPopulateVersionsAndSynchronizeTheirLifecycle() {
+        verifyMirroredExternalVersions(false);
+    }
+
+    @Test void mirroredExternalStaticChangesPopulateVersionsAndSynchronizeTheirLifecycle() {
+        verifyMirroredExternalVersions(true);
+    }
+
+    private void verifyMirroredExternalVersions(boolean file) {
+        rollback(()->{
+            Job job=job(JobType.CONFIG_CHANGE,file);job.setType(JobType.TARGETED_CONFIG_CHANGE);
+            UUID cluster=UUID.fromString(read(job.getPayload()).get("clusterId").toString());
+            jdbc.update("INSERT INTO kf_external_clusters(id,cluster_name,bootstrap_servers,kafka_cluster_id) VALUES (?,?,'fixture:9092','ExternalVersionKafkaId')",cluster,"external-version-test-"+cluster);
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM kf_clusters WHERE id=? AND origin_type='EXTERNAL'",Long.class,cluster)).isEqualTo(1);
+            jdbc.update("INSERT INTO kf_jobs(id,type,status,payload,requested_by) VALUES (?,?,?,?::jsonb,?)",job.getId().toString(),job.getType().name(),job.getStatus().name(),job.getPayload(),job.getRequestedBy());
+            var steps=steps(job,file);
+            for(var step:steps) {
+                var payload=read(step.getPayload());payload.put("hostId","external:"+UUID.randomUUID());step.setPayload(json(payload));
+            }
+            mapping.record(job,steps);mapping.record(job,steps);
+            assertThat(versionCount(job)).isEqualTo(2);
+            assertThat(jdbc.queryForList("SELECT kafka_cluster_id FROM kf_config_versions WHERE job_id=?",String.class,job.getId().toString()))
+                    .containsOnly("ExternalVersionKafkaId");
+            assertThat(jdbc.queryForList("SELECT validation_result->>'executionType' FROM kf_config_versions WHERE job_id=?",String.class,job.getId().toString()))
+                    .containsOnly(file?"STATIC":"DYNAMIC");
+            job.setStatus(JobStatus.IN_PROGRESS);mapping.status(job);
+            String key=file?"queued.max.requests":"log.retention.hours";
+            for(var step:steps) {
+                start(step);mapping.step(step);
+                var payload=read(step.getPayload());
+                payload.put("recoveryCheckpoint",file?Map.of("file",Map.of(key,"before-checkpoint")):
+                        Map.of("dynamic",Map.of(key,Map.of("value","before-checkpoint","source","DYNAMIC_BROKER_CONFIG","isSensitive",false))));
+                step.setPayload(json(payload));mapping.step(step);
+                step.setStatus(JobStepStatus.FAILED);mapping.step(step);
+                step.setRetryCount(1);start(step);mapping.step(step);
+                step.setStatus(JobStepStatus.SUCCESS);step.setEndTime(Instant.now());mapping.step(step);
+            }
+            job.setStatus(JobStatus.SUCCESS);job.setEndTime(Instant.now());mapping.status(job);
+            assertThat(jdbc.queryForList("SELECT status FROM kf_config_versions WHERE job_id=?",String.class,job.getId().toString())).containsOnly("APPLIED");
+            assertThat(jdbc.queryForList("SELECT old_config->>? FROM kf_config_versions WHERE job_id=?",String.class,key,job.getId().toString()))
+                    .containsOnly("before-checkpoint");
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM kf_config_versions WHERE job_id=? AND applied_at IS NOT NULL AND service_id IS NULL",Long.class,job.getId().toString())).isEqualTo(2);
+            job.setStatus(JobStatus.ROLLING_BACK);
+            for(var step:steps){step.setStatus(JobStepStatus.ROLLED_BACK);mapping.step(step);}
+            job.setStatus(JobStatus.ROLLED_BACK);mapping.status(job);
+            assertThat(jdbc.queryForList("SELECT status FROM kf_config_versions WHERE job_id=?",String.class,job.getId().toString())).containsOnly("SUPERSEDED");
+            assertThat(versionCount(job)).isEqualTo(2);
+        });
+    }
+
     private long count(String table,Job job){return jdbc.queryForObject("SELECT count(*) FROM "+table+" WHERE change_id=?",Long.class,job.getId());}
     private void rollback(Runnable body){transactions.executeWithoutResult(tx->{tx.setRollbackOnly();body.run();});}
     private static void start(JobStep step){step.setStatus(JobStepStatus.IN_PROGRESS);step.setStartTime(Instant.now());step.setEndTime(null);}

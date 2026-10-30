@@ -24,7 +24,7 @@ V93 adds nullable TEXT `kafka_cluster_id` columns to all 19 existing public tabl
 | kf_rolling_restart_table | cluster_id | kafka_cluster_id |
 | kf_tasks | cluster_id | kafka_cluster_id |
 
-The 11 ER tables retain their original 167 fields, plus these two additions: kf_config_change.kafka_cluster_id and kf_cluster_operation_lock.kafka_cluster_id (169 columns total across the 11 tables). Add Service now has 17 columns; standalone restart has 19.
+The 11 ER tables retain their original 167 fields, plus these two additions: kf_config_change.kafka_cluster_id and kf_cluster_operation_lock.kafka_cluster_id (169 columns total across the 11 tables). V93 brings Add Service to 17 columns; V94 adds cluster_origin for a current total of 18. Standalone restart has 19.
 
 ## Population
 

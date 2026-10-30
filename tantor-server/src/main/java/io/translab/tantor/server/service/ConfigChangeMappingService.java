@@ -157,10 +157,11 @@ public class ConfigChangeMappingService {
         if(job.getType()!=JobType.TARGETED_CONFIG_CHANGE) return;
         UUID version=id(targetId(job,payload),"config-version");
         String host=text(payload.get("hostId")), role=text(payload.get("role")), path=text(payload.get("configPath"));
-        // External targets belong to kf_external_clusters. The existing required
-        // cluster_id FK cannot represent them; retain ER history without breaking
-        // the accepted job while external version storage awaits schema approval.
-        if(host!=null && host.startsWith("external:")) return;
+        // V65 mirrors external inventory into kf_clusters using the same UUID.
+        // Reuse that real row for the existing FK, but never manufacture a mirror
+        // or fail the accepted config job when inventory is incomplete.
+        if(host!=null && host.startsWith("external:") && !Boolean.TRUE.equals(jdbc.queryForObject(
+                "SELECT EXISTS(SELECT 1 FROM kf_clusters WHERE id=?)",Boolean.class,cluster(job)))) return;
         if(host==null || role==null || path==null || job.getRequestedBy()==null)
             throw new IllegalStateException("Targeted config version requires the accepted plan's host, role, config path and requester");
         jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtext(?))",Object.class,"targeted-config-version:"+cluster(job)+":"+host+":"+role+":"+path);
@@ -186,8 +187,6 @@ public class ConfigChangeMappingService {
 
     private void syncTargetedVersion(JobStep step,Map<String,Object> payload) {
         if(step.getJob().getType()!=JobType.TARGETED_CONFIG_CHANGE) return;
-        String host=text(payload.get("hostId"));
-        if(host!=null && host.startsWith("external:")) return;
         UUID version=id(targetId(step.getJob(),payload),"config-version");
         String state=switch(step.getStatus()) {
             case SUCCESS -> "APPLIED";
