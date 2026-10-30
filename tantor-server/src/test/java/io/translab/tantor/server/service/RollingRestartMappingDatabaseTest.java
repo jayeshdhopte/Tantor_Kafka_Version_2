@@ -64,7 +64,7 @@ class RollingRestartMappingDatabaseTest {
                 mapping.record(job,cluster,List.of(first,second));
                 flushAudit(mapping,pending);
                 var original=jdbc.queryForMap("SELECT * FROM kf_rolling_restart_table WHERE unique_id=?",job.getId());
-                assertThat(original).hasSize(18).containsEntry("user","test-creator").containsEntry("bootstrap_server_ip","a:9092,b:9092");
+                assertThat(original).hasSize(19).containsEntry("user","test-creator").containsEntry("bootstrap_server_ip","a:9092,b:9092");
                 assertThat(original.get("log_path")).isNull();assertThat(original.get("old_config_path")).isNull();
                 assertThat(original.get("host_id").toString()).contains("a","b");
                 assertThat(original.get("role_per_node").toString()).contains("controller","broker");
