@@ -45,4 +45,18 @@ class ConfigMappingLifecycleTest {
     @Test void standaloneRestartsContinueUsingTheirOwnMapping(){
         var job=job(JobType.ROLLING_RESTART);service.updateJobStatus(job.getId(),JobStatus.SUCCESS);verifyNoInteractions(mapping);
     }
+
+    @ParameterizedTest
+    @EnumSource(value=JobStatus.class,names={"IN_PROGRESS","ROLLING_BACK"})
+    void executionHealthUsesThePersistedParentStatus(JobStatus status) {
+        var job=job(JobType.TARGETED_CONFIG_CHANGE);job.setStatus(status);
+        var step=new JobStep();step.setId(UUID.randomUUID());step.setJob(job);
+        when(steps.findById(step.getId())).thenReturn(Optional.of(step));
+        var snapshot=new RollingRestartHealthService.HealthSnapshot(true,3,101,0,0,0,0,Map.of());
+
+        service.recordConfigExecutionHealth(step.getId(),snapshot);
+
+        verify(mapping).health(eq(job),eq(step),eq(status==JobStatus.ROLLING_BACK?"ROLLBACK":"EXECUTION"),
+                argThat(metrics->metrics.get("visibleBrokers").equals(3)),eq(true),isNull());
+    }
 }
