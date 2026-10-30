@@ -7,8 +7,28 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.*;
 
 class ConfigVersionServiceTest {
+
+    @Test
+    void targetedPropertyRevisionsCannotEnterFullFileApplyApproveOrRollback() {
+        var repository=mock(io.translab.tantor.server.persistence.ConfigVersionRepository.class);
+        var jobs=mock(JobService.class);
+        var services=mock(io.translab.tantor.server.repository.ClusterServiceAssignmentRepository.class);
+        var cluster=java.util.UUID.randomUUID();var version=new io.translab.tantor.server.domain.ConfigVersion();
+        version.setId(java.util.UUID.randomUUID());version.setClusterId(cluster);
+        version.setStatus(io.translab.tantor.server.domain.ConfigVersionStatus.FAILED);
+        version.setValidationResult("{\"targetedChangeHistory\":true}");
+        when(repository.findById(version.getId())).thenReturn(java.util.Optional.of(version));
+        var guarded=new ConfigVersionService(repository,services,null,jobs,null,new ObjectMapper(),null);
+        assertThatThrownBy(()->guarded.apply(cluster,version.getId(),true)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("selected properties");
+        assertThatThrownBy(()->guarded.createRollback(cluster,version.getId())).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("selected properties");
+        assertThatThrownBy(()->guarded.approve(cluster,version.getId())).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("selected properties");
+        verifyNoInteractions(services);
+        verify(repository,never()).save(any());
+    }
 
     private final ConfigVersionService service = new ConfigVersionService(
             null, null, null, null, null, new ObjectMapper(), null);

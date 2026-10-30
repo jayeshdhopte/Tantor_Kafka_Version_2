@@ -20,7 +20,7 @@ public class ConfigChangeMappingService {
     private final JdbcTemplate jdbc;
     private final ObjectMapper mapper;
     private static final Set<JobType> TYPES = Set.of(JobType.TARGETED_CONFIG_CHANGE, JobType.CONFIG_CHANGE, JobType.ROLLING_CONFIG_UPDATE);
-    private static final Set<String> JSON = Set.of("catalog_snapshot", "requested_payload", "response_payload", "metrics");
+    private static final Set<String> JSON = Set.of("catalog_snapshot", "requested_payload", "response_payload", "metrics", "old_config", "new_config", "validation_result");
     private static final Pattern BACKUP = Pattern.compile("(?m)^(?:\\[[^\\]\\r\\n]+\\]\\s*)?(?:Rollback checkpoint \\(7-day retention\\): |Configuration backup \\(7-day retention\\): |Live dynamic property checkpoint: |Disk checkpoint \\(7-day retention\\): |Dynamic checkpoint \\(7-day retention\\): |Existing config backed up to |Checkpoint on [^\\r\\n]+?: )(/[^\\r\\n]+)$");
 
     public static boolean supports(Job job) { return job != null && job.getType() != null && TYPES.contains(job.getType()); }
@@ -57,6 +57,7 @@ public class ConfigChangeMappingService {
             if (payload.isEmpty()) continue;
             for (Map<String,Object> target : targets(job,step,payload)) {
                 UUID targetId = target(job,step,target);
+                recordTargetedVersion(job, step, target);
                 if (isStatic(target)) {
                     staticTargets.add(targetId);
                     insert("kf_rolling_restart_node_step","restart_step_id",fields("restart_step_id",targetId,
@@ -99,6 +100,14 @@ public class ConfigChangeMappingService {
     @Transactional
     public void status(Job job) {
         if (!supports(job)) return;
+        if (job.getType()==JobType.TARGETED_CONFIG_CHANGE) {
+            String state=switch(job.getStatus()) {
+                case FAILED, PARTIAL_SUCCESS, ROLLBACK_FAILED -> "FAILED";
+                case ROLLED_BACK -> "SUPERSEDED";
+                default -> null;
+            };
+            if(state!=null) jdbc.update("UPDATE kf_config_versions SET status=? WHERE job_id=? AND validation_result->>'targetedChangeHistory'='true' AND status IN ('VALIDATED','APPLYING')",state,job.getId().toString());
+        }
         jdbc.update("UPDATE kf_config_change SET status=?, execution_started_at=COALESCE(execution_started_at,?), completed_at=?, updated_at=? WHERE change_id=?",
                 job.getStatus().name(),time(job.getStartTime()),time(job.getEndTime()),now(),job.getId());
         boolean terminal = Set.of(JobStatus.SUCCESS,JobStatus.FAILED,JobStatus.PARTIAL_SUCCESS,JobStatus.ROLLED_BACK,JobStatus.ROLLBACK_FAILED).contains(job.getStatus());
@@ -135,11 +144,73 @@ public class ConfigChangeMappingService {
                         step.getStatus()==JobStepStatus.IN_PROGRESS?targetId:null,job.getId(),now(),job.getId());
             }
             captureCheckpoint(step,target,targetId);
+            syncTargetedVersion(step,target);
             if (selected.size()==1 || !payload.containsKey("previousByBroker")) capturePaths(step,target,targetId,step.getLogs());
             if (step.getStatus()==JobStepStatus.SUCCESS && step.getLogs()!=null && step.getLogs().contains("Active config values verified")) {
                 jdbc.update("UPDATE kf_config_change_node_value SET value_after=CASE WHEN is_sensitive THEN NULL ELSE desired_value END, source_after='FILE', verification_status='SUCCESS', verified_at=?, updated_at=? WHERE target_id=? AND verification_status IS NULL",now(),now(),targetId);
             }
         }
+    }
+
+    /** Partial property history, never a standalone file-apply/restore document. */
+    private void recordTargetedVersion(Job job, JobStep step, Map<String,Object> payload) {
+        if(job.getType()!=JobType.TARGETED_CONFIG_CHANGE) return;
+        UUID version=id(targetId(job,payload),"config-version");
+        String host=text(payload.get("hostId")), role=text(payload.get("role")), path=text(payload.get("configPath"));
+        // External targets belong to kf_external_clusters. The existing required
+        // cluster_id FK cannot represent them; retain ER history without breaking
+        // the accepted job while external version storage awaits schema approval.
+        if(host!=null && host.startsWith("external:")) return;
+        if(host==null || role==null || path==null || job.getRequestedBy()==null)
+            throw new IllegalStateException("Targeted config version requires the accepted plan's host, role, config path and requester");
+        jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtext(?))",Object.class,"targeted-config-version:"+cluster(job)+":"+host+":"+role+":"+path);
+        if(Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM kf_config_versions WHERE id=?)",Boolean.class,version))) return;
+        Integer next=jdbc.queryForObject("SELECT COALESCE(MAX(config_version),0)+1 FROM kf_config_versions WHERE cluster_id=? AND host_id=? AND component=? AND config_file_name=?",Integer.class,cluster(job),host,role,path);
+        var before=new LinkedHashMap<String,Object>();var desired=new LinkedHashMap<String,Object>();
+        var sources=new LinkedHashMap<String,Object>();var redacted=new ArrayList<String>();
+        changes(payload).forEach((key,value)->{
+            boolean secret=sensitive(key,payload);var previous=previous(payload,key);
+            before.put(key,secret?null:previous.get("value"));desired.put(key,secret?null:value);
+            sources.put(key,previous.get("source"));if(secret)redacted.add(key);
+        });
+        // service_id deliberately remains NULL: these revisions must not become the
+        // active full-file version for a service or enter its stale-file comparison.
+        insert("kf_config_versions","id",fields("id",version,"cluster_id",cluster(job),"host_id",host,"component",role,
+                "config_file_name",path,"config_version",next,"old_config",before,"new_config",desired,
+                "status","VALIDATED","approval_required",false,"created_by",job.getRequestedBy(),"job_id",job.getId().toString(),
+                "created_at",time(job.getCreatedAt()),"validation_result",fields("targetedChangeHistory",true,
+                        "scope","CHANGED_PROPERTIES","executionType",isStatic(payload)?"STATIC":"DYNAMIC",
+                        "nodeId",payload.getOrDefault("nodeId",payload.get("brokerId")),"stepId",step.getId(),
+                        "sourcesBefore",sources,"redactedKeys",redacted)));
+    }
+
+    private void syncTargetedVersion(JobStep step,Map<String,Object> payload) {
+        if(step.getJob().getType()!=JobType.TARGETED_CONFIG_CHANGE) return;
+        String host=text(payload.get("hostId"));
+        if(host!=null && host.startsWith("external:")) return;
+        UUID version=id(targetId(step.getJob(),payload),"config-version");
+        String state=switch(step.getStatus()) {
+            case SUCCESS -> "APPLIED";
+            case FAILED, ROLLBACK_FAILED -> "FAILED";
+            case ROLLED_BACK -> "SUPERSEDED";
+            case IN_PROGRESS -> "APPLYING";
+            default -> "VALIDATED";
+        };
+        jdbc.update("UPDATE kf_config_versions SET status=?, applied_at=CASE WHEN ?='APPLIED' THEN COALESCE(applied_at,?) ELSE applied_at END WHERE id=? AND validation_result->>'targetedChangeHistory'='true'",
+                state,state,time(step.getEndTime()),version);
+        // Runtime checkpoints are more precise than preview values, especially
+        // for dynamic source/presence. Never overwrite the requested new values.
+        jdbc.update("""
+                UPDATE kf_config_versions SET old_config=v.before_values, new_config=v.desired_values,
+                    validation_result=validation_result || jsonb_build_object('sourcesBefore',v.sources,'redactedKeys',v.redacted_keys)
+                FROM (SELECT jsonb_object_agg(d.config_key,n.value_before) AS before_values,
+                             jsonb_object_agg(d.config_key,n.desired_value) AS desired_values,
+                             jsonb_object_agg(d.config_key,n.source_before) AS sources,
+                             COALESCE(jsonb_agg(d.config_key) FILTER (WHERE n.is_sensitive),'[]'::jsonb) AS redacted_keys
+                      FROM kf_config_change_node_value n JOIN kf_config_change_detail d ON d.detail_id=n.detail_id
+                      WHERE n.target_id=?) v
+                WHERE id=? AND v.before_values IS NOT NULL AND validation_result->>'targetedChangeHistory'='true'
+                """,targetId(step.getJob(),payload),version);
     }
 
     @Transactional
@@ -232,6 +303,12 @@ public class ConfigChangeMappingService {
                     jdbc.update("UPDATE kf_config_change_detail SET is_sensitive=TRUE, desired_value=NULL WHERE detail_id=?",detail);
                     jdbc.update("UPDATE kf_config_change_node_value SET is_sensitive=TRUE,value_before=NULL,value_after=NULL,desired_value=NULL WHERE detail_id=?",detail);
                     jdbc.update("UPDATE kf_config_backup SET is_sensitive=TRUE,value_before=NULL WHERE detail_id=?",detail);
+                    if(step.getJob().getType()==JobType.TARGETED_CONFIG_CHANGE) jdbc.update("""
+                            UPDATE kf_config_versions SET old_config=jsonb_set(old_config,ARRAY[?]::text[],'null'::jsonb),
+                                new_config=jsonb_set(new_config,ARRAY[?]::text[],'null'::jsonb)
+                            WHERE job_id=? AND validation_result->>'targetedChangeHistory'='true'
+                            AND (jsonb_exists(old_config,?) OR jsonb_exists(new_config,?))
+                            """,key,key,step.getJob().getId().toString(),key,key);
                 }
                 String rollback=previous.get("present") instanceof Boolean present?(present?"SET":"REMOVE"):null;
                 jdbc.update("UPDATE kf_config_change_node_value SET is_sensitive=?, value_before=?, source_before=?, before_present=?, rollback_operation=?, desired_value=CASE WHEN ? THEN NULL ELSE desired_value END, updated_at=? WHERE target_id=? AND detail_id=?",

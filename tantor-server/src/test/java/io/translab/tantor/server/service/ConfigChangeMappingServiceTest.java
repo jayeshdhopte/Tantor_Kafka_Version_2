@@ -13,7 +13,7 @@ class ConfigChangeMappingServiceTest {
     final ConfigChangeMappingService mapping=new ConfigChangeMappingService(jdbc,new ObjectMapper());
 
     Job job(JobType type){var job=new Job();job.setId(UUID.randomUUID());job.setType(type);job.setRequestedBy("operator");job.setPayload("{\"clusterId\":\""+UUID.randomUUID()+"\",\"role\":\"BROKER\",\"classification\":\"DYNAMIC_ALLOWED\"}");return job;}
-    JobStep step(Job job,String key){var step=new JobStep();step.setId(UUID.randomUUID());step.setJob(job);step.setName("Apply "+key);step.setStepOrder(1);step.setPayload("{\"operation\":\"DYNAMIC\",\"brokerId\":1,\"hostId\":\"host-a\",\"role\":\"broker_controller\",\"key\":\""+key+"\",\"value\":\"NEVER_COPY_IF_SECRET\",\"expectedOldValue\":\"OLD_SECRET\"}");return step;}
+    JobStep step(Job job,String key){var step=new JobStep();step.setId(UUID.randomUUID());step.setJob(job);step.setName("Apply "+key);step.setStepOrder(1);step.setPayload("{\"operation\":\"DYNAMIC\",\"brokerId\":1,\"hostId\":\"host-a\",\"role\":\"broker_controller\",\"configPath\":\"/etc/kafka/server.properties\",\"key\":\""+key+"\",\"value\":\"NEVER_COPY_IF_SECRET\",\"expectedOldValue\":\"OLD_SECRET\"}");return step;}
     void catalog(){when(jdbc.queryForObject(anyString(),eq(Long.class),any(Object[].class))).thenReturn(10L);}
 
     @Test void inventoryUuidIsUsedInsteadOfTheNumericKafkaNodeId() {
@@ -30,7 +30,7 @@ class ConfigChangeMappingServiceTest {
         assertThat(inserted("kf_config_change_target_node").get("node_id")).isNull();
     }
     @Test void secretKeysAreRedactedInEveryCopiedInsertArgument() {
-        catalog();when(jdbc.queryForObject(anyString(),eq(Boolean.class),any(Object[].class))).thenReturn(true);
+        catalog();when(jdbc.queryForObject(anyString(),eq(Boolean.class),any(Object[].class))).thenAnswer(call -> !((String)call.getArgument(0)).contains("SELECT EXISTS(SELECT 1 FROM kf_config_versions"));
         var job=job(JobType.TARGETED_CONFIG_CHANGE);var step=step(job,"sasl.jaas.config");mapping.record(job,List.of(step));mapping.step(step);
         for(var invocation:mockingDetails(jdbc).getInvocations()) for(Object value:invocation.getArguments()) {
             if(value instanceof Object[] array) for(Object item:array) assertThat(Objects.toString(item,"")).doesNotContain("NEVER_COPY_IF_SECRET","OLD_SECRET");
@@ -46,10 +46,10 @@ class ConfigChangeMappingServiceTest {
         var job=job(JobType.CONFIG_CHANGE);mapping.step(step(job,"log.retention.hours"));
         for(var invocation:mockingDetails(jdbc).getInvocations()) assertThat((String)invocation.getArgument(0)).doesNotContain("INSERT","UPDATE");
     }
-    @Test void projectionWritesAreConfinedToTheElevenErTables() {
-        catalog();when(jdbc.queryForObject(anyString(),eq(Boolean.class),any(Object[].class))).thenReturn(true);
+    @Test void projectionWritesAreConfinedToConfigurationHistoryTables() {
+        catalog();when(jdbc.queryForObject(anyString(),eq(Boolean.class),any(Object[].class))).thenAnswer(call -> !((String)call.getArgument(0)).contains("SELECT EXISTS(SELECT 1 FROM kf_config_versions"));
         var job=job(JobType.TARGETED_CONFIG_CHANGE);var step=step(job,"log.retention.hours");mapping.record(job,List.of(step));mapping.step(step);mapping.status(job);
-        Set<String> tables=Set.of("kf_config_catalog","kf_config_change","kf_config_change_detail","kf_config_change_target_node","kf_config_change_node_value","kf_cluster_operation_lock","kf_health_check","kf_config_execution_attempt","kf_config_backup","kf_rolling_restart_operation","kf_rolling_restart_node_step");
+        Set<String> tables=Set.of("kf_config_versions","kf_config_catalog","kf_config_change","kf_config_change_detail","kf_config_change_target_node","kf_config_change_node_value","kf_cluster_operation_lock","kf_health_check","kf_config_execution_attempt","kf_config_backup","kf_rolling_restart_operation","kf_rolling_restart_node_step");
         for(var invocation:mockingDetails(jdbc).getInvocations()) {
             String sql=(String)invocation.getArgument(0);
             if(sql.startsWith("INSERT INTO ")||sql.startsWith("UPDATE ")) assertThat(tables).contains(sql.split(" ")[sql.startsWith("UPDATE ")?1:2]);

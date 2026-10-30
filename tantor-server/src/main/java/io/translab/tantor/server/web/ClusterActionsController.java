@@ -195,7 +195,7 @@ public class ClusterActionsController {
         return deploymentService.retryTask(taskId) ? ResponseEntity.ok().build() : ResponseEntity.notFound().build();
     }
 
-    @org.springframework.transaction.annotation.Transactional
+    @org.springframework.transaction.annotation.Transactional 
     @PostMapping("/tasks/{taskId}/resume")
     public ResponseEntity<Void> resumeTask(
             @RequestHeader(value = "Authorization", required = false) String authorization,

@@ -119,6 +119,8 @@ class ConfigChangeMappingDatabaseTest {
             var values=jdbc.queryForMap("SELECT value_before,desired_value,value_after,secret_ref_before FROM kf_config_change_node_value WHERE change_id=?",job.getId());
             assertThat(values.values()).allMatch(Objects::isNull);
             assertThat(jdbc.queryForObject("SELECT requested_payload::text FROM kf_config_execution_attempt WHERE change_id=?",String.class,job.getId())).doesNotContain("DO_NOT_COPY_SECRET","PRIOR_SECRET");
+            assertThat(jdbc.queryForObject("SELECT old_config::text || new_config::text || validation_result::text FROM kf_config_versions WHERE job_id=?",String.class,job.getId().toString()))
+                    .doesNotContain("DO_NOT_COPY_SECRET","PRIOR_SECRET");
             assertThat(jdbc.queryForObject("SELECT fencing_token FROM kf_cluster_operation_lock WHERE change_id=?",Long.class,job.getId())).isNull();
             assertThat(jdbc.queryForObject("SELECT checksum_sha256 FROM kf_config_backup WHERE change_id=?",String.class,job.getId())).isNull();
         });
@@ -165,10 +167,102 @@ class ConfigChangeMappingDatabaseTest {
         });
     }
 
+    @Test void targetedVersionsArePerNodeIdempotentAndKeepRealCheckpointsAndLifecycle() {
+        rollback(() -> {
+            Job job=job(JobType.TARGETED_CONFIG_CHANGE,false);var steps=steps(job,false);
+            mapping.record(job,steps);mapping.record(job,steps);
+            assertThat(versionCount(job)).isEqualTo(2);
+            var row=jdbc.queryForMap("SELECT * FROM kf_config_versions WHERE job_id=? AND host_id='node-1'",job.getId().toString());
+            assertThat(row).containsEntry("component","broker").containsEntry("config_file_name","/etc/kafka/server.properties")
+                    .containsEntry("created_by","mapping-test").containsEntry("service_id",null).containsEntry("approval_required",false);
+            assertThat(read(row.get("new_config").toString())).containsEntry("log.retention.hours","72");
+            assertThat(read(row.get("validation_result").toString())).containsEntry("targetedChangeHistory",true).containsEntry("executionType","DYNAMIC");
+            var step=steps.get(0);start(step);mapping.step(step);
+            assertThat(versionStatus(job,"node-1")).isEqualTo("APPLYING");
+            var payload=read(step.getPayload());payload.put("recoveryCheckpoint",Map.of("dynamic",Map.of("log.retention.hours",Map.of("value","192","source","DYNAMIC_BROKER_CONFIG"))));
+            step.setPayload(json(payload));mapping.step(step);
+            assertThat(read(jdbc.queryForObject("SELECT old_config::text FROM kf_config_versions WHERE job_id=? AND host_id='node-1'",String.class,job.getId().toString())))
+                    .containsEntry("log.retention.hours","192");
+            step.setStatus(JobStepStatus.SUCCESS);step.setEndTime(Instant.now());mapping.step(step);
+            assertThat(versionStatus(job,"node-1")).isEqualTo("APPLIED");
+            assertThat(jdbc.queryForObject("SELECT applied_at IS NOT NULL FROM kf_config_versions WHERE job_id=? AND host_id='node-1'",Boolean.class,job.getId().toString())).isTrue();
+            job.setStatus(JobStatus.PARTIAL_SUCCESS);mapping.status(job);
+            assertThat(versionStatus(job,"node-1")).isEqualTo("APPLIED");
+            assertThat(versionStatus(job,"node-2")).isEqualTo("FAILED");
+            job.setStatus(JobStatus.ROLLING_BACK);step.setStatus(JobStepStatus.ROLLED_BACK);mapping.step(step);
+            assertThat(versionStatus(job,"node-1")).isEqualTo("SUPERSEDED");
+            assertThat(versionCount(job)).isEqualTo(2);
+        });
+    }
+
+    @Test void staticRevisionRecordsRemovalAsNullAndRetriesReuseTheSameRevision() {
+        rollback(() -> {
+            Job job=job(JobType.TARGETED_CONFIG_CHANGE,true);var step=steps(job,true).get(0);
+            var payload=read(step.getPayload());var changes=new LinkedHashMap<String,Object>();changes.put("queued.max.requests",null);payload.put("changes",changes);step.setPayload(json(payload));
+            mapping.record(job,List.of(step));
+            String metadata=jdbc.queryForObject("SELECT validation_result::text FROM kf_config_versions WHERE job_id=?",String.class,job.getId().toString());
+            assertThat(read(metadata)).containsEntry("executionType","STATIC");
+            assertThat(read(jdbc.queryForObject("SELECT new_config::text FROM kf_config_versions WHERE job_id=?",String.class,job.getId().toString())))
+                    .containsEntry("queued.max.requests",null);
+            step.setStatus(JobStepStatus.FAILED);mapping.step(step);assertThat(versionStatus(job,"node-1")).isEqualTo("FAILED");
+            step.setRetryCount(1);start(step);mapping.step(step);assertThat(versionStatus(job,"node-1")).isEqualTo("APPLYING");
+            assertThat(versionCount(job)).isEqualTo(1);
+        });
+    }
+
+    @Test void revisionsAdvanceWithinTheExistingNamespaceAndLegacyVersionedJobsAreNotDuplicated() {
+        rollback(() -> {
+            Job job=job(JobType.TARGETED_CONFIG_CHANGE,false);var step=steps(job,false).get(0);
+            UUID cluster=UUID.fromString(read(job.getPayload()).get("clusterId").toString());
+            jdbc.update("INSERT INTO kf_config_versions (id,cluster_id,host_id,component,config_file_name,config_version,old_config,new_config,status,created_by) VALUES (?,?,'node-1','broker','/etc/kafka/server.properties',7,'{}','{}','APPLIED','fixture')",UUID.randomUUID(),cluster);
+            mapping.record(job,List.of(step));
+            assertThat(jdbc.queryForObject("SELECT config_version FROM kf_config_versions WHERE job_id=?",Integer.class,job.getId().toString())).isEqualTo(8);
+            Job legacy=job(JobType.CONFIG_CHANGE,true);mapping.record(legacy,steps(legacy,true));
+            assertThat(versionCount(legacy)).isZero();
+        });
+    }
+
+    private long versionCount(Job job){return jdbc.queryForObject("SELECT count(*) FROM kf_config_versions WHERE job_id=?",Long.class,job.getId().toString());}
+    private String versionStatus(Job job,String host){return jdbc.queryForObject("SELECT status FROM kf_config_versions WHERE job_id=? AND host_id=?",String.class,job.getId().toString(),host);}
+
+    @Test void runtimeSensitiveFlagRedactsRevisionValuesAcrossAllTargets() {
+        rollback(() -> {
+            Job job=job(JobType.TARGETED_CONFIG_CHANGE,false);var steps=steps(job,false);
+            for(var step:steps) {
+                var payload=read(step.getPayload());payload.put("changes",Map.of("custom.setting","NEW_SENSITIVE_VALUE"));payload.put("expectedValues",Map.of("custom.setting","OLD_SENSITIVE_VALUE"));step.setPayload(json(payload));
+            }
+            mapping.record(job,steps);var step=steps.get(0);var payload=read(step.getPayload());
+            payload.put("recoveryCheckpoint",Map.of("dynamic",Map.of("custom.setting",Map.of("value","OLD_SENSITIVE_VALUE","source","DYNAMIC_BROKER_CONFIG","isSensitive",true))));
+            step.setPayload(json(payload));start(step);mapping.step(step);
+            assertThat(jdbc.queryForList("SELECT old_config::text || new_config::text FROM kf_config_versions WHERE job_id=?",String.class,job.getId().toString()))
+                    .hasSize(2).allSatisfy(value->assertThat(value).doesNotContain("OLD_SENSITIVE_VALUE","NEW_SENSITIVE_VALUE"));
+        });
+    }
+
+    @Test void externalTargetsKeepErHistoryWithoutViolatingTheExistingInternalClusterVersionForeignKey() {
+        rollback(() -> {
+            Job job=job(JobType.CONFIG_CHANGE,false);job.setType(JobType.TARGETED_CONFIG_CHANGE);
+            var step=steps(job,false).get(0);var payload=read(step.getPayload());payload.put("hostId","external:"+UUID.randomUUID());step.setPayload(json(payload));
+            // No kf_clusters row: this exercises the FK mismatch, rather than
+            // masking it with an internal-cluster fixture.
+            mapping.record(job,List.of(step));start(step);mapping.step(step);
+            assertThat(count("kf_config_change",job)).isEqualTo(1);
+            assertThat(count("kf_config_change_node_value",job)).isEqualTo(2);
+            assertThat(versionCount(job)).isZero();
+        });
+    }
+
     private long count(String table,Job job){return jdbc.queryForObject("SELECT count(*) FROM "+table+" WHERE change_id=?",Long.class,job.getId());}
     private void rollback(Runnable body){transactions.executeWithoutResult(tx->{tx.setRollbackOnly();body.run();});}
     private static void start(JobStep step){step.setStatus(JobStepStatus.IN_PROGRESS);step.setStartTime(Instant.now());step.setEndTime(null);}
-    private static Job job(JobType type,boolean file){var job=new Job();job.setId(UUID.randomUUID());job.setType(type);job.setRequestedBy("mapping-test");job.setPayload(json(Map.of("clusterId",UUID.randomUUID().toString(),"role","BROKER","scope","SELECTED","classification",file?"ROLLING_RESTART_REQUIRED":"DYNAMIC_ALLOWED")));return job;}
+    private Job job(JobType type,boolean file){var job=new Job();job.setId(UUID.randomUUID());job.setType(type);job.setRequestedBy("mapping-test");
+        UUID cluster=UUID.randomUUID();
+        job.setPayload(json(Map.of("clusterId",cluster.toString(),"role","BROKER","scope","SELECTED","classification",file?"ROLLING_RESTART_REQUIRED":"DYNAMIC_ALLOWED")));
+        if(type==JobType.TARGETED_CONFIG_CHANGE) {
+            jdbc.update("INSERT INTO kf_clusters (id,cluster_name,created_by,updated_by) VALUES (?,?,?,?)",cluster,"config-mapping-test-"+cluster,"mapping-test","mapping-test");
+            jdbc.update("INSERT INTO kf_jobs (id,type,status,payload,requested_by) VALUES (?,?,?,?::jsonb,?)",job.getId().toString(),type.name(),job.getStatus().name(),job.getPayload(),job.getRequestedBy());
+        }
+        return job;}
     private static List<JobStep> steps(Job job,boolean file){var result=new ArrayList<JobStep>();for(int i=1;i<=2;i++){
         var step=new JobStep();step.setId(UUID.randomUUID());step.setJob(job);step.setName("Config node "+i);step.setStepOrder(i);step.setTargetId(String.valueOf(i));
         var payload=new LinkedHashMap<String,Object>();payload.put("operation",file?"STATIC":"DYNAMIC");payload.put(file?"nodeId":"brokerId",i);payload.put("hostId","node-"+i);payload.put("role","broker");payload.put("configPath","/etc/kafka/server.properties");

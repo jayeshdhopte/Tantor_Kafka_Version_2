@@ -143,6 +143,7 @@ public class ConfigVersionService {
     @Transactional
     public ConfigVersion approve(UUID clusterId, UUID versionId) {
         ConfigVersion version = ownedVersion(clusterId, versionId);
+        requireFullFileVersion(version);
         if (version.getStatus() != ConfigVersionStatus.PENDING_APPROVAL) {
             throw new IllegalStateException("Only versions pending approval can be approved.");
         }
@@ -165,6 +166,7 @@ public class ConfigVersionService {
             throw new IllegalArgumentException("Versioned file changes require a controlled service restart. Use the dynamic broker change flow for restart-free changes.");
         }
         ConfigVersion version = ownedVersion(clusterId, versionId);
+        requireFullFileVersion(version);
         ConfigVersionStatus previousStatus = version.getStatus();
         if (version.getStatus() != ConfigVersionStatus.VALIDATED
                 && version.getStatus() != ConfigVersionStatus.APPROVED
@@ -269,6 +271,7 @@ public class ConfigVersionService {
     @Transactional
     public ConfigVersion createRollback(UUID clusterId, UUID targetVersionId) {
         ConfigVersion target = ownedVersion(clusterId, targetVersionId);
+        requireFullFileVersion(target);
         ConfigVersion active = configVersionRepository
                 .findFirstByClusterIdAndServiceIdAndStatusOrderByConfigVersionDesc(
                         clusterId, target.getServiceId(), ConfigVersionStatus.APPLIED)
@@ -373,6 +376,12 @@ public class ConfigVersionService {
         });
         version.setStatus(ConfigVersionStatus.SUPERSEDED);
         configVersionRepository.save(version);
+    }
+
+    private void requireFullFileVersion(ConfigVersion version) {
+        if (Boolean.TRUE.equals(readMap(version.getValidationResult()).get("targetedChangeHistory"))) {
+            throw new IllegalArgumentException("This revision records selected properties from a targeted config job, not a complete file. Use the targeted config flow and the original job's checkpoint history for recovery.");
+        }
     }
 
     private void assertVersionIsNotStale(ConfigVersion version) {
