@@ -9,7 +9,7 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 class ExternalMultiInstanceTest {
  @Test void defaultsArePredictableAndAvoidExistingDirectoriesWithoutMovingThem(){
-  var manager=new ExternalDataServiceManager(null,null,null,null,null,null,new ObjectMapper(), org.mockito.Mockito.mock(io.translab.tantor.server.service.AddServiceMappingService.class));
+  var manager=new ExternalDataServiceManager(null,null,null,null,null,null,new ObjectMapper(), org.mockito.Mockito.mock(io.translab.tantor.server.service.AddServiceMappingService.class), org.mockito.Mockito.mock(io.translab.tantor.server.repository.ClusterServiceAssignmentRepository.class));
   assertThat(manager.availablePaths("schema_registry",List.of()))
     .containsEntry("install_dir","/opt/tantor/schema-registry")
     .containsEntry("config_dir","/opt/tantor/schema-registry/etc/schema-registry");
@@ -27,7 +27,7 @@ class ExternalMultiInstanceTest {
  @Test void multipleWorkersShareGroupButHaveDistinctUnitsAndPaths(){
   var clusters=mock(ExternalClusterRepository.class);var agents=mock(DiscoveryAgentRepository.class);var services=mock(ExternalDataServiceRepository.class);var tasks=mock(ExternalServiceTaskRepository.class);var jobs=mock(JobService.class);var artifacts=mock(ExternalServiceArtifacts.class);
   var mappings=mock(AddServiceMappingService.class);
-  var manager=new ExternalDataServiceManager(clusters,agents,services,tasks,jobs,artifacts,new ObjectMapper(),mappings);
+  var manager=new ExternalDataServiceManager(clusters,agents,services,tasks,jobs,artifacts,new ObjectMapper(),mappings, org.mockito.Mockito.mock(io.translab.tantor.server.repository.ClusterServiceAssignmentRepository.class));
   var cluster=new ExternalCluster();cluster.setId(UUID.randomUUID());cluster.setStatus("SUCCESS");cluster.setSecurityProtocol("PLAINTEXT");cluster.setBootstrapServers("broker:9092");cluster.setBrokerCount(3);
   when(clusters.findById(cluster.getId())).thenReturn(Optional.of(cluster));when(clusters.findForServiceUpdate(cluster.getId())).thenReturn(Optional.of(cluster));
   var agent=new DiscoveryAgent();agent.setId("agent");agent.setClusterId(cluster.getId());agent.setVersion("3.4.0-dataservices.2");agent.setHostname("broker.example");agent.setIpAddresses("[\"192.168.3.174\"]");agent.setStatus("ONLINE");agent.setLastHeartbeat(OffsetDateTime.now());agent.setCanDeployServices(true);when(agents.findById("agent")).thenReturn(Optional.of(agent));
@@ -50,7 +50,7 @@ class ExternalMultiInstanceTest {
   verify(jobs).createJob(argThat(j->j.getResourceKey().equals("cluster:"+cluster.getId())),argThat(steps->steps.size()==8));
  }
  @Test void serviceAddressPrefersReportedIpWithoutRequiringDisplayHostnameDns(){
-  var manager=new ExternalDataServiceManager(null,null,null,null,null,null,new ObjectMapper(), org.mockito.Mockito.mock(io.translab.tantor.server.service.AddServiceMappingService.class));
+  var manager=new ExternalDataServiceManager(null,null,null,null,null,null,new ObjectMapper(), org.mockito.Mockito.mock(io.translab.tantor.server.service.AddServiceMappingService.class), org.mockito.Mockito.mock(io.translab.tantor.server.repository.ClusterServiceAssignmentRepository.class));
   var agent=new DiscoveryAgent();agent.setHostname("not-in-dns.example");agent.setIpAddresses("[\"127.0.0.1\",\"0.0.0.0\",\"169.254.1.1\",\"999.1.2.3\",\"192.168.3.174\"]");
   assertThat(manager.serviceHost(agent)).isEqualTo("192.168.3.174");
   agent.setIpAddresses("[]");assertThat(manager.serviceHost(agent)).isEqualTo("not-in-dns.example");
@@ -58,7 +58,7 @@ class ExternalMultiInstanceTest {
  }
  @Test void existingQueuedInstallRefreshesItsAdvertisedAddressBeforeAgentExecution(){
   var clusters=mock(ExternalClusterRepository.class);var agents=mock(DiscoveryAgentRepository.class);var services=mock(ExternalDataServiceRepository.class);var tasks=mock(ExternalServiceTaskRepository.class);
-  var manager=new ExternalDataServiceManager(clusters,agents,services,tasks,null,null,new ObjectMapper(), org.mockito.Mockito.mock(io.translab.tantor.server.service.AddServiceMappingService.class));
+  var manager=new ExternalDataServiceManager(clusters,agents,services,tasks,null,null,new ObjectMapper(), org.mockito.Mockito.mock(io.translab.tantor.server.service.AddServiceMappingService.class), org.mockito.Mockito.mock(io.translab.tantor.server.repository.ClusterServiceAssignmentRepository.class));
   UUID cluster=UUID.randomUUID(),serviceId=UUID.randomUUID();
   var external=new ExternalCluster();external.setId(cluster);external.setStatus("SUCCESS");when(clusters.findById(cluster)).thenReturn(Optional.of(external));
   var agent=new DiscoveryAgent();agent.setId("agent");agent.setClusterId(cluster);agent.setVersion("3.4.0-dataservices.2");agent.setStatus("ONLINE");agent.setLastHeartbeat(OffsetDateTime.now());agent.setCanDeployServices(true);agent.setHostname("not-in-dns.example");agent.setIpAddresses("[\"192.168.3.174\"]");

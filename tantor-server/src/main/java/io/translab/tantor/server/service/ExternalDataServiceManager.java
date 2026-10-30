@@ -22,6 +22,7 @@ public class ExternalDataServiceManager {
  private final ExternalServiceArtifacts artifacts;
  private final ObjectMapper mapper;
  private final AddServiceMappingService addServiceMapping;
+ private final ClusterServiceAssignmentRepository internalServices;
  static final Set<String> ROLES=Set.of("schema_registry","kafka_connect");
  static String value(Map<String,?> p,String k,String fallback) { Object v=p.get(k); return v==null||v.toString().isBlank()?fallback:v.toString().trim(); }
  static String blocked(DiscoveryAgent a) {
@@ -45,7 +46,7 @@ public class ExternalDataServiceManager {
   List<Map<String,Object>> hosts=new ArrayList<>();
   for(var a:agents.findByClusterId(id)) hosts.add(Map.of("hostId",a.getId(),"hostname",Objects.toString(a.getHostname(),a.getId()),"canDeployServices",blocked(a).isEmpty(),"reason",blocked(a)));
   var existing=services.findByClusterId(id);
-  var hostServices=agents.findByClusterId(id).stream().flatMap(a->services.findByAgentId(a.getId()).stream()).toList();
+  var hostServices=agents.findByClusterId(id).stream().flatMap(a->hostServices(a,List.of()).stream()).toList();
   Map<String,Object> pathDefaults=new LinkedHashMap<>();
   for(String role:List.of("schema_registry","kafka_connect")) pathDefaults.put(role,availablePaths(role,hostServices));
   String protocol=Objects.toString(c.getSecurityProtocol(),Objects.toString(c.getSecurity(),"PLAINTEXT"));
@@ -72,8 +73,7 @@ public class ExternalDataServiceManager {
    @SuppressWarnings("unchecked") Map<String,Object> input=(Map<String,Object>)raw;
    if(input==null) throw new IllegalArgumentException("Missing service configuration.");
    DiscoveryAgent agent=requireAgent(id,value(input,"host_id",""));
-   List<ExternalDataService> hostServices=new ArrayList<>(services.findByAgentId(agent.getId()));
-   hostServices.addAll(additions);
+   List<ExternalDataService> hostServices=hostServices(agent,additions);
    Map<String,Object> configured=new LinkedHashMap<>(input);
    availablePaths(role,hostServices.stream().filter(s->agent.getId().equals(s.getAgentId())).toList())
      .forEach((key,path)->{if(Set.of("install_dir","log_dir","working_dir").contains(key) && value(input,key,"").isBlank())configured.put(key,path);});
@@ -91,10 +91,10 @@ public class ExternalDataServiceManager {
    p.put("replication_factor",String.valueOf(Math.max(1,Math.min(3,Objects.requireNonNullElse(c.getBrokerCount(),1)))));
    UUID artifact=UUID.fromString(value(input,"artifact_id",""));
    p.put("artifact_id",artifact.toString()); p.put("checksum",artifacts.verifiedChecksum(artifact,role));
-   List<ExternalDataService> neighbours=new ArrayList<>(services.findByAgentId(agent.getId())); neighbours.addAll(additions);
+   List<ExternalDataService> neighbours=hostServices;
    for(var other:neighbours) if(agent.getId().equals(other.getAgentId()) && !"DELETED".equalsIgnoreCase(other.getStatus())) {
     var op=read(other.getConfigJson());
-    if(p.get("rest_port").equals(op.get("rest_port"))) throw new IllegalArgumentException("REST port conflicts with another service on this host.");
+    if(p.get("rest_port").equals(op.get("rest_port"))) throw new IllegalArgumentException("REST port "+p.get("rest_port")+" is already reserved by "+op.getOrDefault("service_name",other.getRole().replace('_','-'))+" on "+serviceHost(agent)+". Choose a free port.");
     for(String a:paths(p)) for(String b:paths(op)) if(overlaps(a,b)) throw new IllegalArgumentException("Service directories overlap another service on this host.");
    }
    ExternalDataService s=new ExternalDataService(); s.setClusterId(id); s.setAgentId(agent.getId()); s.setRole(role); s.setStatus("PENDING"); s.setConfigJson(json(p)); additions.add(s);
@@ -147,6 +147,26 @@ public class ExternalDataServiceManager {
   } catch(RuntimeException ignored) {return original;}
  }
  static List<String> paths(Map<String,String> p) { return List.of("install_dir","config_dir","log_dir","working_dir","plugin_dir").stream().map(p::get).filter(Objects::nonNull).filter(v->!v.isBlank()).toList(); }
+ List<ExternalDataService> hostServices(DiscoveryAgent agent,List<ExternalDataService> additions) {
+  List<ExternalDataService> occupied=new ArrayList<>(services.findByAgentId(agent.getId()));
+  occupied.addAll(additions);
+  String address=serviceHost(agent);
+  for(var assignment:internalServices.findAll()) {
+   if(!ROLES.contains(assignment.getRole()) || "DELETED".equalsIgnoreCase(Objects.toString(assignment.getStatus(),""))) continue;
+   var config=read(assignment.getConfigJson());
+   boolean sameHost=address.equals(value(config,"host_name",""))
+     || address.equals(assignment.getHostId())
+     || Objects.toString(agent.getHostname(),"").equalsIgnoreCase(assignment.getHostId());
+   if(!sameHost) continue;
+   // Project internal reservations onto the external agent's physical host.
+   // These records are used only for validation/allocation and are never saved.
+   config.putIfAbsent("service_name",assignment.getRole().replace('_','-'));
+   var reservation=new ExternalDataService();reservation.setAgentId(agent.getId());
+   reservation.setRole(assignment.getRole());reservation.setStatus("ONLINE");reservation.setConfigJson(json(config));
+   occupied.add(reservation);
+  }
+  return occupied;
+ }
  String availableServiceName(String role,String agentId,List<ExternalDataService> existing) {
   String base=role.replace('_','-');Set<String> names=new HashSet<>();
   for(var service:existing) if(agentId.equals(service.getAgentId()) && !"DELETED".equalsIgnoreCase(service.getStatus())) {

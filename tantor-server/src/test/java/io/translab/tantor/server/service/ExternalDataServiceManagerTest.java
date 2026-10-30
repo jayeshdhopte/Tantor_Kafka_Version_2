@@ -51,7 +51,7 @@ class ExternalDataServiceManagerTest {
         var jobs = mock(JobService.class);
         var artifacts = mock(ExternalServiceArtifacts.class);
         var manager = new ExternalDataServiceManager(clusters, agents, services, tasks, jobs, artifacts,
-                new ObjectMapper(), org.mockito.Mockito.mock(io.translab.tantor.server.service.AddServiceMappingService.class));
+                new ObjectMapper(), org.mockito.Mockito.mock(io.translab.tantor.server.service.AddServiceMappingService.class), org.mockito.Mockito.mock(io.translab.tantor.server.repository.ClusterServiceAssignmentRepository.class));
 
         UUID clusterId = UUID.randomUUID();
         ExternalCluster cluster = new ExternalCluster();
@@ -119,7 +119,7 @@ class ExternalDataServiceManagerTest {
         var agents = mock(DiscoveryAgentRepository.class);
         var jobs = mock(JobService.class);
         var manager = new ExternalDataServiceManager(clusters, agents, mock(ExternalDataServiceRepository.class),
-                mock(ExternalServiceTaskRepository.class), jobs, mock(ExternalServiceArtifacts.class), new ObjectMapper(), org.mockito.Mockito.mock(io.translab.tantor.server.service.AddServiceMappingService.class));
+                mock(ExternalServiceTaskRepository.class), jobs, mock(ExternalServiceArtifacts.class), new ObjectMapper(), org.mockito.Mockito.mock(io.translab.tantor.server.service.AddServiceMappingService.class), org.mockito.Mockito.mock(io.translab.tantor.server.repository.ClusterServiceAssignmentRepository.class));
         UUID clusterId = UUID.randomUUID();
         ExternalCluster cluster = new ExternalCluster();
         cluster.setId(clusterId);
