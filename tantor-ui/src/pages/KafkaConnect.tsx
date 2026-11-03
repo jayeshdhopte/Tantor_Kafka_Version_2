@@ -13,6 +13,7 @@ import { readDataServiceSession, writeDataServiceSession } from '../utils/dataSe
 import { KafkaConnectorDetails } from '../components/KafkaConnectorDetails';
 import { KafkaConnectorsTable } from '../components/KafkaConnectorsTable';
 import { type ConnectorRow } from '../utils/kafkaConnect';
+import { acceptedConnector, mergeCreatedConnectors, refreshCreatedConnectors, ConnectorSummaryReadError } from '../utils/connectorCreation';
 import './DataServiceTabs.css';
 import { KafkaGroupPanel } from '../components/KafkaGroupPanel';
 
@@ -172,6 +173,8 @@ export function KafkaConnect() {
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(initialSession?.selectedConnectionId ?? null);
   const loadRequestId = useRef(0);
   const connectorContext = `${id}:${selectedConnectionId}`;
+  const creationRequest = useRef<AbortController | null>(null);
+  useLayoutEffect(() => () => creationRequest.current?.abort(), [connectorContext]);
   const selectedConnectorName = connectorSelection?.context === connectorContext ? connectorSelection.name : null;
   const setSelectedConnectorName = (name: string | null) => setConnectorSelection(name ? { context: connectorContext, name } : null);
 
@@ -531,23 +534,59 @@ export function KafkaConnect() {
 
   const createConnector = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canManage) return;
+    if (!canManage || saving) return;
+    const controller = new AbortController();
+    creationRequest.current = controller;
+    // Invalidate pre-create reads so they cannot replace the accepted rows.
+    loadRequestId.current += 1;
+    setLoading(false);
     setSaving(true); setError(null); setCreateError(null);
+    const created: ConnectorRow[] = [];
+    let creationComplete = false;
     try {
       const payloads = connectorPayloads();
-      let deployed = 0;
       for (const body of payloads) {
         const res = await fetch(withConnId('/api/v1/clusters/' + id + '/data-services/kafka-connect/connectors'), {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: controller.signal
         });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.message || ('Failed to deploy connector. ' + deployed + ' of ' + payloads.length + ' deployed.'));
-        deployed++;
+        controller.signal.throwIfAborted();
+        if (!res.ok) throw new Error(data.message || 'Kafka Connect rejected the connector.');
+        created.push(acceptedConnector(body, data));
+        const baseline: ConnectSummary = summary ?? { connection: '', version: 'Unknown', plugins: [], connectors: [],
+          connectorCount: 0, taskCount: 0, runningTasks: 0, runningConnectors: 0, pausedConnectors: 0, failedConnectors: 0 };
+        setSummary(current => mergeCreatedConnectors(current ?? baseline, created));
+        setHasFetched(true);
       }
-      setShowCreate(false); setConnectorJson(connectorTemplate); await load();
-      setSuccessMessage(deployed === 1 ? 'Connector deployed successfully.' : (deployed + ' connectors deployed successfully.'));
-    } catch (e: unknown) { setCreateError(errorMessage(e, 'Failed to deploy connector.')); }
-    finally { setSaving(false); }
+      creationComplete = true;
+      setShowCreate(false); setConnectorJson(connectorTemplate); setActiveTab('connectors');
+      setSuccessMessage('Connector creation accepted. Loading runtime status...');
+      const ready = await refreshCreatedConnectors({
+        created, signal: controller.signal,
+        read: async signal => {
+          const response = await fetch(withConnId('/api/v1/clusters/' + id + '/data-services/kafka-connect/summary'), { signal });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) throw new ConnectorSummaryReadError(data.message || 'Unable to refresh Kafka Connect.', data.backendStatus || response.status);
+          return data as ConnectSummary;
+        },
+        publish: snapshot => {
+          setSummary(snapshot); setError(null);
+          writeDataServiceSession('kafka-connect', id, { selectedConnectionId, summary: snapshot, hasFetched: true });
+        }
+      });
+      controller.signal.throwIfAborted();
+      setSuccessMessage(ready
+        ? (created.length === 1 ? 'Connector created. Current runtime status loaded.' : created.length + ' connectors created. Current runtime status loaded.')
+        : 'Connector creation accepted. Runtime status is still initializing.');
+    } catch (failure: unknown) {
+      if (!controller.signal.aborted) {
+        const message = errorMessage(failure, 'Unable to complete the connector request.');
+        if (creationComplete) setError('Connector created, but its current status could not be refreshed. ' + message);
+        else setCreateError((created.length ? created.length + ' connector(s) already created. ' : '') + message);
+      }
+    } finally {
+      if (creationRequest.current === controller) { creationRequest.current = null; setSaving(false); }
+    }
   };
   const connectorAction = async (name: string, action: 'pause' | 'resume' | 'restart' | 'delete') => {
     if (!canManage) return;

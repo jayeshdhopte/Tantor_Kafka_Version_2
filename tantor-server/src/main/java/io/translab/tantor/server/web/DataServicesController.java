@@ -691,7 +691,7 @@ public class DataServicesController {
 
         for (JsonNode connNode : connectorsNode) {
             String name = connNode.asText();
-            Map<String, Object> row = readConnectorDetails(baseUrl, name, encodedCert, clusterId, connectionId, pluginsNode);
+            Map<String, Object> row = readConnectorDetails(baseUrl, name, encodedCert, clusterId, connectionId, pluginsNode, true);
             String state = row.get("state").toString();
             if ("RUNNING".equalsIgnoreCase(state)) runningConnectors++;
             else if ("PAUSED".equalsIgnoreCase(state)) pausedConnectors++;
@@ -719,10 +719,32 @@ public class DataServicesController {
     }
 
     private Map<String, Object> readConnectorDetails(String baseUrl, String name, String encodedCert,
-            UUID clusterId, UUID connectionId, JsonNode plugins) {
+            UUID clusterId, UUID connectionId, JsonNode plugins, boolean listed) {
         String path = "/connectors/" + pathSeg(name);
-        JsonNode config = requestJson(baseUrl, "GET", path + "/config", null, encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
-        JsonNode status = requestJson(baseUrl, "GET", path + "/status", null, encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
+        boolean initializing = false;
+        JsonNode config;
+        try {
+            config = requestJson(baseUrl, "GET", path + "/config", null, encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
+        } catch (DataServiceException failure) {
+            // The inventory and per-connector metadata can be observed at different
+            // points during creation/deletion. Do not fail the whole inventory.
+            // A direct request for an unknown connector must still return 404.
+            if (!listed || failure.statusCode() != 404) throw failure;
+            config = objectMapper.createObjectNode();
+            initializing = true;
+        }
+        var pendingStatus = objectMapper.createObjectNode();
+        pendingStatus.putObject("connector").put("state", "INITIALIZING");
+        pendingStatus.putArray("tasks");
+        JsonNode status = pendingStatus;
+        if (!initializing) {
+            try {
+                status = requestJson(baseUrl, "GET", path + "/status", null, encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
+            } catch (DataServiceException failure) {
+                if (failure.statusCode() != 404) throw failure;
+                initializing = true;
+            }
+        }
         String type = status.path("type").asText("").toUpperCase(java.util.Locale.ROOT);
         if (!Set.of("SOURCE", "SINK").contains(type)) {
             if (plugins == null) {
@@ -750,8 +772,14 @@ public class DataServicesController {
         row.put("worker", status.path("connector").path("worker_id").asText(""));
         row.put("tasks", total); row.put("runningTasks", running); row.put("failedTasks", failed);
         row.put("config", config); row.put("status", status);
+        row.put("initializing", initializing);
         row.put("consumerGroup", "SINK".equals(type) ? config.path("consumer.override.group.id").asText("connect-" + name) : "");
         row.put("consumerGroupSource", "SINK".equals(type) ? (config.has("consumer.override.group.id") ? "configured" : "default") : "");
+        if (initializing) {
+            row.put("topics", List.of()); row.put("topicsAvailable", false);
+            row.put("topicsError", "Connector is initializing; tracked topics are not available yet.");
+            return row;
+        }
         try {
             JsonNode topicResponse = requestJson(baseUrl, "GET", path + "/topics", null, encodedCert, clusterId, "KAFKA_CONNECT", connectionId);
             JsonNode topics = topicResponse.path(name).path("topics");
@@ -771,7 +799,7 @@ public class DataServicesController {
             @RequestParam(required = false) String protocol, @RequestParam(required = false) String ip,
             @RequestParam(required = false) Integer port, @RequestParam(required = false) UUID connectionId) {
         String baseUrl = customBaseUrl(protocol, ip, port, getCluster(clusterId), ServiceKind.KAFKA_CONNECT, connectionId);
-        return ResponseEntity.ok(readConnectorDetails(baseUrl, name, encodedCert, clusterId, connectionId, null));
+        return ResponseEntity.ok(readConnectorDetails(baseUrl, name, encodedCert, clusterId, connectionId, null, false));
     }
 
     @PostMapping("/kafka-connect/connectors/{name}/restart")
