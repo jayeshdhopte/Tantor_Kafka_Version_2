@@ -29,6 +29,16 @@ test('live intervals match Topics and preferences default to Off, rejecting corr
   assert.deepEqual(live.readLiveRefreshSettings('a'), { enabled: true, seconds: 10 });
 });
 
+test('requested service views default to On while a saved explicit pause is respected', t => {
+  const storage = environment(t);
+  assert.deepEqual(live.readLiveRefreshSettings('connect', true), { enabled: true, seconds: 15 });
+  storage.set('connect', JSON.stringify({ enabled: false, seconds: 10 }));
+  assert.deepEqual(live.readLiveRefreshSettings('connect', true), { enabled: false, seconds: 10 });
+  storage.set('connect', '{broken');
+  assert.deepEqual(live.readLiveRefreshSettings('connect', true), { enabled: true, seconds: 15 });
+  assert.deepEqual(live.readLiveRefreshSettings('unrelated'), { enabled: false, seconds: 15 });
+});
+
 test('polling waits for the interval, skips overlapping requests and stops completely on cleanup', async t => {
   environment(t);
   let calls = 0, finish;
@@ -80,6 +90,19 @@ function hookHarness(t) {
   vm.runInContext(code, context);
   return { storage, document, render: options => context.exports.useLiveRefresh(options) };
 }
+
+test('default-enabled views poll without a manual toggle and suspend while editing', async t => {
+  const h = hookHarness(t);
+  let calls = 0;
+  const props = { scope: 'cluster:partitions', defaultEnabled: true, refresh: async () => { calls++; } };
+  const control = h.render(props);
+  assert.equal(control.enabled, true);
+  t.mock.timers.tick(15000); await flush(); assert.equal(calls, 1);
+  h.render({ ...props, paused: true });
+  t.mock.timers.tick(30000); await flush(); assert.equal(calls, 1);
+  h.render(props);
+  t.mock.timers.tick(15000); await flush(); assert.equal(calls, 2);
+});
 
 test('Pause, interval changes, page switches and connection switches clean up their timers', async t => {
   const h = hookHarness(t);

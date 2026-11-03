@@ -75,7 +75,7 @@ export function Partitions() {
   }, [fetchPartitions]);
 
   const liveRefresh = useLiveRefresh({ scope: `${id}:partitions`, context: `${page}:${size}:${searchQuery}:${sortBy}`,
-    refresh: signal => fetchPartitions(true, signal), paused: loading });
+    refresh: signal => fetchPartitions(true, signal), paused: loading, defaultEnabled: true });
 
   // Handle Search submit
   const handleSearchSubmit = (e: React.FormEvent) => {

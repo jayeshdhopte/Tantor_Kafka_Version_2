@@ -1,5 +1,7 @@
 import { RefreshButton } from './RefreshButton';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { LiveRefreshControl } from './LiveRefreshControl';
+import { startLivePolling, type LiveRefreshSettings } from '../utils/liveRefresh';
 import { Activity, ArrowLeft, ArrowUpDown, ArrowUp, ArrowDown, Braces, CircleAlert, CirclePlay, MoreVertical, RefreshCw, RotateCw, Server, Users, Workflow } from 'lucide-react';
 import { AnchoredMenu } from './AnchoredMenu';
 import { ConnectorConfigPanel } from './ConnectorConfigPanel';
@@ -7,16 +9,17 @@ import { confirmAction } from './confirmUtils';
 import { connectorStatusClass, connectorType, type ConnectorRow } from '../utils/kafkaConnect';
 
 type Action = 'pause' | 'resume' | 'stop' | 'restart' | 'restart-all' | 'restart-failed' | 'delete' | 'task';
-export function KafkaConnectorDetails({ clusterId, connectionId, name, initial, canManage, onBack, onChanged, onDeleted }: {
+export function KafkaConnectorDetails({ clusterId, connectionId, name, initial, canManage, liveRefresh, onBack, onChanged, onDeleted }: {
   clusterId: string; connectionId: string | null; name: string; initial?: ConnectorRow;
   canManage: boolean; onBack: () => void; onChanged: () => void; onDeleted: () => void;
+  liveRefresh: LiveRefreshSettings & { onChange: (enabled: boolean, seconds?: number) => void };
 }) {
   const [data, setData] = useState<ConnectorRow | undefined>(initial);
   const [tab, setTab] = useState<'tasks' | 'config' | 'topics'>('tasks');
   const [configDirty, setConfigDirty] = useState(false);
   const [taskMenu, setTaskMenu] = useState<{ id: number; anchor: HTMLElement } | null>(null);
   const [taskSort, setTaskSort] = useState({ key: 'id', ascending: true });
-  const [revision, setRevision] = useState(0);
+  const activeRequest = useRef<AbortController | null>(null);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -24,17 +27,36 @@ export function KafkaConnectorDetails({ clusterId, connectionId, name, initial, 
   const base = `/api/v1/clusters/${clusterId}/data-services/kafka-connect/connectors/${encodeURIComponent(name)}`;
   const withConnection = (path: string) => connectionId ? path + (path.includes('?') ? '&' : '?') + new URLSearchParams({ connectionId }) : path;
   const url = withConnection(base + '/details');
-  useEffect(() => {
+  const loadDetails = useCallback(async (quiet = false, signal?: AbortSignal) => {
+    if (quiet && activeRequest.current) return;
+    activeRequest.current?.abort();
     const abort = new AbortController();
-    fetch(url, { signal: abort.signal }).then(async response => {
+    activeRequest.current = abort;
+    const cancel = () => abort.abort();
+    signal?.addEventListener('abort', cancel, { once: true });
+    if (signal?.aborted) abort.abort();
+    if (!quiet) setLoading(true);
+    try {
+      const response = await fetch(url, { signal: abort.signal });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.message || 'Unable to load connector details.');
       if (!abort.signal.aborted) { setData(result); setError(null); }
-    }).catch(reason => { if (!abort.signal.aborted) setError(reason.message || 'Unable to load connector details.'); })
-      .finally(() => { if (!abort.signal.aborted) setLoading(false); });
-    return () => abort.abort();
-  }, [url, revision]);
-  const refresh = () => { setLoading(true); setRevision(current => current + 1); };
+    } catch (reason) {
+      if (!abort.signal.aborted) setError(reason instanceof Error ? reason.message : 'Unable to load connector details.');
+    } finally {
+      signal?.removeEventListener('abort', cancel);
+      if (activeRequest.current === abort) { activeRequest.current = null; setLoading(false); }
+    }
+  }, [url]);
+  useEffect(() => {
+    void loadDetails();
+    return () => { activeRequest.current?.abort(); activeRequest.current = null; };
+  }, [loadDetails]);
+  useEffect(() => {
+    if (!liveRefresh.enabled || loading || acting || configDirty) return;
+    return startLivePolling(liveRefresh.seconds, signal => loadDetails(true, signal), () => document.visibilityState === 'visible');
+  }, [liveRefresh.enabled, liveRefresh.seconds, loadDetails, loading, acting, configDirty]);
+  const refresh = () => { void loadDetails(); };
   const actionLabels: Record<Action, string> = { pause: 'Pause connector', resume: 'Resume connector', stop: 'Stop connector', restart: 'Restart connector',
     'restart-all': 'Restart connector and all tasks', 'restart-failed': 'Restart failed connector / tasks', delete: 'Delete connector', task: 'Restart task' };
   const perform = async (action: Action, taskId?: number) => {
@@ -54,7 +76,7 @@ export function KafkaConnectorDetails({ clusterId, connectionId, name, initial, 
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.message || `${actionLabels[action]} request failed.`);
       if (action === 'delete') { onDeleted(); onChanged(); return; }
-      setNotice(`${actionLabels[action]} request accepted. Refresh to check the latest state.`);
+      setNotice(`${actionLabels[action]} request accepted.`);
       refresh(); onChanged();
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { setActing(false); }
@@ -68,6 +90,7 @@ export function KafkaConnectorDetails({ clusterId, connectionId, name, initial, 
     <header className="ds-kc-detail-header">
       <div><button className="ds-connector-link" onClick={onBack} disabled={acting || configDirty}><ArrowLeft size={16} /> Connectors</button><h2>{name}</h2></div>
       <div className="ds-inline-actions">
+        <LiveRefreshControl {...liveRefresh} label="Connector details" />
         <RefreshButton className="ds-button outlined" onClick={refresh} disabled={loading || acting || configDirty}><RefreshCw size={16} className={loading ? 'spin' : ''} /> Refresh details</RefreshButton>
         {canManage && <select className="ds-kc-action-select" aria-label="Connector action" value="" disabled={acting || loading || configDirty || !data}
           onChange={event => void perform(event.target.value as Action)}><option value="" disabled>Manage connector</option>

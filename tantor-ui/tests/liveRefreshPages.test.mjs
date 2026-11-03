@@ -73,10 +73,65 @@ test('ACL auto refresh uses the existing authenticated GET helper, not any mutat
   assert.doesNotMatch(get, /POST|PUT|DELETE/);
 });
 
+test('connector detail polling replaces task counts, connector state and tracked topics with the latest snapshot', async () => {
+  const declaration = initializer('components/KafkaConnectorDetails.tsx', 'loadDetails').node;
+  const script = ts.transpileModule(`globalThis.load = (${declaration.arguments[0].getText()});`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const snapshots = [
+    { state: 'RUNNING', status: { tasks: [{ id: 0, state: 'RUNNING' }] }, topics: ['orders'] },
+    { state: 'PAUSED', status: { tasks: [{ id: 0, state: 'PAUSED' }, { id: 1, state: 'FAILED' }] }, topics: ['orders', 'payments'] },
+  ];
+  const updates = [];
+  const context = vm.createContext({ url: '/connectors/orders/details?connectionId=instance-a', AbortController, Error,
+    activeRequest: { current: null }, setLoading() {}, setError() {}, setData: value => updates.push(value),
+    fetch: async () => ({ ok: true, json: async () => snapshots.shift() }),
+  });
+  vm.runInContext(script, context);
+  await context.load(true, new AbortController().signal);
+  await context.load(true, new AbortController().signal);
+  assert.equal(updates[0].status.tasks.length, 1);
+  assert.equal(updates[1].status.tasks.length, 2);
+  assert.equal(updates[1].state, 'PAUSED');
+  assert.deepEqual(updates[1].topics, ['orders', 'payments']);
+});
+
+test('Schema Registry detail polling updates versions and ignores a response cancelled by a subject switch', async () => {
+  const declaration = initializer('pages/SchemaRegistry.tsx', 'refreshSchema').node;
+  const script = ts.transpileModule(`globalThis.refresh = (${declaration.getText()});`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const updates = [], calls = [];
+  let finish;
+  const context = vm.createContext({ id: 'cluster', selectedConnectionId: 'instance-a', selectedSubject: 'orders/value',
+    view: 'detail', showDeletedSubjects: false, globalCompatibility: 'BACKWARD',
+    load: async () => true, withConnId: path => path + '?connectionId=instance-a',
+    setDetails: value => updates.push(value), setSubjectCompatibility() {}, setError() {}, errorMessage: error => error.message,
+    fetch: async (url, init) => { calls.push({ url, signal: init.signal }); return {
+      ok: true, json: () => new Promise(resolve => { finish = resolve; }),
+    }; },
+  });
+  vm.runInContext(script, context);
+  const first = context.refresh(new AbortController().signal);
+  for (let i = 0; i < 10 && !finish; i++) await Promise.resolve();
+  finish({ versions: [{ version: 1 }, { version: 2 }], compatibility: 'FULL' }); await first;
+  assert.equal(updates[0].versions.length, 2);
+  assert.ok(calls[0].url.includes('orders%2Fvalue/details?connectionId=instance-a&includeDeleted=true'));
+  const controller = new AbortController(); finish = null;
+  const stale = context.refresh(controller.signal);
+  for (let i = 0; i < 10 && !finish; i++) await Promise.resolve();
+  controller.abort(); finish({ versions: [{ version: 99 }] }); await stale;
+  assert.equal(updates.length, 1);
+  context.view = 'edit';
+  await context.refresh(new AbortController().signal);
+  assert.equal(calls.length, 2);
+});
+
 for (const [path, name, endpoint] of [
   ['pages/Consumers.tsx', 'fetchGroups', '/consumer-groups?page=2&size=10&search=orders&sortBy=totalLag'],
   ['pages/Partitions.tsx', 'fetchPartitions', '/partitions?page=2&size=10&search=orders&sortBy=totalLag'],
   ['components/SecurityManager.tsx', 'fetchAcls', '/security/acls'],
+  ['components/KafkaConnectorDetails.tsx', 'loadDetails', '/details'],
 ]) {
   test(`${name} refreshes quietly, preserves existing data on failure and ignores cancelled results`, async () => {
     const declaration = initializer(path, name).node;
@@ -86,7 +141,7 @@ for (const [path, name, endpoint] of [
     const requests = [], updates = [], loading = [], errors = [];
     let fail = false;
     const result = { content: [{ id: 'fresh' }], acls: [{ principal: 'User:fresh' }] };
-    const context = vm.createContext({ id: 'cluster-test', clusterId: 'cluster-test',
+    const context = vm.createContext({ id: 'cluster-test', clusterId: 'cluster-test', url: '/connectors/orders/details',
       page: 2, size: 10, searchQuery: 'orders', sortBy: 'totalLag',
       activeRequest: { current: null }, AbortController, Error,
       setLoading: value => loading.push(value), setAclsLoading: value => loading.push(value),

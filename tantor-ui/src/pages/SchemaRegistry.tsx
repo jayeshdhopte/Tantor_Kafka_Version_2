@@ -1164,10 +1164,27 @@ export function SchemaRegistry() {
     void confirmSetting({ kind: 'compatibility', value, oldValue, subject, connectionId: selectedConnectionId }, true);
   };
 
-  const liveRefresh = useLiveRefresh({ scope: `${id}:schema-registry`, context: `${selectedConnectionId}:${showDeletedSubjects}:${view}`,
-    refresh: signal => load(selectedConnectionId, undefined, showDeletedSubjects, true, signal),
+  const refreshSchema = async (signal: AbortSignal) => {
+    const loaded = await load(selectedConnectionId, undefined, showDeletedSubjects, true, signal);
+    if (!loaded || signal.aborted || view !== 'detail' || !selectedSubject) return;
+    try {
+      const detailUrl = withConnId(`/api/v1/clusters/${id}/data-services/schema-registry/subjects/${encodeURIComponent(selectedSubject)}/details`);
+      const response = await fetch(`${detailUrl}${detailUrl.includes('?') ? '&' : '?'}includeDeleted=true`, { signal });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || 'Failed to load subject details.');
+      if (!signal.aborted) {
+        setDetails(data);
+        setSubjectCompatibility(data.compatibility || globalCompatibility);
+      }
+    } catch (failure) {
+      if (!signal.aborted) setError(errorMessage(failure, 'Failed to load subject details.'));
+    }
+  };
+  const liveRefresh = useLiveRefresh({ scope: `${id}:schema-registry`, context: `${selectedConnectionId}:${showDeletedSubjects}:${view}:${selectedSubject}`,
+    defaultEnabled: true,
+    refresh: refreshSchema,
     paused: loading || loadingDetails || saving || connectSaving || showConnection || showCreate || showDeleteConfirm
-      || Boolean(pendingSetting || pendingDelete || pendingRecovery || pendingBulkDelete) || view !== 'list' || !hasFetched || !summary });
+      || Boolean(pendingSetting || pendingDelete || pendingRecovery || pendingBulkDelete) || !['list', 'detail'].includes(view) || !hasFetched });
 
   const connStatusColor = (s: string) =>
     s === 'ONLINE' ? '#80e8a2' : (s === 'OFFLINE' || s === 'ERROR') ? '#e88080' : '#a8c5c0';

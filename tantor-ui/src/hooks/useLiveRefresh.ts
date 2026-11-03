@@ -1,11 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { liveRefreshIntervals, readLiveRefreshSettings, startLivePolling, type LiveRefreshSettings } from '../utils/liveRefresh';
 
-export function useLiveRefresh({ scope, context = '', refresh, paused = false }: {
-  scope: string; context?: string; refresh: (signal: AbortSignal) => Promise<unknown>; paused?: boolean;
+export function useLiveRefresh({ scope, context = '', refresh, paused = false, defaultEnabled = false }: {
+  scope: string; context?: string; refresh: (signal: AbortSignal) => Promise<unknown>; paused?: boolean; defaultEnabled?: boolean;
 }) {
   const key = `tantor:live:${scope}`;
-  const saved = useMemo(() => readLiveRefreshSettings(key), [key]);
+  const saved = useMemo(() => readLiveRefreshSettings(key, defaultEnabled), [key, defaultEnabled]);
   const [selection, setSelection] = useState<(LiveRefreshSettings & { key: string }) | null>(null);
   const current = selection?.key === key ? selection : saved;
   const latest = useRef({ refresh, paused });

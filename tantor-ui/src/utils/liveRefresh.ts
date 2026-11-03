@@ -1,14 +1,14 @@
 export const liveRefreshIntervals = [5, 10, 15, 30, 60] as const;
 export type LiveRefreshSettings = { enabled: boolean; seconds: number };
 
-export function readLiveRefreshSettings(key: string): LiveRefreshSettings {
+export function readLiveRefreshSettings(key: string, defaultEnabled = false): LiveRefreshSettings {
   try {
     const saved = JSON.parse(window.localStorage.getItem(key) || 'null');
     if (saved && liveRefreshIntervals.some(seconds => seconds === saved.seconds)) {
       return { enabled: saved.enabled === true, seconds: saved.seconds };
     }
   } catch { /* Storage can be unavailable in restricted browser sessions. */ }
-  return { enabled: false, seconds: 15 };
+  return { enabled: defaultEnabled, seconds: 15 };
 }
 
 export function startLivePolling(seconds: number, refresh: (signal: AbortSignal) => Promise<unknown>, canRefresh: () => boolean) {

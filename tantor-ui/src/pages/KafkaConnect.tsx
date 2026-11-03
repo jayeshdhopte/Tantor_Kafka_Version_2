@@ -575,14 +575,15 @@ export function KafkaConnect() {
     s === 'ONLINE' ? '#80e8a2' : (s === 'OFFLINE' || s === 'ERROR') ? '#e88080' : '#a8c5c0';
 
   const liveRefresh = useLiveRefresh({ scope: `${id}:kafka-connect`, context: `${selectedConnectionId}:${selectedConnectorName}`,
+    defaultEnabled: true,
     refresh: signal => load(selectedConnectionId, undefined, true, signal),
-    paused: loading || saving || connectSaving || showConnection || showCreate || Boolean(selectedConnectorName) || !hasFetched || !summary });
+    paused: loading || saving || connectSaving || showConnection || showCreate || Boolean(selectedConnectorName) || !hasFetched });
 
   return (
     <div className="data-services-page ds-kafka-connect-page animate-fade-in" style={{ width: '100%' }}>
       {selectedConnectorName && id && <KafkaConnectorDetails key={`${connectorContext}:${selectedConnectorName}`}
         clusterId={id} connectionId={selectedConnectionId} name={selectedConnectorName}
-        initial={summary?.connectors.find(connector => connector.name === selectedConnectorName)} canManage={canManage}
+        initial={summary?.connectors.find(connector => connector.name === selectedConnectorName)} canManage={canManage} liveRefresh={liveRefresh}
         onBack={() => { setSelectedConnectorName(null); setActiveTab('connectors'); }} onChanged={() => void load()}
         onDeleted={() => { setSelectedConnectorName(null); setActiveTab('connectors'); setSuccessMessage('Connector deleted.'); }} />}
       <div hidden={Boolean(selectedConnectorName)}>
