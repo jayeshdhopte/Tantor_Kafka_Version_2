@@ -14,7 +14,7 @@ import java.util.UUID;
 @Repository
 public interface JobRepository extends JpaRepository<Job, UUID> {
     @org.springframework.data.jpa.repository.Query(value = """
-            SELECT newer.* FROM kf_jobs newer JOIN kf_jobs original ON original.id = :id
+            SELECT newer.* FROM kf_jobs newer JOIN kf_jobs original ON original.id = CAST(:id AS text)
             WHERE newer.resource_key = original.resource_key AND newer.created_at > original.created_at
               AND newer.type IN ('TARGETED_CONFIG_CHANGE', 'CONFIG_CHANGE', 'ROLLING_CONFIG_UPDATE')
               AND newer.status <> 'ROLLED_BACK'

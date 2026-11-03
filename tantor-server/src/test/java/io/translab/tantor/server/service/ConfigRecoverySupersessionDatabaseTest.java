@@ -33,7 +33,8 @@ class ConfigRecoverySupersessionDatabaseTest {
     String newer() throws Exception {
         String query = JobRepository.class.getMethod("findNewerAppliedConfiguration", UUID.class).getAnnotation(Query.class).value();
         try (var stmt = connection.prepareStatement(query.replace(":id", "?"))) {
-            stmt.setString(1,original);
+            // Native Spring Data parameters bind UUID as PostgreSQL uuid, while legacy job IDs are varchar.
+            stmt.setObject(1,UUID.fromString(original));
             try (var rows = stmt.executeQuery()) { return rows.next() ? rows.getString("id") : null; }
         }
     }
