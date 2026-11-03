@@ -1,10 +1,32 @@
 # Add Service database mapping
 
-Local implementation for Schema Registry and Kafka Connect on `VERSION_2_LATEST`.
+Schema Registry and Kafka Connect mapping on `version2_db_mapping`.
 
 ## Storage
 
-V91 adds `public.kf_add_service` to the existing local database (`127.0.0.1:5433`, database `tantor`). It has the diagram's 16 fields. Only `add_service_id` is required. There are no foreign keys, CHECK constraints or defaults. The diagram did not specify SQL types: identifiers use UUID, `created_time` uses TIMESTAMPTZ, `secured` uses BOOLEAN and other fields use TEXT.
+V91 originally added the diagram's 16 fields without foreign keys. Identifiers use UUID, created_time uses TIMESTAMPTZ, secured uses BOOLEAN and other original fields use TEXT. Only add_service_id is NOT NULL.
+
+V97 adds the validated database constraint fk_add_service_cluster:
+
+    FOREIGN KEY (cluster_id) REFERENCES public.kf_clusters(id)
+    ON UPDATE NO ACTION ON DELETE RESTRICT
+
+This is the physical relationship shown as cluster_id (FK) in the diagram; the
+actual parent table is kf_clusters. NULL remains permitted for an unassociated
+record. Unknown non-NULL cluster IDs are rejected on INSERT and UPDATE.
+Migration validation fails on orphan data rather than deleting, rewriting or
+fabricating parent records.
+
+Both internal clusters and external inventory mirrors use this parent table and
+the same Tantor UUID. The shared purge path clears live host, node, connection and
+service assignments. If service history references the cluster, its parent row is
+retained with status DELETED, hidden by the existing active-inventory filters.
+Unreferenced parents can still be physically purged. There is no cascading
+deletion or nulling of service history.
+
+The native Kafka ID unique index applies to active parents. A deleted historical
+parent keeps its original native ID, and re-registering that physical cluster
+under a new Tantor UUID remains possible without allowing duplicate active IDs.
 
 V93 adds `kafka_cluster_id` and V94 adds nullable TEXT `cluster_origin`, bringing the current total to 18 fields. `cluster_origin` is `EXTERNAL` when the UUID belongs to external-cluster inventory; otherwise the saved internal inventory `origin_type` supplies `INTERNAL` or `EXTERNAL`. Unclassifiable/missing inventory stays NULL. External inventory takes precedence over its internal mirror.
 
@@ -15,7 +37,7 @@ The diagram's `host_id/fqdn` label is represented by `host_id`. The following me
 | Field | Meaning/source |
 |---|---|
 | add_service_id | Existing `kf_cluster_services.id` or `kf_external_services.id`; one mapping per deployed instance |
-| cluster_id | Existing assignment's cluster ID, stored as a plain ID |
+| cluster_id | FK to kf_clusters.id; includes the canonical mirror for external clusters |
 | kafka_cluster_id | Actual native Kafka ID from saved cluster inventory; V93 snapshot rules apply |
 | cluster_origin | INTERNAL / EXTERNAL from saved inventory; NULL when unknown |
 | created_time | Actual time the new assignment is mapped; preserved on retry |
@@ -59,15 +81,26 @@ Existing jobs, steps, tasks, service assignments, REST connections, JSON payload
 
 Run the complete server suite with Java 21 and Maven: `mvn -B -ntp verify` in `tantor-server`.
 
-`AddServiceMappingDatabaseTest` is explicitly opt-in. It connects only to the named existing local Docker database from its Docker network, inserts fixtures only into `kf_add_service`, and rolls back all fixture writes. It requires `TANTOR_LOCAL_MAPPING_DB_TEST=true` and `TANTOR_LOCAL_DB_PASSWORD` from the ignored local environment file. It cannot be redirected to the server database through a URL variable.
+Database tests are explicitly opt-in. Existing local test flags retain their local
+defaults. TANTOR_STATUS_AUDIT_TEST_URL, USER and PASSWORD can redirect the service
+mapping tests only to a deliberately named *_check_* database. Foreign-key and
+status-transition tests require this isolated override. Coverage includes real
+internal/external parents, orphan rejection, NULL, purge/history preservation,
+external re-registration and active-ID uniqueness. Fixtures never target the live
+management database.
 
-Refresh **Schemas → public → Tables** in pgAdmin on the port 5433 connection. The new table remains empty until a new service is added. For inspection:
+Refresh **Schemas → public → Tables** in pgAdmin on the appropriate PostgreSQL connection. For inspection:
 
 ```sql
 SELECT add_service_id, cluster_id, created_time, status, host_id,
        broker_ip, "user", created_by, updated_by, process_role
 FROM public.kf_add_service
 ORDER BY created_time DESC;
+ 
+SELECT conname, convalidated, pg_get_constraintdef(oid)
+FROM pg_constraint
+WHERE conrelid = 'public.kf_add_service'::regclass AND contype = 'f';
 ```
 
-No server deployment or Git push is included.
+The V97 migration changes constraints and indexes only; existing mapping and audit
+rows are not backfilled or rewritten.

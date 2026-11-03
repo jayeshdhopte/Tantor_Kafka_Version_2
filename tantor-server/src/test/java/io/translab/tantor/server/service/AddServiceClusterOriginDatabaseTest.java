@@ -21,7 +21,14 @@ import static org.mockito.Mockito.mock;
 /** Existing local DB only; service, inventory and audit fixtures all roll back. */
 @EnabledIfEnvironmentVariable(named="TANTOR_LOCAL_SERVICE_ORIGIN_DB_TEST",matches="true")
 class AddServiceClusterOriginDatabaseTest {
-    private final DriverManagerDataSource source=new DriverManagerDataSource("jdbc:postgresql://127.0.0.1:5433/tantor","tantor_dev",System.getenv("TANTOR_LOCAL_DB_PASSWORD"));
+    @org.junit.jupiter.api.BeforeEach void requireIsolatedOverride() {
+        if(System.getenv("TANTOR_STATUS_AUDIT_TEST_URL")!=null)
+            assertThat(System.getenv("TANTOR_STATUS_AUDIT_TEST_URL")).contains("_check_");
+    }
+    private final DriverManagerDataSource source=new DriverManagerDataSource(
+            System.getenv().getOrDefault("TANTOR_STATUS_AUDIT_TEST_URL","jdbc:postgresql://127.0.0.1:5433/tantor"),
+            System.getenv().getOrDefault("TANTOR_STATUS_AUDIT_TEST_USER","tantor_dev"),
+            System.getenv().getOrDefault("TANTOR_STATUS_AUDIT_TEST_PASSWORD",System.getenv("TANTOR_LOCAL_DB_PASSWORD")));
     private final JdbcTemplate jdbc=new JdbcTemplate(source);
     private final TransactionTemplate transaction=new TransactionTemplate(new DataSourceTransactionManager(source));
     private final AddServiceMappingService mapping=new AddServiceMappingService(jdbc,new ObjectMapper(),mock(ApplicationEventPublisher.class));
@@ -61,13 +68,15 @@ class AddServiceClusterOriginDatabaseTest {
         });
     }
 
-    @Test void unknownAndNullAssociationsStayNullInsteadOfAssumingInternal() {
+    @Test void unknownAssociationsAreRejectedAndNullAssociationRemainsUnclassified() {
         rollback(()->{
-            UUID unknown=UUID.randomUUID(),none=UUID.randomUUID();
-            jdbc.update("INSERT INTO kf_add_service(add_service_id,cluster_id) VALUES (?,?)",unknown,UUID.randomUUID());
+            UUID none=UUID.randomUUID();
             jdbc.update("INSERT INTO kf_add_service(add_service_id) VALUES (?)",none);
-            assertThat(row(unknown).get("cluster_origin")).isNull();assertThat(row(none).get("cluster_origin")).isNull();
+            assertThat(row(none).get("cluster_origin")).isNull();
         });
+        assertThatThrownBy(()->rollback(()->jdbc.update(
+                "INSERT INTO kf_add_service(add_service_id,cluster_id) VALUES (?,?)",UUID.randomUUID(),UUID.randomUUID())))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
     }
 
     @Test void reassignmentAndCallerSuppliedValuesAreResolvedAgainstActualInventory() {
@@ -93,9 +102,10 @@ class AddServiceClusterOriginDatabaseTest {
         String backfill=migration.substring(migration.lastIndexOf("UPDATE public.kf_add_service"));
         rollback(()->{
             UUID cluster=UUID.randomUUID(),known=UUID.randomUUID(),unknown=UUID.randomUUID();
-            jdbc.update("INSERT INTO kf_add_service(add_service_id,cluster_id,status) VALUES (?,?,'PENDING'),(?,?,'FAILED')",known,cluster,unknown,UUID.randomUUID());
+            jdbc.update("INSERT INTO kf_clusters(id,cluster_name,kafka_cluster_id,origin_type) VALUES (?,?,'LateKnownKafkaId','UNKNOWN')",cluster,"origin-test-"+cluster);
+            jdbc.update("INSERT INTO kf_add_service(add_service_id,cluster_id,status) VALUES (?,?,'PENDING'),(?,NULL,'FAILED')",known,cluster,unknown);
             String previous=jdbc.queryForObject("SELECT (to_jsonb(s)-'cluster_origin')::text FROM kf_add_service s WHERE add_service_id=?",String.class,known);
-            jdbc.update("INSERT INTO kf_clusters(id,cluster_name,kafka_cluster_id) VALUES (?,?,'LateKnownKafkaId')",cluster,"origin-test-"+cluster);
+            jdbc.update("UPDATE kf_clusters SET origin_type='INTERNAL' WHERE id=?",cluster);
             assertThat(row(known).get("cluster_origin")).isNull();
             jdbc.execute(backfill);
             assertThat(row(known).get("cluster_origin")).isEqualTo("INTERNAL");

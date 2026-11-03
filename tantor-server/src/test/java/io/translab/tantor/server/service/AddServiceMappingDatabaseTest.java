@@ -18,8 +18,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 class AddServiceMappingDatabaseTest {
     @Test
     void persistsBothRolesAndRetriesWithoutDuplicatingOrFabricatingValues() {
-        var dataSource = new DriverManagerDataSource("jdbc:postgresql://tantor-kafka-v2-db-local:5432/tantor",
-                "tantor_dev", System.getenv("TANTOR_LOCAL_DB_PASSWORD"));
+        if (System.getenv("TANTOR_STATUS_AUDIT_TEST_URL") != null)
+            assertThat(System.getenv("TANTOR_STATUS_AUDIT_TEST_URL")).contains("_check_");
+        var dataSource = new DriverManagerDataSource(
+                System.getenv().getOrDefault("TANTOR_STATUS_AUDIT_TEST_URL", "jdbc:postgresql://tantor-kafka-v2-db-local:5432/tantor"),
+                System.getenv().getOrDefault("TANTOR_STATUS_AUDIT_TEST_USER", "tantor_dev"),
+                System.getenv().getOrDefault("TANTOR_STATUS_AUDIT_TEST_PASSWORD", System.getenv("TANTOR_LOCAL_DB_PASSWORD")));
         var jdbc = new JdbcTemplate(dataSource);
         var mappings = new AddServiceMappingService(jdbc, new ObjectMapper(),
                 org.mockito.Mockito.mock(org.springframework.context.ApplicationEventPublisher.class));
@@ -28,6 +32,8 @@ class AddServiceMappingDatabaseTest {
         transaction.executeWithoutResult(tx -> {
             tx.setRollbackOnly();
             UUID cluster = UUID.randomUUID();
+            jdbc.update("INSERT INTO kf_external_clusters(id,cluster_name,bootstrap_servers) VALUES (?,?,'fixture:9092')",
+                    cluster, "mapping-test-" + cluster);
             UUID schemaId = UUID.randomUUID(), connectId = UUID.randomUUID();
             var service = new ExternalDataService(); service.setClusterId(cluster); service.setAgentId("mapping-test-agent");
             service.setId(schemaId); service.setRole("schema_registry"); service.setStatus("PENDING");

@@ -53,10 +53,13 @@ class AddServiceStatusTransitionDatabaseTest {
     private UUID create(AddServiceMappingService mapping, boolean external, String role, String status) {
         UUID id = UUID.randomUUID(), clusterId = UUID.randomUUID();
         if (external) {
+            jdbc.update("INSERT INTO kf_external_clusters(id,cluster_name,bootstrap_servers) VALUES (?,?,'fixture:9092')",
+                    clusterId, "audit-test-" + clusterId);
             var service = new ExternalDataService(); service.setId(id); service.setClusterId(clusterId);
             service.setAgentId("audit-test-external"); service.setRole(role); service.setStatus(status); service.setConfigJson("{}");
             mapping.recordExternal(service, "creator");
         } else {
+            jdbc.update("INSERT INTO kf_clusters(id,cluster_name) VALUES (?,?)", clusterId, "audit-test-" + clusterId);
             var cluster = new Cluster(); cluster.setId(clusterId);
             var service = new ClusterServiceAssignment(); service.setId(id); service.setCluster(cluster);
             service.setHostId("audit-test-internal"); service.setRole(role); service.setStatus(status); service.setConfigJson("{}");

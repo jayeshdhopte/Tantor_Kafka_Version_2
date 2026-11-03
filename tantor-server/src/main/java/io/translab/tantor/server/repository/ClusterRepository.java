@@ -29,6 +29,8 @@ public interface ClusterRepository extends JpaRepository<Cluster, UUID> {
     @org.springframework.data.jpa.repository.Query("select c from Cluster c where c.id = :id")
     java.util.Optional<Cluster> findForServiceUpdate(@org.springframework.data.repository.query.Param("id") UUID id);
 
+    /** Clear live associations; referenced service-history parents remain DELETED.
+     * Returns the number of physically deleted parents (zero when history is retained). */
     @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true, flushAutomatically = true)
     @org.springframework.data.jpa.repository.Query(value = """
             WITH cleared_hosts AS (
@@ -37,8 +39,20 @@ public interface ClusterRepository extends JpaRepository<Cluster, UUID> {
                 DELETE FROM kf_data_service_connections WHERE cluster_id = :clusterId RETURNING id
             ), deleted_nodes AS (
                 DELETE FROM kf_nodes WHERE cluster_id = :clusterId RETURNING id
+            ), deleted_services AS (
+                DELETE FROM kf_cluster_services WHERE cluster_id = :clusterId
+                  AND EXISTS (SELECT 1 FROM kf_add_service WHERE cluster_id = :clusterId)
+                RETURNING id
+            ), retained_history AS (
+                UPDATE kf_clusters SET status = 'DELETED',
+                    deleted_at = COALESCE(deleted_at, now()), updated_at = now()
+                WHERE id = :clusterId
+                  AND EXISTS (SELECT 1 FROM kf_add_service WHERE cluster_id = :clusterId)
+                  AND (status IS DISTINCT FROM 'DELETED' OR deleted_at IS NULL)
+                RETURNING id
             )
             DELETE FROM kf_clusters WHERE id = :clusterId
+              AND NOT EXISTS (SELECT 1 FROM kf_add_service WHERE cluster_id = :clusterId)
             """, nativeQuery = true)
     int purgeById(@org.springframework.data.repository.query.Param("clusterId") UUID clusterId);
 }
