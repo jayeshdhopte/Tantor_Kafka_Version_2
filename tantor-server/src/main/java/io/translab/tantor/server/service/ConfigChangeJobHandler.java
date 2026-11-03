@@ -61,6 +61,7 @@ public class ConfigChangeJobHandler implements JobHandler {
                     continue;
                 }
                 jobService.startStep(step.getId());
+                jobService.assertMutationOwner(step.getId(), false);
                 executeStep(clusterId, step, payload, false);
                 jobService.completeStep(step.getId(), "Configuration change applied successfully.");
             } catch (Exception e) {
@@ -104,6 +105,7 @@ public class ConfigChangeJobHandler implements JobHandler {
                     continue;
                 }
                 jobService.startStep(step.getId());
+                jobService.assertMutationOwner(step.getId(), true);
                 executeStep(clusterId, step, readMap(step.getPayload()), true);
                 jobService.rolledBackStep(step.getId(), "Previous configuration restored.");
             } catch (Exception e) {

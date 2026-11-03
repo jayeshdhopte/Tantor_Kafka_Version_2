@@ -63,6 +63,7 @@ public class RollingRestartMappingService {
                 """, job.getId(), cluster.getId(), name, job.getStatus().name(), type, mode, environment, bootstrap,
                 job.getRequestedBy(), job.getRequestedBy(), timestamp(job.getCreatedAt()), timestamp(job.getUpdatedAt()),
                 json(roles), json(hosts), job.getType().name(), "CLUSTER");
+        synchronizeOperation(job);
         if (inserted == 1) publish(job.getId(), cluster.getId(), job.getRequestedBy(), "ROLLING_RESTART_REQUESTED",
                 job.getStatus().name(), name, hosts, roles);
     }
@@ -78,10 +79,17 @@ public class RollingRestartMappingService {
                 RETURNING cluster_id, cluster_name, updated_by, host_id, role_per_node
                 """, job.getStatus().name(), actor, OffsetDateTime.now(ZoneOffset.UTC), job.getId(), job.getStatus().name());
         if (rows.isEmpty()) return;
+        synchronizeOperation(job);
         var row = rows.get(0);
         publish(job.getId(), (UUID) row.get("cluster_id"), (String) row.get("updated_by"), action,
                 job.getStatus().name(), (String) row.get("cluster_name"),
                 readArray(row.get("host_id")), readArray(row.get("role_per_node")));
+    }
+
+    private void synchronizeOperation(Job job) {
+        jdbc.queryForObject("SELECT sync_cluster_operation_lock(?,?,?,?)",UUID.class,job.getId().toString(),
+                job.getStatus().name(),Objects.requireNonNullElse(job.getRetryCount(),0),
+                job.getEndTime()==null?OffsetDateTime.now(ZoneOffset.UTC):timestamp(job.getEndTime()));
     }
 
     private void publish(UUID id, UUID cluster, String actor, String action, String status,

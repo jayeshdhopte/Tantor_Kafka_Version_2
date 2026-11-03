@@ -35,17 +35,8 @@ public interface JobRepository extends JpaRepository<Job, UUID> {
 
     @org.springframework.data.jpa.repository.Query(value = """
             SELECT j.* FROM kf_jobs j
-            WHERE j.type IN ('ROLLING_RESTART', 'CLUSTER_DELETION', 'TARGETED_CONFIG_CHANGE', 'CONFIG_CHANGE') AND (
-                EXISTS (
-                    SELECT 1 FROM kf_job_steps s JOIN kf_tasks t ON t.id = s.agent_task_id
-                        OR CAST(t.id AS text) IN (CAST(s.payload AS jsonb)->>'configMutationTaskId', CAST(s.payload AS jsonb)->>'recoveryTaskId')
-                    WHERE s.job_id = j.id AND t.status IN ('PENDING', 'IN_PROGRESS', 'RUNNING')
-                ) OR EXISTS (
-                    SELECT 1 FROM kf_job_steps s JOIN kf_external_kafka_tasks t ON t.id = s.agent_task_id
-                        OR CAST(t.id AS text) IN (CAST(s.payload AS jsonb)->>'configMutationTaskId', CAST(s.payload AS jsonb)->>'recoveryTaskId')
-                    WHERE s.job_id = j.id AND t.status IN ('PENDING', 'IN_PROGRESS')
-                )
-            )
+            WHERE j.type IN ('ROLLING_RESTART', 'CLUSTER_DELETION', 'TARGETED_CONFIG_CHANGE', 'CONFIG_CHANGE', 'ROLLING_CONFIG_UPDATE')
+                AND public.cluster_operation_has_unfinished_tasks(j.id)
             """, nativeQuery = true)
     List<Job> findWithUnfinishedRestartTasks();
 

@@ -10,6 +10,14 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class RollingRestartJobSafetyTest {
+    @Test void lostRestartOwnershipRejectsDispatchBeforeAnAgentTaskIsCreated() {
+        var jobs=mock(JobService.class);var deployment=mock(DeploymentService.class);
+        UUID step=UUID.randomUUID();
+        doThrow(new ClusterOperationConflictException("Owner no longer executing")).when(jobs).assertMutationOwner(step,false);
+        var dispatcher=new RollingRestartTaskDispatcher(deployment,jobs);
+        assertThatThrownBy(()->dispatcher.dispatch(UUID.randomUUID(),"host","broker.service",step)).isInstanceOf(ClusterOperationConflictException.class);
+        verifyNoInteractions(deployment);
+    }
     @Test void retryPreservesCompletedStepsAndRestartEvidenceAndRejectsRollback() {
         var jobs = mock(JobRepository.class); var steps = mock(JobStepRepository.class); var clusters = mock(ClusterRepository.class);
         var service = new JobService(jobs, steps, new ObjectMapper(), clusters, mock(ExternalClusterRepository.class), org.mockito.Mockito.mock(io.translab.tantor.server.service.RollingRestartMappingService.class), org.mockito.Mockito.mock(io.translab.tantor.server.service.ConfigChangeMappingService.class));

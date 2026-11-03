@@ -74,6 +74,7 @@ public class RollingConfigUpdateJobHandler implements JobHandler {
                 if (step.getStatus() == JobStepStatus.SUCCESS) continue;
 
                 jobService.startStep(step.getId());
+                jobService.assertMutationOwner(step.getId(), false);
 
                 if (step.getName().equals("PREFLIGHT")) {
                     try {

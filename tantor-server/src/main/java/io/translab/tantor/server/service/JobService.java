@@ -289,6 +289,7 @@ public class JobService {
 
     @Transactional
     public UUID queueConfigMutation(UUID stepId, boolean rollback, java.util.function.Supplier<UUID> enqueue) {
+        assertMutationOwner(stepId, rollback);
         JobStep step = getStep(stepId);
         Map<String, Object> payload = configPayload(step);
         if (!payload.containsKey("recoveryCheckpoint")) throw new IllegalStateException("Configuration recovery checkpoint is missing.");
@@ -302,11 +303,24 @@ public class JobService {
 
     @Transactional
     public void markConfigMutation(UUID stepId) {
+        assertMutationOwner(stepId, false);
         JobStep step = getStep(stepId);
         Map<String, Object> payload = configPayload(step);
         if (!payload.containsKey("recoveryCheckpoint")) throw new IllegalStateException("Configuration recovery checkpoint is missing.");
         payload.put("configMutationStarted", true);
         saveConfigPayload(step, payload);
+    }
+
+    /** Check the persisted owner at the mutation boundary, including superseded configuration recovery. */
+    @Transactional
+    public void assertMutationOwner(UUID stepId, boolean rollback) {
+        JobStep step=getStep(stepId);
+        Job owner=jobRepository.findForUpdateById(step.getJob().getId())
+                .orElseThrow(()->new ClusterOperationConflictException("Operation owner no longer exists."));
+        JobStatus expected=rollback?JobStatus.ROLLING_BACK:JobStatus.IN_PROGRESS;
+        if(owner.getStatus()!=expected) throw new ClusterOperationConflictException("Operation no longer owns an executing cluster mutation; refresh its job status.");
+        lockAndCheck(owner.getResourceKey(),owner.getType(),owner.getId());
+        assertConfigRecoveryCurrent(owner);
     }
 
     private Map<String, Object> configPayload(JobStep step) {

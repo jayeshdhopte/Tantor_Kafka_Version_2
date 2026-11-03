@@ -515,6 +515,7 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
                         String.valueOf(id), String.valueOf(payload.get("configJson")), String.valueOf(payload.get("configPath")), "batch", snapshot, "rollback-" + step.getId()));
             }
             if (!observed.equals(batchEntries(clusterId, id, previous.keySet()))) throw new IllegalStateException("Dynamic values changed during recovery backup.");
+            jobs.assertMutationOwner(step.getId(), true);
             if (!sets.isEmpty()) kafka.alterBrokerConfigs(clusterId, id, sets);
             if (!removals.isEmpty()) kafka.removeBrokerConfigs(clusterId, id, removals, false);
         }

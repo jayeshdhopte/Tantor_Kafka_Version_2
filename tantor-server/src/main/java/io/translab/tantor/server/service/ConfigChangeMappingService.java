@@ -41,9 +41,6 @@ public class ConfigChangeMappingService {
             jdbc.update("UPDATE kf_config_change SET version_no=v.config_version, approved_at=v.approved_at FROM kf_config_versions v WHERE change_id=? AND v.id=?::uuid",
                     job.getId(),request.get("configVersionId").toString());
         }
-        insert("kf_cluster_operation_lock", "lock_id", fields("lock_id",job.getId(),"cluster_id",cluster,
-                "change_id",job.getId(),"lock_type","CONFIG_CHANGE","lock_status","ACTIVE",
-                "acquired_by",job.getRequestedBy(),"acquired_at",time(job.getCreatedAt())));
         Set<UUID> staticTargets = new LinkedHashSet<>();
         var sequenceByKey = new LinkedHashMap<String,Integer>();
         var desiredByKey = new LinkedHashMap<String,Set<Object>>();
@@ -95,6 +92,7 @@ public class ConfigChangeMappingService {
         if (!staticTargets.isEmpty()) insert("kf_rolling_restart_operation","restart_operation_id",fields(
                 "restart_operation_id",job.getId(),"change_id",job.getId(),"restart_status",job.getStatus().name(),
                 "target_count",staticTargets.size(),"completed_count",0,"created_at",time(job.getCreatedAt()),"updated_at",time(job.getUpdatedAt())));
+        synchronizeOperation(job);
     }
 
     @Transactional
@@ -110,16 +108,15 @@ public class ConfigChangeMappingService {
         }
         jdbc.update("UPDATE kf_config_change SET status=?, execution_started_at=COALESCE(execution_started_at,?), completed_at=?, updated_at=? WHERE change_id=?",
                 job.getStatus().name(),time(job.getStartTime()),time(job.getEndTime()),now(),job.getId());
-        boolean terminal = Set.of(JobStatus.SUCCESS,JobStatus.FAILED,JobStatus.PARTIAL_SUCCESS,JobStatus.ROLLED_BACK,JobStatus.ROLLBACK_FAILED).contains(job.getStatus());
-        if (terminal) terminal = !Boolean.TRUE.equals(jdbc.queryForObject("""
-                SELECT EXISTS(SELECT 1 FROM kf_job_steps s WHERE s.job_id::text=? AND (
-                    EXISTS(SELECT 1 FROM kf_tasks t WHERE (t.id=s.agent_task_id OR t.id::text IN (s.payload->>'configMutationTaskId',s.payload->>'recoveryTaskId')) AND t.status IN ('PENDING','IN_PROGRESS','RUNNING'))
-                    OR EXISTS(SELECT 1 FROM kf_external_kafka_tasks t WHERE (t.id=s.agent_task_id OR t.id::text IN (s.payload->>'configMutationTaskId',s.payload->>'recoveryTaskId')) AND t.status IN ('PENDING','IN_PROGRESS'))))
-                """,Boolean.class,job.getId().toString()));
-        jdbc.update("UPDATE kf_cluster_operation_lock SET lock_status=?, released_at=?, release_reason=? WHERE change_id=?",
-                terminal?"RELEASED":"ACTIVE",terminal?now():null,terminal?job.getStatus().name():null,job.getId());
+        synchronizeOperation(job);
         jdbc.update("UPDATE kf_rolling_restart_operation SET restart_status=?, started_at=COALESCE(started_at,?), completed_at=?, updated_at=? WHERE change_id=?",
                 job.getStatus().name(),time(job.getStartTime()),time(job.getEndTime()),now(),job.getId());
+    }
+
+    private void synchronizeOperation(Job job) {
+        jdbc.queryForObject("SELECT sync_cluster_operation_lock(?,?,?,?)",UUID.class,job.getId().toString(),
+                job.getStatus().name(),Objects.requireNonNullElse(job.getRetryCount(),0),
+                job.getEndTime()==null?now():time(job.getEndTime()));
     }
 
     @Transactional

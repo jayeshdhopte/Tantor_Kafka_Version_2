@@ -29,6 +29,7 @@ class ConfigMappingLifecycleTest {
     }
     @Test void startCheckpointMutationAndCompletionKeepTheOriginalPayloadAndNotifyTheProjection(){
         var job=job(JobType.TARGETED_CONFIG_CHANGE);var step=new JobStep();step.setId(UUID.randomUUID());step.setJob(job);step.setName("Apply log.retention.hours");step.setPayload("{\"key\":\"log.retention.hours\",\"value\":\"72\"}");
+        job.setStatus(JobStatus.IN_PROGRESS);when(jobs.findForUpdateById(job.getId())).thenReturn(Optional.of(job));
         when(steps.findById(step.getId())).thenReturn(Optional.of(step));when(steps.findByJobIdOrderByStepOrderAsc(job.getId())).thenReturn(List.of(step));
         service.startStep(step.getId());service.checkpointConfigChange(step.getId(),Map.of("file",Map.of("log.retention.hours","168")));service.markConfigMutation(step.getId());service.completeStep(step.getId(),"Verified");
         verify(mapping,times(4)).step(step);

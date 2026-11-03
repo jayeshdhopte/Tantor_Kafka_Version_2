@@ -67,6 +67,8 @@ class RollingRestartMappingDatabaseTest {
             transaction.executeWithoutResult(tx -> {
                 tx.setRollbackOnly();
                 jdbc.update("INSERT INTO kf_clusters(id,cluster_name,status) VALUES (?,?,'SUCCESS')",cluster.getId(),cluster.getName());
+                jdbc.update("INSERT INTO kf_jobs(id,type,status,resource_key,payload,requested_by) VALUES (?,'ROLLING_RESTART','PENDING',?,'{}'::jsonb,?)",
+                        job.getId().toString(),"cluster:"+cluster.getId(),job.getRequestedBy());
                 mapping.record(job,cluster,List.of(first,second));
                 flushAudit(mapping,pending);
                 var original=jdbc.queryForMap("SELECT * FROM kf_rolling_restart_table WHERE unique_id=?",job.getId());
@@ -77,7 +79,7 @@ class RollingRestartMappingDatabaseTest {
                 mapping.record(job,cluster,List.of(first,second));flushAudit(mapping,pending);
                 assertThat(audits(jdbc,cluster.getId())).isEqualTo(1);
                 job.setStatus(JobStatus.FAILED);mapping.synchronizeStatus(job,null,"ROLLING_RESTART_FAILED");
-                job.setStatus(JobStatus.PENDING);mapping.synchronizeStatus(job,"test-retry-user","ROLLING_RESTART_RETRY_REQUESTED");
+                job.setRetryCount(1);job.setStatus(JobStatus.PENDING);mapping.synchronizeStatus(job,"test-retry-user","ROLLING_RESTART_RETRY_REQUESTED");
                 job.setStatus(JobStatus.IN_PROGRESS);mapping.synchronizeStatus(job,null,"ROLLING_RESTART_STARTED");
                 job.setStatus(JobStatus.SUCCESS);mapping.synchronizeStatus(job,null,"ROLLING_RESTART_COMPLETED");
                 mapping.synchronizeStatus(job,null,"ROLLING_RESTART_COMPLETED");

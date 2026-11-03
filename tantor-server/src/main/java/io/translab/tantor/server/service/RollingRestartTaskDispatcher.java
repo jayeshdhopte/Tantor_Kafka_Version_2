@@ -14,6 +14,7 @@ public class RollingRestartTaskDispatcher {
     /** The agent must never see a restart task before its job step records it. */
     @Transactional
     public UUID dispatch(UUID clusterId, String hostId, String unit, UUID stepId) {
+        jobService.assertMutationOwner(stepId,false);
         UUID taskId = deploymentService.restartService(clusterId, hostId, unit);
         jobService.attachAgentTask(stepId, taskId);
         return taskId;

@@ -15,7 +15,8 @@ class ConfigRecoveryCheckpointTest {
     final ObjectMapper mapper=new ObjectMapper();
     final JobService service=new JobService(jobs,steps,mapper,mock(ClusterRepository.class),mock(ExternalClusterRepository.class), org.mockito.Mockito.mock(io.translab.tantor.server.service.RollingRestartMappingService.class), org.mockito.Mockito.mock(io.translab.tantor.server.service.ConfigChangeMappingService.class));
     JobStep step() {
-        Job job=new Job();job.setType(JobType.TARGETED_CONFIG_CHANGE);
+        Job job=new Job();job.setId(UUID.randomUUID());job.setType(JobType.TARGETED_CONFIG_CHANGE);job.setStatus(JobStatus.IN_PROGRESS);
+        when(jobs.findForUpdateById(job.getId())).thenReturn(Optional.of(job));
         JobStep step=new JobStep();step.setId(UUID.randomUUID());step.setJob(job);step.setPayload("{}");
         when(steps.findById(step.getId())).thenReturn(Optional.of(step));return step;
     }
@@ -29,6 +30,7 @@ class ConfigRecoveryCheckpointTest {
         var step=step();service.checkpointConfigChange(step.getId(),Map.of("file",Map.of("num.io.threads","8")));
         UUID forward=UUID.randomUUID(),rollback=UUID.randomUUID();
         service.queueConfigMutation(step.getId(),false,()->forward);
+        step.getJob().setStatus(JobStatus.ROLLING_BACK);
         service.queueConfigMutation(step.getId(),true,()->rollback);
         var payload=mapper.readTree(step.getPayload());
         assertThat(payload.get("configMutationTaskId").asText()).isEqualTo(forward.toString());
@@ -55,6 +57,7 @@ class ConfigRecoveryCheckpointTest {
         }).when(steps).saveAndFlush(step);
         service.queueConfigMutation(step.getId(),false,()->forward);
         assertThat(step.getExternalKafkaTaskId()).isEqualTo(forward);
+        step.getJob().setStatus(JobStatus.ROLLING_BACK);
         service.queueConfigMutation(step.getId(),true,()->rollback);
         assertThat(step.getExternalKafkaTaskId()).isEqualTo(rollback);
     }
@@ -65,5 +68,19 @@ class ConfigRecoveryCheckpointTest {
         service.queueConfigMutation(step.getId(),false,()->task);
         assertThat(step.getAgentTaskId()).isEqualTo(task);
         assertThat(step.getExternalKafkaTaskId()).isNull();
+    }
+    @Test void inactiveOwnerCannotDispatchAConfigMutation() {
+        var step=step();step.getJob().setStatus(JobStatus.FAILED);
+        var enqueue=mock(java.util.function.Supplier.class);
+        assertThatThrownBy(()->service.queueConfigMutation(step.getId(),false,enqueue)).isInstanceOf(ClusterOperationConflictException.class);
+        verifyNoInteractions(enqueue);
+    }
+    @Test void rollbackRequiresCurrentRollbackOwnershipAndRejectsNewerConfiguration() {
+        var step=step();
+        assertThatThrownBy(()->service.assertMutationOwner(step.getId(),true)).isInstanceOf(ClusterOperationConflictException.class);
+        step.getJob().setStatus(JobStatus.ROLLING_BACK);
+        var newer=new Job();newer.setId(UUID.randomUUID());
+        when(jobs.findNewerAppliedConfiguration(step.getJob().getId())).thenReturn(Optional.of(newer));
+        assertThatThrownBy(()->service.assertMutationOwner(step.getId(),true)).hasMessageContaining("newer configuration job");
     }
 }

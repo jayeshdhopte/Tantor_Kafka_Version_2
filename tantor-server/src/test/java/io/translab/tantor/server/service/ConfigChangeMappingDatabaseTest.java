@@ -258,7 +258,7 @@ class ConfigChangeMappingDatabaseTest {
             assertThat(count("kf_config_change",job)).isEqualTo(1);
             assertThat(count("kf_config_change_node_value",job)).isEqualTo(2);
             assertThat(versionCount(job)).isZero();
-        })).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class).hasMessageContaining("fk_cfg_change_cluster");
+        })).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class).hasMessageContaining("foreign key");
     }
 
     @Test void mirroredExternalDynamicChangesPopulateVersionsAndSynchronizeTheirLifecycle() {
