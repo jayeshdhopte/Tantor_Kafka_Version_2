@@ -103,4 +103,47 @@ class ConfigChangeRollbackTest {
         handler.rollback(job);var order=inOrder(jobs);
         order.verify(jobs).rolledBackStep(eq(failed.getId()),anyString());order.verify(jobs).rolledBackStep(eq(completed.getId()),anyString());
     }
+
+    @Test void queuedStaleRollbackIsRejectedBeforeAnyHostOrKafkaAccess() {
+        doThrow(new ClusterOperationConflictException("newer configuration job")).when(jobs).assertConfigRecoveryCurrent(job);
+        assertThatThrownBy(() -> handler.rollback(job)).hasMessageContaining("newer configuration job");
+        verifyNoInteractions(deployment, kafka, health, awaiter);
+        verify(jobs, never()).getSteps(any());
+    }
+
+    @Test void restoresLegacyNumericInputAfterKafkaTrimmedItsLeadingSpace() throws Exception {
+        var original = Map.<String,Object>of("value", "15728640", "source", "STATIC_BROKER_CONFIG");
+        var changed = Map.<String,Object>of("value", "15728679", "source", "DYNAMIC_BROKER_CONFIG");
+        var s = step(Map.of("operation", "DYNAMIC", "brokerId", 1,
+                "changes", Map.of("message.max.bytes", " 15728679"),
+                "recoveryCheckpoint", Map.of("dynamic", Map.of("message.max.bytes", original))));
+        when(kafka.getBrokerConfigs(cluster)).thenReturn(Map.of(1,Map.of("message.max.bytes",changed)),
+                Map.of(1,Map.of("message.max.bytes",changed)), Map.of(1,Map.of("message.max.bytes",original)));
+        when(deployment.backupKafkaConfig(any(),anyString(),anyString(),anyString(),anyString(),anyString(),anyString(),anyMap(),anyString())).thenReturn(patch);
+        handler.rollback(job);
+        verify(kafka).removeBrokerConfigs(cluster,1,Set.of("message.max.bytes"),false);
+        verify(jobs).rolledBackStep(eq(s.getId()),contains("health verified"));
+    }
+
+    @Test void differentNumericLiveValueStillRejectsRollbackWithoutAnyWrite() throws Exception {
+        var original = Map.<String,Object>of("value", "15728640", "source", "STATIC_BROKER_CONFIG");
+        step(Map.of("operation", "DYNAMIC", "brokerId", 1, "changes", Map.of("message.max.bytes", " 15728679"),
+                "recoveryCheckpoint", Map.of("dynamic", Map.of("message.max.bytes", original))));
+        when(kafka.getBrokerConfigs(cluster)).thenReturn(Map.of(1,Map.of("message.max.bytes",
+                Map.of("value","15728688","source","DYNAMIC_BROKER_CONFIG"))));
+        assertThatThrownBy(() -> handler.rollback(job)).hasMessageContaining("changed outside this job");
+        verify(kafka,never()).removeBrokerConfigs(any(),anyInt(),anySet(),anyBoolean());
+        verify(kafka,never()).alterBrokerConfigs(any(),anyInt(),anyMap());
+    }
+
+    @Test void restoredDynamicNodeIsVerifiedWithoutApplyingRecoveryAgain() throws Exception {
+        var original = Map.<String,Object>of("value", "15728640", "source", "STATIC_BROKER_CONFIG");
+        var s = step(Map.of("operation", "DYNAMIC", "brokerId", 1, "changes", Map.of("message.max.bytes", "15728679"),
+                "recoveryCheckpoint", Map.of("dynamic", Map.of("message.max.bytes", original))));
+        when(kafka.getBrokerConfigs(cluster)).thenReturn(Map.of(1,Map.of("message.max.bytes",original)));
+        handler.rollback(job);
+        verify(kafka,never()).removeBrokerConfigs(any(),anyInt(),anySet(),anyBoolean());
+        verify(kafka,never()).alterBrokerConfigs(any(),anyInt(),anyMap());
+        verify(jobs).rolledBackStep(eq(s.getId()),contains("health verified"));
+    }
 }

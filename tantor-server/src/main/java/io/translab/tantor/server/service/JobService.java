@@ -91,8 +91,26 @@ public class JobService {
     }
 
     public Job getJob(UUID id) {
-        return jobRepository.findById(id)
+        Job job = jobRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Job not found: " + id));
+        job.setConfigRecoveryBlockedReason(List.of(JobStatus.FAILED, JobStatus.PARTIAL_SUCCESS, JobStatus.ROLLBACK_FAILED)
+                .contains(job.getStatus()) ? configRecoveryBlockedReason(job) : null);
+        return job;
+    }
+
+    private String configRecoveryBlockedReason(Job job) {
+        if (job.getType() != JobType.TARGETED_CONFIG_CHANGE && job.getType() != JobType.CONFIG_CHANGE) return null;
+        return jobRepository.findNewerAppliedConfiguration(job.getId())
+                .map(newer -> "A newer configuration job " + newer.getId()
+                        + " has applied changes on this cluster. Retry and rollback of this older change are disabled. "
+                        + "Refresh the current configuration and submit a new reviewed change.")
+                .orElse(null);
+    }
+
+    /** Rechecked when queued recovery executes, before any host or Kafka mutation. */
+    public void assertConfigRecoveryCurrent(Job job) {
+        String reason = configRecoveryBlockedReason(job);
+        if (reason != null) throw new ClusterOperationConflictException(reason);
     }
 
     public List<Job> getAllJobs() {
@@ -358,6 +376,7 @@ public class JobService {
         }
 
         lockAndCheck(job.getResourceKey(), job.getType(), id);
+        assertConfigRecoveryCurrent(job);
         boolean retryRollback = job.getStatus() == JobStatus.ROLLBACK_FAILED;
         if (!retryRollback) {
             for (JobStep step : getSteps(id)) {
@@ -398,6 +417,7 @@ public class JobService {
         }
         if ((job.getType() == JobType.TARGETED_CONFIG_CHANGE || job.getType() == JobType.CONFIG_CHANGE) && job.getStatus() == JobStatus.SUCCESS)
             throw new IllegalArgumentException("Use configuration version restore for a successful change.");
+        assertConfigRecoveryCurrent(job);
         job.setStatus(JobStatus.ROLLBACK_PENDING);
         job.setEndTime(null);
         appendLog(id, "Rollback requested by " + currentRequester() + "; restoring this job's pre-change checkpoint.");

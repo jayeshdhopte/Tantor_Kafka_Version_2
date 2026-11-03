@@ -17,6 +17,7 @@ type Job = {
   progress: string;
   logs: string;
   rollbackSupported: boolean;
+  configRecoveryBlockedReason?: string | null;
   retryCount: number;
 };
 
@@ -150,12 +151,14 @@ export function JobStatusPage() {
   useEffect(() => {
     void (async () => { await fetchJob(); })();
     const interval = setInterval(() => {
-      if (!['SUCCESS', 'FAILED', 'PARTIAL_SUCCESS', 'ROLLED_BACK', 'ROLLBACK_FAILED'].includes(job?.status || '')) {
+      const configRecovery = ['TARGETED_CONFIG_CHANGE', 'CONFIG_CHANGE'].includes(job?.type || '')
+        && ['FAILED', 'PARTIAL_SUCCESS', 'ROLLBACK_FAILED'].includes(job?.status || '');
+      if (configRecovery || !['SUCCESS', 'FAILED', 'PARTIAL_SUCCESS', 'ROLLED_BACK', 'ROLLBACK_FAILED'].includes(job?.status || '')) {
         void (async () => { await fetchJob(); })();
       }
     }, 2000);
     return () => clearInterval(interval);
-  }, [fetchJob, job?.status]);
+  }, [fetchJob, job?.status, job?.type]);
 
   useEffect(() => {
     if (logsEndRef.current) {
@@ -164,23 +167,25 @@ export function JobStatusPage() {
   }, [job?.logs, isLogsExpanded]);
 
   const handleRetry = async () => {
+    if (job?.configRecoveryBlockedReason) return;
     try {
       const res = await fetch(`/api/v1/ui/jobs/${id}/retry`, { method: 'POST' });
       if (res.ok) fetchJob();
-      else { const result = await res.json().catch(() => ({})); notifyAction(result.message || result.error || 'Job action failed.'); }
+      else { const result = await res.json().catch(() => ({})); notifyAction(result.message || result.error || 'Job action failed.'); void fetchJob(); }
     } catch (err) {
       console.error(err);
     }
   };
 
   const handleRollback = async () => {
+    if (job?.configRecoveryBlockedReason) return;
     if (!(await confirmAction(['TARGETED_CONFIG_CHANGE', 'CONFIG_CHANGE'].includes(job?.type || '')
       ? 'Restore the pre-job configuration on affected nodes? This recovers the failed node first, then restores completed nodes. Unrelated settings are preserved. Restarts run with health checks.'
       : 'Rollback all successfully completed steps for this job?'))) return;
     try {
       const res = await fetch(`/api/v1/ui/jobs/${id}/rollback`, { method: 'POST' });
       if (res.ok) fetchJob();
-      else { const result = await res.json().catch(() => ({})); notifyAction(result.message || result.error || 'Job action failed.'); }
+      else { const result = await res.json().catch(() => ({})); notifyAction(result.message || result.error || 'Job action failed.'); void fetchJob(); }
     } catch (err) {
       console.error(err);
     }
@@ -372,18 +377,24 @@ export function JobStatusPage() {
         </div>
         <div className="action-buttons">
           {canManage && ['FAILED', 'PARTIAL_SUCCESS', 'ROLLBACK_FAILED'].includes(job.status) && (
-            <button className="btn btn-outline-primary" onClick={handleRetry}>
+            <button className="btn btn-outline-primary" onClick={handleRetry} disabled={Boolean(job.configRecoveryBlockedReason)} title={job.configRecoveryBlockedReason || undefined}>
               <RefreshCw size={14} style={{ marginRight: '6px' }} /> {job.status === 'ROLLBACK_FAILED' ? 'Retry rollback' : ['ROLLING_RESTART', 'TARGETED_CONFIG_CHANGE', 'CONFIG_CHANGE'].includes(job.type) ? 'Retry / Resume' : 'Retry Job'}
             </button>
           )}
           {canManage && job.type !== 'ROLLING_RESTART' && job.rollbackSupported && (['TARGETED_CONFIG_CHANGE', 'CONFIG_CHANGE'].includes(job.type) ? ['FAILED', 'PARTIAL_SUCCESS'] : ['SUCCESS', 'FAILED', 'PARTIAL_SUCCESS']).includes(job.status) && (
-            <button className="btn btn-outline-primary" onClick={handleRollback}>
+            <button className="btn btn-outline-primary" onClick={handleRollback} disabled={Boolean(job.configRecoveryBlockedReason)} title={job.configRecoveryBlockedReason || undefined}>
               <Undo2 size={14} style={{ marginRight: '6px' }} /> {['TARGETED_CONFIG_CHANGE', 'CONFIG_CHANGE'].includes(job.type) ? 'Roll back this change' : 'Rollback'}
             </button>
           )}
         </div>
       </div>
-      
+
+      {job.configRecoveryBlockedReason && (
+        <div className="overview-alert error" role="alert" style={{ marginBottom: '16px' }}>
+          <AlertTriangle size={17} /><span>{job.configRecoveryBlockedReason}</span>
+        </div>
+      )}
+
       {job.status === 'FAILED' && steps.some(s => s.name === 'ROLLBACK' && s.status === 'SUCCESS') && (
         <div className="overview-alert error" style={{ marginBottom: '16px' }}>
           <AlertTriangle size={17} />

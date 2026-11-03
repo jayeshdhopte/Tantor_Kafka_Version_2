@@ -54,6 +54,9 @@ public class Job {
     @Column(name = "rollback_supported", nullable = false)
     private Boolean rollbackSupported = false;
 
+    @Transient
+    private String configRecoveryBlockedReason;
+
     @Column(name = "created_at")
     private Instant createdAt = Instant.now();
 

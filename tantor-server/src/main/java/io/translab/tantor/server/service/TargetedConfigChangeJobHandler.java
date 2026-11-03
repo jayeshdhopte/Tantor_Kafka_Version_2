@@ -49,7 +49,7 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
             }
             int brokerId = ((Number) payload.get("brokerId")).intValue();
             String key = String.valueOf(payload.get("key"));
-            String desired = String.valueOf(payload.get("value"));
+            String desired = KafkaConfigValues.canonical(key, String.valueOf(payload.get("value")));
             String expected = String.valueOf(payload.get("expectedOldValue"));
             int count = ((Number) payload.get("expectedBrokerCount")).intValue();
             String checkpoint = "";
@@ -111,9 +111,9 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
             Map<String, String> pending = new java.util.LinkedHashMap<>();
             for (var entry : changes.entrySet()) {
                 Object actual = ((Map<?, ?>) observed.get(entry.getKey())).get("value");
-                if (java.util.Objects.equals(actual, entry.getValue())) continue;
+                if (KafkaConfigValues.same(entry.getKey(), actual, entry.getValue())) continue;
                 if (!java.util.Objects.equals(actual, expected.get(entry.getKey()))) throw new IllegalStateException("Broker " + brokerId + " property " + entry.getKey() + " changed since preview; refresh the plan.");
-                pending.put(entry.getKey(), entry.getValue());
+                pending.put(entry.getKey(), KafkaConfigValues.canonical(entry.getKey(), entry.getValue()));
             }
             if (!pending.isEmpty()) {
                 String hostId = String.valueOf(payload.getOrDefault("hostId", ""));
@@ -206,7 +206,7 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
             } catch (RuntimeException e) {
                 lastObservation = "last read failed: " + e.getMessage();
             }
-            if (desired.equals(actual)) {
+            if (KafkaConfigValues.same(key, desired, actual)) {
                 jobs.recordConfigVerification(stepId, key, actual, observedSource);
                 return;
             }
@@ -383,6 +383,7 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
 
     @Override
     public void rollback(Job job) {
+        jobs.assertConfigRecoveryCurrent(job);
         UUID clusterId = UUID.fromString(String.valueOf(read(job.getPayload()).get("clusterId")));
         var steps = new java.util.ArrayList<>(jobs.getSteps(job.getId()));
         // Recover the failed node first, then undo completed nodes in reverse order.
@@ -497,9 +498,9 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
         for (String key : previous.keySet()) {
             Map<String, Object> before = objectMap(previous.get(key)), now = objectMap(observed.get(key));
             if (before.isEmpty() || now.isEmpty()) throw new IllegalStateException("Dynamic configuration checkpoint is incomplete for " + key);
-            if (sameDynamicOverride(before, now)) continue;
+            if (sameDynamicOverride(key, before, now)) continue;
             boolean ownChange = deletion ? !"DYNAMIC_BROKER_CONFIG".equals(now.get("source"))
-                    : "DYNAMIC_BROKER_CONFIG".equals(now.get("source")) && java.util.Objects.equals(now.get("value"), forward.get(key));
+                    : "DYNAMIC_BROKER_CONFIG".equals(now.get("source")) && KafkaConfigValues.same(key, now.get("value"), forward.get(key));
             if (!ownChange) throw new IllegalStateException("Dynamic override " + key + " changed outside this job; recovery stopped.");
             if ("DYNAMIC_BROKER_CONFIG".equals(before.get("source"))) sets.put(key, String.valueOf(before.get("value")));
             else removals.add(key);
@@ -519,7 +520,7 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
         }
         for (int attempt = 0; attempt < 30; attempt++) {
             Map<String, Object> live = batchEntries(clusterId, id, previous.keySet());
-            if (previous.keySet().stream().allMatch(k -> sameDynamicOverride(objectMap(previous.get(k)), objectMap(live.get(k))))) {
+            if (previous.keySet().stream().allMatch(k -> sameDynamicOverride(k, objectMap(previous.get(k)), objectMap(live.get(k))))) {
                 if (!deletion) checkHealth(step, clusterId, ((Number) payload.get("expectedBrokerCount")).intValue(), String.valueOf(payload.get("hostId")));
                 for (String key : live.keySet()) jobs.recordConfigVerification(step.getId(), key, objectMap(live.get(key)).get("value"), java.util.Objects.toString(objectMap(live.get(key)).get("source"), null));
                 return;
@@ -530,11 +531,11 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
         throw new IllegalStateException("Kafka has not verified the restored dynamic overrides; recovery stopped.");
     }
 
-    private boolean sameDynamicOverride(Map<String, Object> previous, Map<String, Object> current) {
+    private boolean sameDynamicOverride(String key, Map<String, Object> previous, Map<String, Object> current) {
         boolean priorOverride = "DYNAMIC_BROKER_CONFIG".equals(previous.get("source"));
         boolean currentOverride = "DYNAMIC_BROKER_CONFIG".equals(current.get("source"));
         return priorOverride == currentOverride && java.util.Objects.equals(previous.get("source"), current.get("source"))
-                && java.util.Objects.equals(previous.get("value"), current.get("value"));
+                && KafkaConfigValues.same(key, previous.get("value"), current.get("value"));
     }
 
     private String currentValue(UUID clusterId, int brokerId, String key) {

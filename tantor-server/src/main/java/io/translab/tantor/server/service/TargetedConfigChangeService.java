@@ -142,7 +142,7 @@ public class TargetedConfigChangeService {
         }
         if ("DYNAMIC_ALLOWED".equals(classification)) {
             Map<String, String> normalizedChanges = new LinkedHashMap<>();
-            request.getChanges().forEach((key, value) -> normalizedChanges.put(key.trim(), value));
+            request.getChanges().forEach((key, value) -> normalizedChanges.put(key.trim(), KafkaConfigValues.canonical(key.trim(), value)));
             for (Map<String, Object> target : targets) kafka.validateBrokerConfigs(clusterId, ((Number) target.get("nodeId")).intValue(), normalizedChanges);
         }
         result.put("key", request.getChanges().size() + " properties"); result.put("properties", properties); result.put("targets", targets);
@@ -238,10 +238,11 @@ public class TargetedConfigChangeService {
                 || key.toLowerCase(Locale.ROOT).matches(".*(password|secret|token|jaas|credential|keystore|truststore).*")) {
             throw new IllegalArgumentException("This property cannot be changed from the cluster configuration flow.");
         }
-        String value = request.getValue();
-        if (value == null || value.isBlank() || value.length() > 4096 || value.contains("\n") || value.contains("\r")) {
+        String rawValue = request.getValue();
+        if (rawValue == null || rawValue.isBlank() || rawValue.length() > 4096 || rawValue.contains("\n") || rawValue.contains("\r")) {
             throw new IllegalArgumentException("Provide a non-empty single-line property value (up to 4096 characters). Use property deletion to remove a setting.");
         }
+        String value = KafkaConfigValues.canonical(key, rawValue);
         Map<Integer, Map<String, Object>> live = context == null ? kafka.getBrokerConfigs(clusterId) : context.live();
         if (live.isEmpty()) throw new IllegalStateException("No live brokers are available.");
         Set<Integer> available = "BROKER".equals(role) ? live.keySet() : internal == null ? Set.of()

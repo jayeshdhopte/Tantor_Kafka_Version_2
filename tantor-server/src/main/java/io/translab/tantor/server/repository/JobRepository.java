@@ -13,6 +13,17 @@ import java.util.UUID;
 
 @Repository
 public interface JobRepository extends JpaRepository<Job, UUID> {
+    @org.springframework.data.jpa.repository.Query(value = """
+            SELECT newer.* FROM kf_jobs newer JOIN kf_jobs original ON original.id = :id
+            WHERE newer.resource_key = original.resource_key AND newer.created_at > original.created_at
+              AND newer.type IN ('TARGETED_CONFIG_CHANGE', 'CONFIG_CHANGE', 'ROLLING_CONFIG_UPDATE')
+              AND newer.status <> 'ROLLED_BACK'
+              AND (newer.status = 'SUCCESS' OR EXISTS (
+                  SELECT 1 FROM kf_job_steps s WHERE s.job_id = newer.id
+                    AND CAST(s.payload AS jsonb)->>'configMutationStarted' = 'true'))
+            ORDER BY newer.created_at DESC LIMIT 1
+            """, nativeQuery = true)
+    Optional<Job> findNewerAppliedConfiguration(@org.springframework.data.repository.query.Param("id") UUID id);
     Optional<Job> findFirstByResourceKeyAndTypeOrderByCreatedAtDesc(String resourceKey, io.translab.tantor.server.domain.JobType type);
     org.springframework.data.domain.Page<Job> findByResourceKeyAndType(String resourceKey, io.translab.tantor.server.domain.JobType type, org.springframework.data.domain.Pageable pageable);
     List<Job> findByStatus(JobStatus status);

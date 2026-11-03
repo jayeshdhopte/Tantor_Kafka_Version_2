@@ -248,6 +248,16 @@ class TargetedConfigChangeJobHandlerTest {
         verify(kafka,times(1)).removeBrokerConfigs(clusterId,1,Set.of("log.retention.hours"),false);
     }
 
+    @Test
+    void numericInputWhitespaceDoesNotCauseFalseVerificationFailure() {
+        step.setPayload(step.getPayload().replace("1073741829", " 1073741829"));
+        when(kafka.getBrokerConfigs(clusterId)).thenReturn(config("1073741824"), config("1073741824"), config("1073741829"));
+        handler.execute(job);
+        verify(kafka).alterBrokerConfig(clusterId, 1, "log.segment.bytes", "1073741829");
+        verify(jobs).completeStep(eq(step.getId()), anyString());
+        verify(jobs, never()).failStep(any(), anyString());
+    }
+
     private Map<Integer, Map<String, Object>> config(String value) {
         return Map.of(1, Map.of("log.segment.bytes", Map.of("value", value)));
     }
