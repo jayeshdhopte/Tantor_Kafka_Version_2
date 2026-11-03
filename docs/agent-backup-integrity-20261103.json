@@ -1,0 +1,14 @@
+{
+  "sourceCommit": "058abb3a279c923028c0fa9aaf113e4297999946",
+  "date": "2026-11-03",
+  "feature": "configchange.10-backupintegrity.1",
+  "backendTestsPassed": 78,
+  "linuxInternalTestsPassed": 54,
+  "linuxExternalTestsPassed": 36,
+  "sha256": {
+    "internal-agent/bin/tantor-agent-linux-amd64": "df3d07d74faebc3b05e58c602541f7792e08a49d285516dc348d898157faa534",
+    "internal-agent/bin/tantor-agent-linux-arm64": "13a94d9d4e3c59b9584eb065f019939a6f669da084d159a9b02bab1b41109427",
+    "tantor-discovery-agent/tantor-discovery-agent-linux-amd64": "c47a9c1e6405da4a959b1ad9047630894e5e02836c54b50692179f268c31710c",
+    "tantor-discovery-agent/tantor-discovery-agent-linux-arm64": "e1f1b92bb441c1b28e74792de77c2648d0bdfef88469510745f742b185345bfe"
+  }
+}
