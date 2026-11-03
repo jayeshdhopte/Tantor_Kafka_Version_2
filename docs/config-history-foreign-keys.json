@@ -1,0 +1,403 @@
+{
+  "foreignKeys": [
+    {
+      "name": "fk_cfg_change_cluster",
+      "table": "kf_config_change",
+      "columns": [
+        "cluster_id"
+      ],
+      "parent": "kf_clusters",
+      "parentColumns": [
+        "id"
+      ]
+    },
+    {
+      "name": "fk_cfg_detail_change",
+      "table": "kf_config_change_detail",
+      "columns": [
+        "change_id"
+      ],
+      "parent": "kf_config_change",
+      "parentColumns": [
+        "change_id"
+      ]
+    },
+    {
+      "name": "fk_cfg_detail_catalog",
+      "table": "kf_config_change_detail",
+      "columns": [
+        "config_catalog_id"
+      ],
+      "parent": "kf_config_catalog",
+      "parentColumns": [
+        "config_catalog_id"
+      ]
+    },
+    {
+      "name": "fk_cfg_target_change",
+      "table": "kf_config_change_target_node",
+      "columns": [
+        "change_id"
+      ],
+      "parent": "kf_config_change",
+      "parentColumns": [
+        "change_id"
+      ]
+    },
+    {
+      "name": "fk_cfg_value_change",
+      "table": "kf_config_change_node_value",
+      "columns": [
+        "change_id"
+      ],
+      "parent": "kf_config_change",
+      "parentColumns": [
+        "change_id"
+      ]
+    },
+    {
+      "name": "fk_cfg_value_detail",
+      "table": "kf_config_change_node_value",
+      "columns": [
+        "detail_id"
+      ],
+      "parent": "kf_config_change_detail",
+      "parentColumns": [
+        "detail_id"
+      ]
+    },
+    {
+      "name": "fk_cfg_value_target",
+      "table": "kf_config_change_node_value",
+      "columns": [
+        "target_id"
+      ],
+      "parent": "kf_config_change_target_node",
+      "parentColumns": [
+        "target_id"
+      ]
+    },
+    {
+      "name": "fk_cfg_attempt_change",
+      "table": "kf_config_execution_attempt",
+      "columns": [
+        "change_id"
+      ],
+      "parent": "kf_config_change",
+      "parentColumns": [
+        "change_id"
+      ]
+    },
+    {
+      "name": "fk_cfg_attempt_detail",
+      "table": "kf_config_execution_attempt",
+      "columns": [
+        "detail_id"
+      ],
+      "parent": "kf_config_change_detail",
+      "parentColumns": [
+        "detail_id"
+      ]
+    },
+    {
+      "name": "fk_cfg_attempt_target",
+      "table": "kf_config_execution_attempt",
+      "columns": [
+        "target_id"
+      ],
+      "parent": "kf_config_change_target_node",
+      "parentColumns": [
+        "target_id"
+      ]
+    },
+    {
+      "name": "fk_cfg_backup_change",
+      "table": "kf_config_backup",
+      "columns": [
+        "change_id"
+      ],
+      "parent": "kf_config_change",
+      "parentColumns": [
+        "change_id"
+      ]
+    },
+    {
+      "name": "fk_cfg_backup_detail",
+      "table": "kf_config_backup",
+      "columns": [
+        "detail_id"
+      ],
+      "parent": "kf_config_change_detail",
+      "parentColumns": [
+        "detail_id"
+      ]
+    },
+    {
+      "name": "fk_cfg_backup_target",
+      "table": "kf_config_backup",
+      "columns": [
+        "target_id"
+      ],
+      "parent": "kf_config_change_target_node",
+      "parentColumns": [
+        "target_id"
+      ]
+    },
+    {
+      "name": "fk_cfg_lock_cluster",
+      "table": "kf_cluster_operation_lock",
+      "columns": [
+        "cluster_id"
+      ],
+      "parent": "kf_clusters",
+      "parentColumns": [
+        "id"
+      ]
+    },
+    {
+      "name": "fk_cfg_lock_change",
+      "table": "kf_cluster_operation_lock",
+      "columns": [
+        "change_id"
+      ],
+      "parent": "kf_config_change",
+      "parentColumns": [
+        "change_id"
+      ]
+    },
+    {
+      "name": "fk_cfg_health_change",
+      "table": "kf_health_check",
+      "columns": [
+        "change_id"
+      ],
+      "parent": "kf_config_change",
+      "parentColumns": [
+        "change_id"
+      ]
+    },
+    {
+      "name": "fk_cfg_health_target",
+      "table": "kf_health_check",
+      "columns": [
+        "target_id"
+      ],
+      "parent": "kf_config_change_target_node",
+      "parentColumns": [
+        "target_id"
+      ]
+    },
+    {
+      "name": "fk_cfg_restart_change",
+      "table": "kf_rolling_restart_operation",
+      "columns": [
+        "change_id"
+      ],
+      "parent": "kf_config_change",
+      "parentColumns": [
+        "change_id"
+      ]
+    },
+    {
+      "name": "fk_cfg_restart_current",
+      "table": "kf_rolling_restart_operation",
+      "columns": [
+        "current_target_id"
+      ],
+      "parent": "kf_config_change_target_node",
+      "parentColumns": [
+        "target_id"
+      ]
+    },
+    {
+      "name": "fk_cfg_restart_step_change",
+      "table": "kf_rolling_restart_node_step",
+      "columns": [
+        "change_id"
+      ],
+      "parent": "kf_config_change",
+      "parentColumns": [
+        "change_id"
+      ]
+    },
+    {
+      "name": "fk_cfg_restart_step_operation",
+      "table": "kf_rolling_restart_node_step",
+      "columns": [
+        "restart_operation_id"
+      ],
+      "parent": "kf_rolling_restart_operation",
+      "parentColumns": [
+        "restart_operation_id"
+      ]
+    },
+    {
+      "name": "fk_cfg_restart_step_target",
+      "table": "kf_rolling_restart_node_step",
+      "columns": [
+        "target_id"
+      ],
+      "parent": "kf_config_change_target_node",
+      "parentColumns": [
+        "target_id"
+      ]
+    },
+    {
+      "name": "fk_cfg_standalone_cluster",
+      "table": "kf_rolling_restart_table",
+      "columns": [
+        "cluster_id"
+      ],
+      "parent": "kf_clusters",
+      "parentColumns": [
+        "id"
+      ]
+    },
+    {
+      "name": "fk_cfg_value_detail_owner",
+      "table": "kf_config_change_node_value",
+      "columns": [
+        "change_id",
+        "detail_id"
+      ],
+      "parent": "kf_config_change_detail",
+      "parentColumns": [
+        "change_id",
+        "detail_id"
+      ]
+    },
+    {
+      "name": "fk_cfg_value_target_owner",
+      "table": "kf_config_change_node_value",
+      "columns": [
+        "change_id",
+        "target_id"
+      ],
+      "parent": "kf_config_change_target_node",
+      "parentColumns": [
+        "change_id",
+        "target_id"
+      ]
+    },
+    {
+      "name": "fk_cfg_attempt_detail_owner",
+      "table": "kf_config_execution_attempt",
+      "columns": [
+        "change_id",
+        "detail_id"
+      ],
+      "parent": "kf_config_change_detail",
+      "parentColumns": [
+        "change_id",
+        "detail_id"
+      ]
+    },
+    {
+      "name": "fk_cfg_attempt_target_owner",
+      "table": "kf_config_execution_attempt",
+      "columns": [
+        "change_id",
+        "target_id"
+      ],
+      "parent": "kf_config_change_target_node",
+      "parentColumns": [
+        "change_id",
+        "target_id"
+      ]
+    },
+    {
+      "name": "fk_cfg_backup_detail_owner",
+      "table": "kf_config_backup",
+      "columns": [
+        "change_id",
+        "detail_id"
+      ],
+      "parent": "kf_config_change_detail",
+      "parentColumns": [
+        "change_id",
+        "detail_id"
+      ]
+    },
+    {
+      "name": "fk_cfg_backup_target_owner",
+      "table": "kf_config_backup",
+      "columns": [
+        "change_id",
+        "target_id"
+      ],
+      "parent": "kf_config_change_target_node",
+      "parentColumns": [
+        "change_id",
+        "target_id"
+      ]
+    },
+    {
+      "name": "fk_cfg_health_target_owner",
+      "table": "kf_health_check",
+      "columns": [
+        "change_id",
+        "target_id"
+      ],
+      "parent": "kf_config_change_target_node",
+      "parentColumns": [
+        "change_id",
+        "target_id"
+      ]
+    },
+    {
+      "name": "fk_cfg_restart_current_owner",
+      "table": "kf_rolling_restart_operation",
+      "columns": [
+        "change_id",
+        "current_target_id"
+      ],
+      "parent": "kf_config_change_target_node",
+      "parentColumns": [
+        "change_id",
+        "target_id"
+      ]
+    },
+    {
+      "name": "fk_cfg_restart_step_operation_owner",
+      "table": "kf_rolling_restart_node_step",
+      "columns": [
+        "change_id",
+        "restart_operation_id"
+      ],
+      "parent": "kf_rolling_restart_operation",
+      "parentColumns": [
+        "change_id",
+        "restart_operation_id"
+      ]
+    },
+    {
+      "name": "fk_cfg_restart_step_target_owner",
+      "table": "kf_rolling_restart_node_step",
+      "columns": [
+        "change_id",
+        "target_id"
+      ],
+      "parent": "kf_config_change_target_node",
+      "parentColumns": [
+        "change_id",
+        "target_id"
+      ]
+    },
+    {
+      "name": "fk_cfg_lock_owner",
+      "table": "kf_cluster_operation_lock",
+      "columns": [
+        "change_id",
+        "cluster_id"
+      ],
+      "parent": "kf_config_change",
+      "parentColumns": [
+        "change_id",
+        "cluster_id"
+      ]
+    }
+  ],
+  "nullableColumnsPreserved": true,
+  "deferred": true,
+  "deletePolicy": "NO ACTION"
+}

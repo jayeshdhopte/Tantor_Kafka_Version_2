@@ -31,6 +31,11 @@ class RollingRestartMappingDatabaseTest {
     @EnableJpaRepositories(basePackageClasses=AuditLogRepository.class)
     static class Config {
         @Bean DataSource dataSource() {
+            String override=System.getenv("TANTOR_STATUS_AUDIT_TEST_URL");
+            if(override!=null) {
+                assertThat(override).contains("_check_");
+                return new DriverManagerDataSource(override,System.getenv("TANTOR_STATUS_AUDIT_TEST_USER"),System.getenv("TANTOR_STATUS_AUDIT_TEST_PASSWORD"));
+            }
             return new DriverManagerDataSource("jdbc:postgresql://127.0.0.1:5433/tantor","tantor_dev",System.getenv("TANTOR_LOCAL_DB_PASSWORD"));
         }
         @Bean LocalContainerEntityManagerFactoryBean entityManagerFactory(DataSource source) {
@@ -61,6 +66,7 @@ class RollingRestartMappingDatabaseTest {
             assertThat(jdbc.queryForObject("SELECT count(*) FROM kf_rolling_restart_table WHERE cluster_id=?",Long.class,cluster.getId())).isZero();
             transaction.executeWithoutResult(tx -> {
                 tx.setRollbackOnly();
+                jdbc.update("INSERT INTO kf_clusters(id,cluster_name,status) VALUES (?,?,'SUCCESS')",cluster.getId(),cluster.getName());
                 mapping.record(job,cluster,List.of(first,second));
                 flushAudit(mapping,pending);
                 var original=jdbc.queryForMap("SELECT * FROM kf_rolling_restart_table WHERE unique_id=?",job.getId());
@@ -86,6 +92,7 @@ class RollingRestartMappingDatabaseTest {
                 mapping.synchronizeStatus(legacy,null,"ROLLING_RESTART_RECOVERED");
                 flushAudit(mapping,pending);
                 assertThat(audits(jdbc,cluster.getId())).isEqualTo(5);
+                jdbc.execute("SET CONSTRAINTS ALL IMMEDIATE");
             });
             assertThat(audits(jdbc,cluster.getId())).isZero();
             assertThat(jdbc.queryForObject("SELECT count(*) FROM kf_rolling_restart_table WHERE cluster_id=?",Long.class,cluster.getId())).isZero();

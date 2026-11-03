@@ -15,7 +15,15 @@ import static org.assertj.core.api.Assertions.*;
 /** Local-only fixtures. Every INSERT/UPDATE is rolled back; no audit mutation or cleanup DELETE. */
 @EnabledIfEnvironmentVariable(named="TANTOR_LOCAL_CONFIG_MAPPING_DB_TEST",matches="true")
 class ConfigChangeMappingDatabaseTest {
-    final DriverManagerDataSource source=new DriverManagerDataSource("jdbc:postgresql://127.0.0.1:5433/tantor","tantor_dev",System.getenv("TANTOR_LOCAL_DB_PASSWORD"));
+    final DriverManagerDataSource source=testSource();
+    static DriverManagerDataSource testSource() {
+        String override=System.getenv("TANTOR_STATUS_AUDIT_TEST_URL");
+        if(override!=null) {
+            assertThat(override).contains("_check_");
+            return new DriverManagerDataSource(override,System.getenv("TANTOR_STATUS_AUDIT_TEST_USER"),System.getenv("TANTOR_STATUS_AUDIT_TEST_PASSWORD"));
+        }
+        return new DriverManagerDataSource("jdbc:postgresql://127.0.0.1:5433/tantor","tantor_dev",System.getenv("TANTOR_LOCAL_DB_PASSWORD"));
+    }
     final JdbcTemplate jdbc=new JdbcTemplate(source);
     final ConfigChangeMappingService mapping=new ConfigChangeMappingService(jdbc,new ObjectMapper());
     final TransactionTemplate transactions=new TransactionTemplate(new DataSourceTransactionManager(source));
@@ -239,17 +247,18 @@ class ConfigChangeMappingDatabaseTest {
         });
     }
 
-    @Test void externalTargetsKeepErHistoryWithoutViolatingTheExistingInternalClusterVersionForeignKey() {
-        rollback(() -> {
+    @Test void externalTargetsWithoutAMirroredClusterCannotCommitOrphanHistory() {
+        assertThatThrownBy(()->rollback(() -> {
             Job job=job(JobType.CONFIG_CHANGE,false);job.setType(JobType.TARGETED_CONFIG_CHANGE);
+            jdbc.update("DELETE FROM kf_clusters WHERE id=?",UUID.fromString(read(job.getPayload()).get("clusterId").toString()));
             var step=steps(job,false).get(0);var payload=read(step.getPayload());payload.put("hostId","external:"+UUID.randomUUID());step.setPayload(json(payload));
-            // No kf_clusters row: this exercises the FK mismatch, rather than
-            // masking it with an internal-cluster fixture.
+            // The version writer still skips unresolved inventory, but the ER
+            // change must now reject a missing cluster parent at commit.
             mapping.record(job,List.of(step));start(step);mapping.step(step);
             assertThat(count("kf_config_change",job)).isEqualTo(1);
             assertThat(count("kf_config_change_node_value",job)).isEqualTo(2);
             assertThat(versionCount(job)).isZero();
-        });
+        })).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class).hasMessageContaining("fk_cfg_change_cluster");
     }
 
     @Test void mirroredExternalDynamicChangesPopulateVersionsAndSynchronizeTheirLifecycle() {
@@ -266,7 +275,7 @@ class ConfigChangeMappingDatabaseTest {
             UUID cluster=UUID.fromString(read(job.getPayload()).get("clusterId").toString());
             jdbc.update("INSERT INTO kf_external_clusters(id,cluster_name,bootstrap_servers,kafka_cluster_id) VALUES (?,?,'fixture:9092','ExternalVersionKafkaId')",cluster,"external-version-test-"+cluster);
             assertThat(jdbc.queryForObject("SELECT count(*) FROM kf_clusters WHERE id=? AND origin_type='EXTERNAL'",Long.class,cluster)).isEqualTo(1);
-            jdbc.update("INSERT INTO kf_jobs(id,type,status,payload,requested_by) VALUES (?,?,?,?::jsonb,?)",job.getId().toString(),job.getType().name(),job.getStatus().name(),job.getPayload(),job.getRequestedBy());
+            jdbc.update("UPDATE kf_jobs SET type=?,status=?,payload=?::jsonb,requested_by=? WHERE id=?",job.getType().name(),job.getStatus().name(),job.getPayload(),job.getRequestedBy(),job.getId().toString());
             var steps=steps(job,file);
             for(var step:steps) {
                 var payload=read(step.getPayload());payload.put("hostId","external:"+UUID.randomUUID());step.setPayload(json(payload));
@@ -303,12 +312,12 @@ class ConfigChangeMappingDatabaseTest {
     }
 
     private long count(String table,Job job){return jdbc.queryForObject("SELECT count(*) FROM "+table+" WHERE change_id=?",Long.class,job.getId());}
-    private void rollback(Runnable body){transactions.executeWithoutResult(tx->{tx.setRollbackOnly();body.run();});}
+    private void rollback(Runnable body){transactions.executeWithoutResult(tx->{tx.setRollbackOnly();body.run();jdbc.execute("SET CONSTRAINTS ALL IMMEDIATE");});}
     private static void start(JobStep step){step.setStatus(JobStepStatus.IN_PROGRESS);step.setStartTime(Instant.now());step.setEndTime(null);}
     private Job job(JobType type,boolean file){var job=new Job();job.setId(UUID.randomUUID());job.setType(type);job.setRequestedBy("mapping-test");
         UUID cluster=UUID.randomUUID();
         job.setPayload(json(Map.of("clusterId",cluster.toString(),"role","BROKER","scope","SELECTED","classification",file?"ROLLING_RESTART_REQUIRED":"DYNAMIC_ALLOWED")));
-        if(type==JobType.TARGETED_CONFIG_CHANGE) {
+        {
             jdbc.update("INSERT INTO kf_clusters (id,cluster_name,created_by,updated_by) VALUES (?,?,?,?)",cluster,"config-mapping-test-"+cluster,"mapping-test","mapping-test");
             jdbc.update("INSERT INTO kf_jobs (id,type,status,payload,requested_by) VALUES (?,?,?,?::jsonb,?)",job.getId().toString(),type.name(),job.getStatus().name(),job.getPayload(),job.getRequestedBy());
         }

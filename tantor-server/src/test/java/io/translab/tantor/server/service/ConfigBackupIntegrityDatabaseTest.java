@@ -28,6 +28,10 @@ class ConfigBackupIntegrityDatabaseTest {
         jdbc.update("INSERT INTO kf_config_change(change_id,status) VALUES (?,'PENDING')",job.getId());
         JobStep step=new JobStep();step.setId(UUID.randomUUID());step.setJob(job);step.setName("Backup");
         step.setPayload("{\"operation\":\"STATIC\",\"nodeId\":2,\"role\":\"controller\",\"configPath\":\"/opt/kafka/config/controller.properties\",\"changes\":{\"num.io.threads\":\"8\"}}");
+        UUID target=UUID.nameUUIDFromBytes((job.getId()+":target:2").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        UUID detail=UUID.nameUUIDFromBytes((job.getId()+":detail:num.io.threads").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        jdbc.update("INSERT INTO kf_config_change_target_node(target_id,change_id) VALUES (?,?)",target,job.getId());
+        jdbc.update("INSERT INTO kf_config_change_detail(detail_id,change_id,config_key) VALUES (?,?,'num.io.threads')",detail,job.getId());
         return step;
     }
     String receipt(String file,String checksum,String timestamp) {
@@ -36,7 +40,7 @@ class ConfigBackupIntegrityDatabaseTest {
     }
     String output(String evidence) { return "Rollback checkpoint (7-day retention): "+path+"\n"+evidence; }
     Map<String,Object> row(JobStep step) { return jdbc.queryForMap("SELECT * FROM kf_config_backup WHERE change_id=? AND backup_uri=?",step.getJob().getId(),path); }
-    void rollback(Runnable action) { tx.executeWithoutResult(status->{status.setRollbackOnly();action.run();}); }
+    void rollback(Runnable action) { tx.executeWithoutResult(status->{status.setRollbackOnly();action.run();jdbc.execute("SET CONSTRAINTS ALL IMMEDIATE");}); }
     @Test void validReceiptPersistsExactDigestTimeAndMethodAndReplayPreservesThem() {
         rollback(()->{
             JobStep step=fixture();String timestamp=Instant.now().minusSeconds(1).truncatedTo(java.time.temporal.ChronoUnit.MICROS).toString();
