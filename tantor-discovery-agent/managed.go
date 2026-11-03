@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	bi "io.translab/tantor-agent/pkg/backupintegrity"
 	kc "io.translab/tantor-agent/pkg/kafkaconfig"
 	"log/slog"
 	"net/http"
@@ -236,6 +237,18 @@ func runManagedTask(ctx context.Context, cfg RuntimeConfig, r DiscoveredCluster,
 		}
 	}
 	logs := "Configuration backup (7-day retention): " + backup
+	receipt, err := bi.VerifyBackup(backup, original)
+	if err != nil {
+		return "", err
+	}
+	logs += "\n" + receipt
+	if snapshot != "" {
+		dynamicReceipt, err := bi.VerifyBackup(backup+".dynamic.json", []byte(snapshot))
+		if err != nil {
+			return "", err
+		}
+		logs += "\nLive dynamic property checkpoint: " + backup + ".dynamic.json\n" + dynamicReceipt
+	}
 	if p["config_recovery"] == "true" {
 		logs += "\nConfiguration recovery: " + p["checkpoint_id"]
 	}

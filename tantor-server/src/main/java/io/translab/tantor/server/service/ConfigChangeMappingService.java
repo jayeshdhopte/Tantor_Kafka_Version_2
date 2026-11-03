@@ -322,14 +322,37 @@ public class ConfigChangeMappingService {
 
     private void capturePaths(JobStep step, Map<String,Object> payload, UUID target, String output) {
         if (output==null) return;
+        Set<String> reportedPaths = new HashSet<>();
         var matcher = BACKUP.matcher(output);
         while (matcher.find()) {
             String path = matcher.group(1).trim();
+            reportedPaths.add(path);
             boolean dynamic=matcher.group().contains("Live dynamic property checkpoint") || matcher.group().contains("Dynamic checkpoint");
             // Chunk membership/full file contents are not reported in these text lines: link the artifact to its node only.
             insert("kf_config_backup","backup_id",fields("backup_id",id(target,"path:"+path),"change_id",step.getJob().getId(),
                     "target_id",target,"backup_type",dynamic?"DYNAMIC_SNAPSHOT":"FILE_BACKUP",
                     "source_path",dynamic?null:payload.get("configPath"),"backup_uri",path));
+        }
+        var receipts = Pattern.compile("(?m)^TANTOR_CONFIG_BACKUP_VERIFIED (\\{[^\\r\\n]*\\})$").matcher(output);
+        while (receipts.find()) {
+            Map<String,Object> receipt;
+            OffsetDateTime verified;
+            try {
+                receipt = mapper.readValue(receipts.group(1), new TypeReference<Map<String,Object>>() {});
+                verified = OffsetDateTime.parse(Objects.toString(receipt.get("verifiedAt"), ""));
+            } catch (Exception invalid) { continue; }
+            String path = text(receipt.get("path")), checksum = text(receipt.get("checksumSha256"));
+            if (!reportedPaths.contains(path) || checksum == null || !checksum.matches("[a-f0-9]{64}")
+                    || !"SOURCE_COPY_MATCH".equals(receipt.get("method")) || verified.isAfter(now().plusMinutes(5))
+                    || step.getJob().getCreatedAt() != null && verified.toInstant().isBefore(step.getJob().getCreatedAt().minusSeconds(300))) continue;
+            jdbc.update("""
+                    UPDATE kf_config_backup SET checksum_sha256=COALESCE(checksum_sha256,?),
+                        verified_at=CASE WHEN verification_method IS NULL THEN ? ELSE verified_at END,
+                        integrity_status='VERIFIED',last_checked_at=COALESCE(last_checked_at,?),
+                        verification_method=COALESCE(verification_method,'SOURCE_COPY_MATCH')
+                    WHERE change_id=? AND target_id=? AND backup_uri=?
+                        AND (checksum_sha256 IS NULL OR checksum_sha256=?)
+                    """,checksum,verified,verified,step.getJob().getId(),target,path,checksum);
         }
     }
 

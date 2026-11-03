@@ -11,6 +11,7 @@ import (
 
 	"io.translab/tantor-agent/internal/taskvalidate"
 	"io.translab/tantor-agent/pkg/api"
+	bi "io.translab/tantor-agent/pkg/backupintegrity"
 )
 
 var patchKeyPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9._-]{0,127}$`)
@@ -71,11 +72,12 @@ func (d *Deployer) PatchConfig(ctx context.Context, task *api.Task) (string, err
 	if task.Parameters["config_recovery"] == "true" {
 		logs.WriteString("Configuration recovery: " + task.Parameters["checkpoint_id"] + "\n")
 	}
-	backup, err := d.backupConfig(ctx, task, configPath)
+	backup, receipt, err := d.backupConfigVerified(ctx, task, configPath)
 	if err != nil {
 		return "", err
 	}
 	logs.WriteString("Rollback checkpoint (7-day retention): " + backup + "\n")
+	logs.WriteString(receipt + "\n")
 	if changed {
 		if err := writePatchAtomically(configPath, []byte(updated)); err != nil {
 			return logs.String(), fmt.Errorf("write config patch: %w", err)
@@ -340,7 +342,7 @@ func (d *Deployer) BackupDynamicConfig(ctx context.Context, task *api.Task) (str
 	if len(snapshot) > 16384 || json.Unmarshal([]byte(snapshot), &decoded) != nil || decoded["key"] != key || decoded["mode"] != "DYNAMIC" {
 		return "", fmt.Errorf("invalid dynamic configuration snapshot")
 	}
-	backup, err := d.backupConfig(ctx, task, configPath)
+	backup, receipt, err := d.backupConfigVerified(ctx, task, configPath)
 	if err != nil {
 		return "", err
 	}
@@ -361,5 +363,9 @@ func (d *Deployer) BackupDynamicConfig(ctx context.Context, task *api.Task) (str
 	if _, detail, err := d.exec.RunSudo(ctx, "install", "-m", "0600", "--", tmp.Name(), dynamicPath); err != nil {
 		return "", fmt.Errorf("save dynamic checkpoint: %w (%s)", err, detail)
 	}
-	return "Configuration backup (7-day retention): " + backup + "\nLive dynamic property checkpoint: " + dynamicPath, nil
+	dynamicReceipt, err := bi.VerifyBackup(dynamicPath, []byte(snapshot+"\n"))
+	if err != nil {
+		return "", err
+	}
+	return "Configuration backup (7-day retention): " + backup + "\nLive dynamic property checkpoint: " + dynamicPath + "\n" + receipt + "\n" + dynamicReceipt, nil
 }

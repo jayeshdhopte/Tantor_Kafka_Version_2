@@ -460,11 +460,12 @@ func (d *Deployer) Deploy(ctx context.Context, t *api.Task, reporter func(step s
 	setStep("Backup old config if exists")
 	configPath := configPathForTask(activeInstallDir, t)
 	if _, err := os.Stat(configPath); err == nil {
-		backupPath, err := d.backupConfig(ctx, t, configPath)
+		backupPath, receipt, err := d.backupConfigVerified(ctx, t, configPath)
 		if err != nil {
 			return logs.String(), err
 		}
 		log("Backing up existing config (7-day retention): %s -> %s", configPath, backupPath)
+		log("%s", receipt)
 	} else {
 		log("No existing config to backup")
 	}
@@ -1769,12 +1770,13 @@ func (d *Deployer) UpdateConfig(ctx context.Context, t *api.Task) (string, error
 		dataDir = defaultKafkaDataDir(installPaths.BaseDir)
 	}
 
-	backupPath, err := d.backupConfig(ctx, t, configPath)
+	backupPath, receipt, err := d.backupConfigVerified(ctx, t, configPath)
 	if err != nil {
 		return logs.String(), err
 	}
 	if backupPath != "" {
 		logs.WriteString(fmt.Sprintf("Existing config backed up to %s\n", backupPath))
+		logs.WriteString(receipt + "\n")
 	}
 	if err := d.generateConfigs(ctx, t, installDir, dataDir); err != nil {
 		d.restoreConfigBackup(ctx, backupPath, configPath, &logs)

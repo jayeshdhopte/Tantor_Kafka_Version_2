@@ -67,6 +67,9 @@ func TestManagedPatchBacksUpBeforeAtomicDeletion(t *testing.T) {
 	if result.Status != "SUCCESS" {
 		t.Fatal(result.Message)
 	}
+	if !strings.Contains(result.Message, "TANTOR_CONFIG_BACKUP_VERIFIED ") {
+		t.Fatal("verified backup evidence not returned")
+	}
 	data, _ := os.ReadFile(r.PropsFile)
 	if strings.Contains(string(data), "log.retention.hours") || !strings.Contains(string(data), "num.io.threads=12") {
 		t.Fatal(string(data))

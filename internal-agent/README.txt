@@ -1,5 +1,12 @@
 Tantor Internal Agent
 
+Config backup integrity (configchange.10-backupintegrity.1):
+Physical Kafka config backups are read back and SHA-256 compared with captured
+source bytes before mutation. Task receipts allow the matching backend to store
+checksums and actual verification times. See docs/config-backup-integrity.md in
+the repository. Upgrade the binary and backend together; keep existing node
+configuration, identities, and stopped/running service states during upgrades.
+
 Go source: source/
 Linux amd64 executable: bin/tantor-agent-linux-amd64
 Linux arm64 executable: bin/tantor-agent-linux-arm64
