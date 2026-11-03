@@ -158,6 +158,7 @@ public class AuditService {
     }
 
     public String displayResourceId(AuditLog event) {
+        if (isType(event, "CONFIG_CHANGE")) return firstNonBlank(event.getResourceId(), event.getResource());
         if (isType(event, "ARTIFACT")) return blankToNull(event.getResourceId());
         if (isType(event, "HOST")) return firstNonBlank(event.getHostId(), event.getResourceId());
         if (isType(event, "CLUSTER")) return firstNonBlank(event.getResourceId(), id(event.getClusterId()));

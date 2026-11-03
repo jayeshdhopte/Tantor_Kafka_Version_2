@@ -13,6 +13,16 @@ import static org.mockito.Mockito.*;
 class AuditServiceTest {
 
     @Test
+    void configurationAuditDisplaysTheChangeIdInsteadOfReplacingItWithClusterId() {
+        AuditService service = new AuditService(mock(AuditLogRepository.class), new ObjectMapper());
+        AuditLog event = new AuditLog();
+        event.setResourceType("CONFIG_CHANGE");
+        event.setResourceId("89e6d585-fcef-4159-bd48-0600230fe15a");
+        event.setClusterId(java.util.UUID.randomUUID());
+        assertThat(service.displayResourceId(event)).isEqualTo(event.getResourceId());
+    }
+
+    @Test
     @SuppressWarnings("unchecked")
     void unfilteredSearchIncludesHostLifecycleStatusesAndExplicitStatusStillFilters() {
         AuditLogRepository repository = mock(AuditLogRepository.class);
