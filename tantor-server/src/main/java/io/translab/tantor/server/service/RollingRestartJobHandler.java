@@ -133,7 +133,7 @@ public class RollingRestartJobHandler implements JobHandler {
                     UUID task = restartDispatcher.dispatch(clusterId, host, unit, step.getId());
                     taskAwaiter.await(task);
                 } else jobService.appendLog(job.getId(), "Resuming health verification on " + display + "; no repeated restart.");
-                var verified = probeState(context,step.getId(),"POST_RESTART",deploymentService.verifyKafkaService(clusterId, host, unit));
+                var verified = waitForService(context,step.getId(),clusterId,host,unit);
                 if (!"active".equals(verified.get("state"))) throw new IllegalStateException("Kafka service is not active: " + verified);
                 jobService.reportRollingRestartPhase(step.getId(), "Service active; verifying cluster health.");
                 jobService.appendLog(job.getId(), "Service active on " + display + "; verifying quorum, replicas, ISR and host health.");
@@ -147,9 +147,36 @@ public class RollingRestartJobHandler implements JobHandler {
         }
     }
 
+    /** A successful systemd restart can precede the next process-discovery snapshot. Retry reads only. */
+    private Map<String,Object> waitForService(RollingRestartEvidenceService.Context context,UUID step,UUID cluster,String host,String unit) {
+        Instant deadline=Instant.now().plusSeconds(Math.max(1,healthTimeoutSeconds));
+        String reason="Kafka service has not become active";
+        do {
+            try {
+                long remaining=Math.max(1,(java.time.Duration.between(Instant.now(),deadline).toMillis()+999)/1000);
+                var state=probeState(context,step,"POST_RESTART",deploymentService.verifyKafkaService(cluster,host,unit),remaining);
+                if("active".equals(state.get("state"))) return state;
+                reason="Kafka service state is "+state.get("state");
+            } catch(RuntimeException failure) {
+                // Discovery may briefly lose the process/unit association during restart. Never weaken target validation.
+                if(failure.getMessage()==null || !failure.getMessage().contains("task does not match a locally discovered Kafka process and configuration")) throw failure;
+                reason=failure.getMessage();
+            }
+            if(!Instant.now().isBefore(deadline)) break;
+            try {Thread.sleep(Math.min(Math.max(1,healthPollSeconds)*1000,Math.max(1,java.time.Duration.between(Instant.now(),deadline).toMillis())));}
+            catch(InterruptedException interrupted){Thread.currentThread().interrupt();throw new IllegalStateException("Service verification interrupted",interrupted);}
+        } while(Instant.now().isBefore(deadline));
+        throw new IllegalStateException("Timed out waiting for post-restart service discovery/health; no additional restart was issued: "+reason);
+    }
+
     private Map<String,Object> probeState(RollingRestartEvidenceService.Context context,UUID step,String phase,UUID task) {
+        return probeState(context,step,phase,task,null);
+    }
+
+    private Map<String,Object> probeState(RollingRestartEvidenceService.Context context,UUID step,String phase,UUID task,Long limitSeconds) {
         try {
-            var state=readMap(taskAwaiter.await(task).getLogOutput());
+            var observed=limitSeconds==null?taskAwaiter.await(task):taskAwaiter.await(task,limitSeconds);
+            var state=readMap(observed.getLogOutput());
             evidence.check(context,step,phase,"serviceActive","active".equals(state.get("state"))?"PASS":"FAIL",
                     Map.of("taskId",task.toString(),"serviceState",state),null);
             return state;

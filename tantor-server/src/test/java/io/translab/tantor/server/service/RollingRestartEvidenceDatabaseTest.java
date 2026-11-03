@@ -83,7 +83,7 @@ class RollingRestartEvidenceDatabaseTest {
         step.setPayload(mapper.writeValueAsString(Map.of("hostId","host-1","role","broker","nodeId",1)));
         when(jobs.getSteps(job.getId())).thenReturn(List.of(step));when(awaiter.status(step.getAgentTaskId())).thenReturn("SUCCESS");when(awaiter.await(step.getAgentTaskId())).thenReturn(new Task());
         UUID probe=UUID.randomUUID();when(deployment.verifyKafkaService(clusterId,"host-1","broker")).thenReturn(probe);
-        Task observed=new Task();observed.setLogOutput("{\"state\":\"active\",\"pid\":\"123\"}");when(awaiter.await(probe)).thenReturn(observed);
+        Task observed=new Task();observed.setLogOutput("{\"state\":\"active\",\"pid\":\"123\"}");when(awaiter.await(probe)).thenReturn(observed);when(awaiter.await(eq(probe),anyLong())).thenReturn(observed);
         when(health.inspect(eq(clusterId),eq(2),anySet())).thenReturn(new RollingRestartHealthService.HealthSnapshot(true,2,101,0,0,0,0,Map.of(),
                 Map.of("offlinePartitions",new RollingRestartEvidenceService.Check("PASS",Map.of("count",0),null),"disk",new RollingRestartEvidenceService.Check("UNKNOWN",Map.of(),"unmeasured"))));
         var handler=new RollingRestartJobHandler(jobs,deployment,awaiter,clusters,hosts,kafka,health,evidence,mapper,new RollingRestartTaskDispatcher(deployment,jobs),mock(RestartNodeDisplayService.class));

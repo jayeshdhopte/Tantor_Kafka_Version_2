@@ -18,6 +18,48 @@ class RollingRestartJobSafetyTest {
         assertThatThrownBy(()->dispatcher.dispatch(UUID.randomUUID(),"host","broker.service",step)).isInstanceOf(ClusterOperationConflictException.class);
         verifyNoInteractions(deployment);
     }
+    @Test void postRestartDiscoveryLagRetriesOnlyReadOnlyVerification() {
+        var jobs=mock(JobService.class);var deploy=mock(DeploymentService.class);var awaiter=mock(AgentTaskAwaiter.class);
+        var evidence=mock(RollingRestartEvidenceService.class);
+        var handler=new RollingRestartJobHandler(jobs,deploy,awaiter,mock(ClusterRepository.class),mock(HostRepository.class),mock(KafkaAdminService.class),mock(RollingRestartHealthService.class),evidence,new ObjectMapper(),new RollingRestartTaskDispatcher(deploy,jobs),mock(RestartNodeDisplayService.class));
+        ReflectionTestUtils.setField(handler,"healthTimeoutSeconds",3L);ReflectionTestUtils.setField(handler,"healthPollSeconds",1L);
+        UUID cluster=UUID.randomUUID(),step=UUID.randomUUID(),first=UUID.randomUUID(),second=UUID.randomUUID();
+        var context=new RollingRestartEvidenceService.Context(UUID.randomUUID(),UUID.randomUUID(),1);
+        when(deploy.verifyKafkaService(cluster,"host","broker.service")).thenReturn(first,second);
+        when(awaiter.await(eq(first),anyLong())).thenThrow(new IllegalStateException("Agent task failed: task does not match a locally discovered Kafka process and configuration"));
+        Task active=new Task();active.setLogOutput("{\"state\":\"active\",\"pid\":\"42\"}");when(awaiter.await(eq(second),anyLong())).thenReturn(active);
+        Map<?,?> state=ReflectionTestUtils.invokeMethod(handler,"waitForService",context,step,cluster,"host","broker.service");
+        assertThat(state.get("state")).isEqualTo("active");
+        verify(deploy,times(2)).verifyKafkaService(cluster,"host","broker.service");verify(deploy,never()).restartService(any(),anyString(),anyString());
+        verify(awaiter).await(eq(first),longThat(limit->limit>0 && limit<=3));
+        verify(evidence).check(eq(context),eq(step),eq("POST_RESTART"),eq("serviceActive"),eq("ERROR"),anyMap(),anyString());
+        verify(evidence).check(eq(context),eq(step),eq("POST_RESTART"),eq("serviceActive"),eq("PASS"),anyMap(),isNull());
+    }
+
+    @Test void permanentPostRestartIdentityMismatchStopsAfterTimeoutWithoutAnotherRestart() {
+        var jobs=mock(JobService.class);var deploy=mock(DeploymentService.class);var awaiter=mock(AgentTaskAwaiter.class);
+        var handler=new RollingRestartJobHandler(jobs,deploy,awaiter,mock(ClusterRepository.class),mock(HostRepository.class),mock(KafkaAdminService.class),mock(RollingRestartHealthService.class),mock(RollingRestartEvidenceService.class),new ObjectMapper(),new RollingRestartTaskDispatcher(deploy,jobs),mock(RestartNodeDisplayService.class));
+        ReflectionTestUtils.setField(handler,"healthTimeoutSeconds",1L);ReflectionTestUtils.setField(handler,"healthPollSeconds",1L);
+        UUID cluster=UUID.randomUUID(),step=UUID.randomUUID(),task=UUID.randomUUID();
+        when(deploy.verifyKafkaService(any(),anyString(),anyString())).thenReturn(task);
+        when(awaiter.await(eq(task),anyLong())).thenThrow(new IllegalStateException("task does not match a locally discovered Kafka process and configuration"));
+        assertThatThrownBy(()->ReflectionTestUtils.invokeMethod(handler,"waitForService",new RollingRestartEvidenceService.Context(UUID.randomUUID(),UUID.randomUUID(),1),step,cluster,"host","broker.service"))
+                .hasMessageContaining("Timed out waiting for post-restart");
+        verify(deploy,never()).restartService(any(),anyString(),anyString());
+    }
+
+    @Test void changedServiceBindingIsRejectedImmediatelyInsteadOfRetried() {
+        var jobs=mock(JobService.class);var deploy=mock(DeploymentService.class);var awaiter=mock(AgentTaskAwaiter.class);
+        var handler=new RollingRestartJobHandler(jobs,deploy,awaiter,mock(ClusterRepository.class),mock(HostRepository.class),mock(KafkaAdminService.class),mock(RollingRestartHealthService.class),mock(RollingRestartEvidenceService.class),new ObjectMapper(),new RollingRestartTaskDispatcher(deploy,jobs),mock(RestartNodeDisplayService.class));
+        ReflectionTestUtils.setField(handler,"healthTimeoutSeconds",10L);
+        UUID cluster=UUID.randomUUID(),step=UUID.randomUUID(),task=UUID.randomUUID();
+        when(deploy.verifyKafkaService(any(),anyString(),anyString())).thenReturn(task);
+        when(awaiter.await(eq(task),anyLong())).thenThrow(new IllegalStateException("service configuration binding changed; refresh discovery before restarting"));
+        assertThatThrownBy(()->ReflectionTestUtils.invokeMethod(handler,"waitForService",new RollingRestartEvidenceService.Context(UUID.randomUUID(),UUID.randomUUID(),1),step,cluster,"host","broker.service"))
+                .hasMessageContaining("service configuration binding changed");
+        verify(deploy,times(1)).verifyKafkaService(cluster,"host","broker.service");verify(deploy,never()).restartService(any(),anyString(),anyString());
+    }
+
     @Test void retryPreservesCompletedStepsAndRestartEvidenceAndRejectsRollback() {
         var jobs = mock(JobRepository.class); var steps = mock(JobStepRepository.class); var clusters = mock(ClusterRepository.class);
         var service = new JobService(jobs, steps, new ObjectMapper(), clusters, mock(ExternalClusterRepository.class), org.mockito.Mockito.mock(io.translab.tantor.server.service.RollingRestartMappingService.class), org.mockito.Mockito.mock(io.translab.tantor.server.service.ConfigChangeMappingService.class));
@@ -115,7 +157,7 @@ class RollingRestartJobSafetyTest {
         Host host = new Host(); host.setAgentVersion("1.0-rollingrestart.1"); when(hosts.findById("one")).thenReturn(Optional.of(host));
         when(awaiter.status(step.getAgentTaskId())).thenReturn("SUCCESS"); when(awaiter.await(step.getAgentTaskId())).thenReturn(new Task());
         UUID probe = UUID.randomUUID(); when(deploy.verifyKafkaService(cluster.getId(), "one", "broker")).thenReturn(probe);
-        Task verified = new Task(); verified.setLogOutput("{\"state\":\"active\",\"pid\":\"2\",\"started\":\"200\"}"); when(awaiter.await(probe)).thenReturn(verified);
+        Task verified = new Task(); verified.setLogOutput("{\"state\":\"active\",\"pid\":\"2\",\"started\":\"200\"}"); when(awaiter.await(probe)).thenReturn(verified);when(awaiter.await(eq(probe),anyLong())).thenReturn(verified);
         when(health.inspect(eq(cluster.getId()), eq(2), anySet())).thenReturn(new RollingRestartHealthService.HealthSnapshot(true, 2, 101, 0, 0, 0, 0, Map.of()));
         when(evidence.begin(eq(job),anyMap())).thenReturn(new RollingRestartEvidenceService.Context(UUID.randomUUID(),job.getId(),1));
         handler.execute(job);

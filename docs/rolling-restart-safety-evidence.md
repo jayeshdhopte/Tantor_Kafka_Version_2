@@ -58,3 +58,7 @@ ORDER BY p.attempt_number,r.observed_at,r.sample_id,r.check_key;
 ```
 
 The original Draw.io file was not supplied for editing. This mapping and its ER diagram describe the implemented relationships to incorporate into that design. Config-driven restart children (`kf_rolling_restart_operation`, `kf_rolling_restart_node_step`) and their existing Config Change health evidence are outside this standalone policy catalogue.
+
+## Post-restart discovery convergence
+
+After a successful agent restart, standalone restart polls read-only `VERIFY_KAFKA_SERVICE` until the effective health timeout. A transient `task does not match a locally discovered Kafka process and configuration` is retried with a new verification task: the process/unit discovery snapshot may still be converging after systemd starts a new PID. Inactive service states are polled as well. Each task await uses the remaining timeout budget; unsuccessful observations remain in check history. Other validation errors stop the operation immediately. A persistent target mismatch still fails on timeout. The target/path/cluster/service guards and restart allowlist remain enforced, and this polling never queues another restart.
