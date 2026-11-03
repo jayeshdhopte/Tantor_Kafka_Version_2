@@ -70,6 +70,7 @@ public class ExternalKafkaManagement {
   int updated=jdbc.update("update kf_external_kafka_tasks set status=?,message=? where id=? and agent_id=? and claim_token=? and status='IN_PROGRESS' and deadline>now()",result.get("status"),message,id,agent,result.get("claimToken"));
   if(updated==0)throw new IllegalStateException("Unknown, expired or already completed task claim");
  }
+ public Map<String,Object> diskMetrics(String target){try{var n=node(target);return n.getDiskTotalGb()!=null && n.getDiskTotalGb()>0 && n.getDiskUsedGb()!=null?Map.of("totalGb",n.getDiskTotalGb(),"usedGb",n.getDiskUsedGb()):Map.of();}catch(RuntimeException e){return Map.of();}}
  public void inspectHosts(Set<String> targets,Map<String,String> failures,double diskLimit,long heartbeat){
   for(String target:targets){try{var n=node(target);var a=agents.findById(n.getAgentId()).orElseThrow();if(!"ONLINE".equalsIgnoreCase(a.getStatus())||a.getLastHeartbeat()==null||a.getLastHeartbeat().isBefore(OffsetDateTime.now().minusSeconds(heartbeat)))throw new IllegalStateException("Discovery heartbeat stale");if(n.getDiskTotalGb()!=null&&n.getDiskUsedGb()!=null&&n.getDiskTotalGb()>0&&100.0*n.getDiskUsedGb()/n.getDiskTotalGb()>=diskLimit)failures.put("disk:"+target,"Disk pressure on "+n.getHost());}catch(RuntimeException e){failures.put("agent:"+target,e.getMessage());}}
  }

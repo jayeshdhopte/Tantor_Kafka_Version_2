@@ -100,8 +100,8 @@ class RollingRestartJobSafetyTest {
     @Test void resumeSuccessfulRestartOnlyChecksHealthAndDoesNotMarkClusterFailed() throws Exception {
         var jobs = mock(JobService.class); var deploy = mock(DeploymentService.class); var awaiter = mock(AgentTaskAwaiter.class);
         var clusters = mock(ClusterRepository.class); var hosts = mock(HostRepository.class); var kafka = mock(KafkaAdminService.class);
-        var health = mock(RollingRestartHealthService.class); var mapper = new ObjectMapper();
-        var handler = new RollingRestartJobHandler(jobs, deploy, awaiter, clusters, hosts, kafka, health, mapper, new RollingRestartTaskDispatcher(deploy, jobs), mock(RestartNodeDisplayService.class));
+        var health = mock(RollingRestartHealthService.class); var evidence=mock(RollingRestartEvidenceService.class); var mapper = new ObjectMapper();
+        var handler = new RollingRestartJobHandler(jobs, deploy, awaiter, clusters, hosts, kafka, health, evidence, mapper, new RollingRestartTaskDispatcher(deploy, jobs), mock(RestartNodeDisplayService.class));
         ReflectionTestUtils.setField(handler, "healthTimeoutSeconds", 1L);
         ReflectionTestUtils.setField(handler, "stableSamples", 1);
         Cluster cluster = new Cluster(); cluster.setId(UUID.randomUUID()); cluster.setMode("kraft"); cluster.setStatus("SUCCESS");
@@ -117,6 +117,7 @@ class RollingRestartJobSafetyTest {
         UUID probe = UUID.randomUUID(); when(deploy.verifyKafkaService(cluster.getId(), "one", "broker")).thenReturn(probe);
         Task verified = new Task(); verified.setLogOutput("{\"state\":\"active\",\"pid\":\"2\",\"started\":\"200\"}"); when(awaiter.await(probe)).thenReturn(verified);
         when(health.inspect(eq(cluster.getId()), eq(2), anySet())).thenReturn(new RollingRestartHealthService.HealthSnapshot(true, 2, 101, 0, 0, 0, 0, Map.of()));
+        when(evidence.begin(eq(job),anyMap())).thenReturn(new RollingRestartEvidenceService.Context(UUID.randomUUID(),job.getId(),1));
         handler.execute(job);
         verify(deploy, never()).restartService(any(), anyString(), anyString());
         verify(jobs).completeStep(eq(step.getId()), anyString()); verify(clusters, never()).save(any());
@@ -136,6 +137,10 @@ class RollingRestartJobSafetyTest {
         verify(deploy).restartService(cluster.getId(), "one", "broker");
         verify(health).assertBrokerCanStop(cluster.getId(), 1);
         verify(jobs).recordRollingRestartBaseline(eq(step.getId()), eq(probe), anyMap());
+        verify(evidence,atLeastOnce()).sample(any(),eq(step.getId()),eq("POST_RESTART"),argThat(checks->checks.get("stableSamples").outcome().equals("PASS")));
+        doThrow(new IllegalStateException("evidence storage unavailable")).when(evidence).begin(eq(job),anyMap());
+        assertThatThrownBy(()->handler.execute(job)).hasMessageContaining("evidence storage unavailable");
+        verify(deploy,times(1)).restartService(cluster.getId(),"one","broker");
         verify(jobs, never()).attachExternalServiceTask(any(), any());
         verify(clusters, never()).save(any());
     }

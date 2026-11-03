@@ -30,8 +30,15 @@ public class RollingRestartHealthService {
     @Value("${tantor.hosts.heartbeat-timeout-seconds:90}")
     private long heartbeatTimeoutSeconds;
 
+    public Map<String,Object> policySettings() {
+        return Map.of("maxDiskUsedPercent",maxDiskUsedPercent,"maxConsumerLag",maxConsumerLag,
+                "heartbeatTimeoutSeconds",heartbeatTimeoutSeconds,"quorumFreshnessMillis",30000,
+                "missingDiskMetrics","NON_BLOCKING_UNKNOWN");
+    }
+
     public HealthSnapshot inspect(UUID clusterId, int expectedBrokerCount, Set<String> requiredHostIds) {
         Map<String, String> failures = new LinkedHashMap<>();
+        Map<String,RollingRestartEvidenceService.Check> checks=new LinkedHashMap<>();
         int visibleBrokers = 0;
         int offlinePartitions = 0;
         int underReplicatedPartitions = 0;
@@ -51,6 +58,9 @@ public class RollingRestartHealthService {
             }
             if (controllerId == null || controllerId < 0) failures.put("controller", "Kafka has no active controller");
 
+            outcome(checks,"brokerReachability",visibleBrokers>=expectedBrokerCount,Map.of("visibleBrokers",visibleBrokers,"expectedBrokerCount",expectedBrokerCount),failures);
+            outcome(checks,"controller",controllerId!=null && controllerId>=0,Map.of("controllerId",Objects.toString(controllerId,"unknown")),failures);
+
             Set<String> topicNames = client.listTopics(new ListTopicsOptions().listInternal(true)).names().get();
             Map<String, TopicDescription> topics = topicNames.isEmpty()
                     ? Map.of() : client.describeTopics(topicNames).allTopicNames().get();
@@ -67,10 +77,15 @@ public class RollingRestartHealthService {
             if (underReplicatedPartitions > 0) failures.put("underReplicatedPartitions", underReplicatedPartitions + " partition(s) are under-replicated");
             if (minIsrViolations > 0) failures.put("minimumIsr", minIsrViolations + " partition(s) are below min.insync.replicas");
 
+            outcome(checks,"offlinePartitions",offlinePartitions==0,Map.of("count",offlinePartitions),failures);
+            outcome(checks,"underReplicatedPartitions",underReplicatedPartitions==0,Map.of("count",underReplicatedPartitions),failures);
+            outcome(checks,"minimumIsr",minIsrViolations==0,Map.of("count",minIsrViolations),failures);
             consumerLag = totalConsumerLag(client);
             if (consumerLag > maxConsumerLag) {
                 failures.put("consumerLag", "Total consumer lag " + consumerLag + " exceeds limit " + maxConsumerLag);
             }
+            outcome(checks,"consumerLag",consumerLag<=maxConsumerLag,Map.of("totalLag",consumerLag,"limit",maxConsumerLag),failures);
+            outcome(checks,"kafkaInspection",true,Map.of(),failures);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             failures.put("kafka", "Health inspection was interrupted");
@@ -80,9 +95,26 @@ public class RollingRestartHealthService {
             failures.put("kafka", "Kafka health inspection failed: " + rootMessage(e));
         }
 
+        if(failures.containsKey("kafka")) checks.put("kafkaInspection",new RollingRestartEvidenceService.Check("ERROR",Map.of(),failures.get("kafka")));
+        for(String key:List.of("brokerReachability","controller","offlinePartitions","underReplicatedPartitions","minimumIsr","consumerLag"))
+            checks.putIfAbsent(key,new RollingRestartEvidenceService.Check("UNKNOWN",Map.of(),"Kafka inspection did not reach this check"));
         inspectHosts(requiredHostIds, failures);
+        boolean hostFailure=failures.keySet().stream().anyMatch(k->k.equals("hostReachability") || k.startsWith("agent:"));
+        boolean diskFailure=failures.keySet().stream().anyMatch(k->k.equals("disk") || k.startsWith("disk:"));
+        outcome(checks,"hostReachability",!hostFailure,Map.of("requiredHostIds",requiredHostIds,"heartbeatTimeoutSeconds",heartbeatTimeoutSeconds),failures);
+        Map<String,Object> diskMetrics=new LinkedHashMap<>();
+        for(String hostId:requiredHostIds) {
+            if(externalKafka!=null && externalKafka.target(hostId)){diskMetrics.put(hostId,externalKafka.diskMetrics(hostId));continue;}
+            Host host=hostRepository.findById(hostId).orElse(null);
+            diskMetrics.put(hostId,host!=null && host.getDiskTotalGb()!=null && host.getDiskTotalGb()>0 && host.getDiskUsedGb()!=null
+                    ?Map.of("totalGb",host.getDiskTotalGb(),"usedGb",host.getDiskUsedGb()):Map.of());
+        }
+        boolean completeDiskMetrics=diskMetrics.values().stream().allMatch(value->value instanceof Map<?,?> values && !values.isEmpty());
+        checks.put("disk",new RollingRestartEvidenceService.Check(diskFailure?"FAIL":(!hostFailure && completeDiskMetrics?"PASS":"UNKNOWN"),
+                Map.of("requiredHostIds",requiredHostIds,"maxDiskUsedPercent",maxDiskUsedPercent,"completeMetrics",completeDiskMetrics,"hosts",diskMetrics),
+                diskFailure?failures.toString():(!completeDiskMetrics || hostFailure?"Some disk metrics unavailable or host not reachable; existing policy is nonblocking":null)));
         return new HealthSnapshot(failures.isEmpty(), visibleBrokers, controllerId, offlinePartitions,
-                underReplicatedPartitions, minIsrViolations, consumerLag, Collections.unmodifiableMap(new LinkedHashMap<>(failures)));
+                underReplicatedPartitions, minIsrViolations, consumerLag, Collections.unmodifiableMap(new LinkedHashMap<>(failures)),Collections.unmodifiableMap(checks));
     }
 
     public void assertBrokerCanStop(UUID clusterId, int nodeId) {
@@ -159,6 +191,10 @@ public class RollingRestartHealthService {
         if (!diskPressure.isEmpty()) failures.put("disk", "Disk usage is above the safe limit on: " + String.join(", ", diskPressure));
     }
 
+    private void outcome(Map<String,RollingRestartEvidenceService.Check> checks,String key,boolean pass,Map<String,Object> metrics,Map<String,String> failures) {
+        checks.put(key,new RollingRestartEvidenceService.Check(pass?"PASS":"FAIL",metrics,pass?null:failures.toString()));
+    }
+
     private String rootMessage(Exception exception) {
         Throwable current = exception;
         while (current.getCause() != null) current = current.getCause();
@@ -167,7 +203,10 @@ public class RollingRestartHealthService {
 
     public record HealthSnapshot(boolean healthy, int visibleBrokers, Integer controllerId,
             int offlinePartitions, int underReplicatedPartitions, int minIsrViolations,
-            long consumerLag, Map<String, String> failures) {
+            long consumerLag, Map<String, String> failures, Map<String,RollingRestartEvidenceService.Check> checks) {
+        public HealthSnapshot(boolean healthy,int visibleBrokers,Integer controllerId,int offlinePartitions,int underReplicatedPartitions,int minIsrViolations,long consumerLag,Map<String,String> failures) {
+            this(healthy,visibleBrokers,controllerId,offlinePartitions,underReplicatedPartitions,minIsrViolations,consumerLag,failures,Map.of());
+        }
         public String failureReason() {
             return failures.values().stream().collect(Collectors.joining("; "));
         }

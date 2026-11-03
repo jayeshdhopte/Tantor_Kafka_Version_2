@@ -1,3 +1,5 @@
+> This document describes the original V92 summary mapping. Later releases added foreign keys and shared operation history. For current standalone safety-policy and individual health-check persistence, see [V102 safety evidence](rolling-restart-safety-evidence.md).
+
 # Standalone rolling restart mapping
 
 The cluster three-dot menu creates a standalone `ROLLING_RESTART` job. V92 adds one summary table, `public.kf_rolling_restart_table`, to the existing local database at `127.0.0.1:5433`, database `tantor`. It does not replace job, step, task or audit storage and does not backfill older jobs.
