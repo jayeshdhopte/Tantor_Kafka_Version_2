@@ -96,7 +96,7 @@ SELECT add_service_id, cluster_id, created_time, status, host_id,
        broker_ip, "user", created_by, updated_by, process_role
 FROM public.kf_add_service
 ORDER BY created_time DESC;
- 
+
 SELECT conname, convalidated, pg_get_constraintdef(oid)
 FROM pg_constraint
 WHERE conrelid = 'public.kf_add_service'::regclass AND contype = 'f';
