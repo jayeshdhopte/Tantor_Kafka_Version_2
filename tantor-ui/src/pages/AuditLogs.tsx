@@ -88,9 +88,10 @@ const isHostOnboardingEvent = (event: AuditEvent) => {
 
 const actionLabel = (event: AuditEvent) => {
   const action = normalized(event.action);
+  if (action === 'HOST_ONBOARDING_APPROVED') return 'Host Onboarding Approved';
+  if (action === 'HOST_REGISTERED' || action === 'REGISTER') return 'Agent Registered';
   if (action.includes('ONBOARDING') && normalized(event.status) === 'SUCCESS') return 'Host Registered';
   if (action.includes('ONBOARDING')) return 'Host Onboarding Requested';
-  if (action === 'REGISTER' || action === 'HOST_REGISTERED') return 'Host Registered';
   return title(event.action || 'Captured');
 };
 
@@ -355,6 +356,9 @@ export function AuditLogs() {
               { label: 'All', value: 'ALL' },
               { label: 'SUCCESS', value: 'SUCCESS' },
               { label: 'FAILED', value: 'FAILED' },
+              ...Array.from(new Set(events.map(event => event.status)))
+                .filter(value => value && !['SUCCESS', 'FAILED', 'ATTEMPTED', 'SCHEDULED', 'REQUESTED'].includes(value))
+                .sort().map(value => ({ label: value, value })),
               { label: 'ATTEMPTED', value: 'ATTEMPTED' },
               { label: 'SCHEDULED', value: 'SCHEDULED' },
               { label: 'REQUESTED', value: 'REQUESTED' }

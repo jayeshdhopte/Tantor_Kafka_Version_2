@@ -123,7 +123,6 @@ public class AuditService {
             equalIgnoreCase(predicates, cb, root.get("action"), action);
             equalIgnoreCase(predicates, cb, root.get("status"), status);
             equalIgnoreCase(predicates, cb, root.get("resourceType"), resourceType);
-            predicates.add(cb.upper(root.get("status")).in("SUCCESS", "FAILED"));
             if (actor != null && !actor.isBlank()) predicates.add(cb.equal(root.get("createdBy"), actor));
             if (from != null) predicates.add(cb.greaterThanOrEqualTo(root.get("createdTime"), from));
             if (to != null) predicates.add(cb.lessThanOrEqualTo(root.get("createdTime"), to));

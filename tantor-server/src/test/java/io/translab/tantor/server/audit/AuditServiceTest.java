@@ -13,6 +13,28 @@ import static org.mockito.Mockito.*;
 class AuditServiceTest {
 
     @Test
+    @SuppressWarnings("unchecked")
+    void unfilteredSearchIncludesHostLifecycleStatusesAndExplicitStatusStillFilters() {
+        AuditLogRepository repository = mock(AuditLogRepository.class);
+        AuditService service = new AuditService(repository, new ObjectMapper());
+        var specification = org.mockito.ArgumentCaptor.forClass(org.springframework.data.jpa.domain.Specification.class);
+        service.search(null, null, null, null, null, null, null, null, 0, 100);
+        verify(repository).findAll(specification.capture(), any(org.springframework.data.domain.Pageable.class));
+        jakarta.persistence.criteria.Root<AuditLog> root = mock(jakarta.persistence.criteria.Root.class);
+        var builder = mock(jakarta.persistence.criteria.CriteriaBuilder.class);
+        specification.getValue().toPredicate(root, null, builder);
+        // No implicit status restriction when opening View All.
+        verify(builder, never()).upper(any());
+
+        reset(repository);
+        clearInvocations(root);
+        service.search(null, null, "PENDING", null, null, null, null, null, 0, 100);
+        verify(repository).findAll(specification.capture(), any(org.springframework.data.domain.Pageable.class));
+        specification.getValue().toPredicate(root, null, builder);
+        verify(root).get("status");
+    }
+
+    @Test
     void createsAuditEventAndCapturesDetails() {
         AuditLogRepository repository = mock(AuditLogRepository.class);
         when(repository.saveAndFlush(any(AuditLog.class))).thenAnswer(invocation -> invocation.getArgument(0));

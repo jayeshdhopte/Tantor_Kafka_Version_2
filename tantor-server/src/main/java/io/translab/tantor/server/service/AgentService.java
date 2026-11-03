@@ -73,7 +73,13 @@ public class AgentService {
         }
 
         String selectedHostIp = selectedIps.isEmpty() ? sourceIp : selectedIps.get(0);
-        String agentName = firstNonBlank(dto.getAgentName(), host.getAgentName(), dto.getHostname(), dto.getHostId());
+        String agentName = firstNonBlank(dto.getAgentName(), host.getAgentName(), "tantor-agent");
+        // Older agents send the OS hostname as their default agent name.
+        // Keep explicitly configured names, but distinguish that legacy default
+        // from the physical host identity without changing its registration ID.
+        if (agentName.equalsIgnoreCase(String.valueOf(dto.getHostname()))) {
+            agentName = "tantor-agent";
+        }
         String agentPath = firstNonBlank(dto.getAgentPath(), host.getAgentPath(), "/srv/tantor-agent/tantor-agent-linux");
         String auditActor = selectedHostIp == null || selectedHostIp.isBlank()
                 ? agentName
