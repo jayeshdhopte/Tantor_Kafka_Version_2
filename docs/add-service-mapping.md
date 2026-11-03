@@ -47,6 +47,12 @@ Primary-key conflicts are ignored on creation, preserving original creation time
 
 The existing `kf_audit_logs` table receives SERVICE_ADDED and SERVICE_STATUS_CHANGED events through `AuditService` after the mapping transaction commits. Audit details contain service ID, host ID, role and status; they contain no credentials or service configuration JSON. Rolled-back writes produce no audit entry. Audit-storage failures after commit are logged without turning a committed deployment into an API failure.
 
+Status updates use a null-safe conditional UPDATE, so repeated callbacks reporting
+the same status neither change the mapping's actor nor emit another audit event.
+The database evaluates this condition under the row lock, including concurrent
+callbacks. Real retries that transition back into an earlier status still create
+new events. Previously recorded audit history is retained unchanged.
+
 Existing jobs, steps, tasks, service assignments, REST connections, JSON payloads, API responses and UI reads retain their existing storage and behavior. No existing entity/DTO column mapping or existing SQL select list was changed. No migration or data backfill touches the 11 config-change ER tables.
 
 ## Verification

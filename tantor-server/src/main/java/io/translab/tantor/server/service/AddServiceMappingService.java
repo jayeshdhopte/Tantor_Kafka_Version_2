@@ -63,8 +63,8 @@ public class AddServiceMappingService {
     public void updateStatus(UUID serviceId, String status, String actor) {
         int updated = jdbc.update("""
                 UPDATE kf_add_service SET status = ?, updated_by = COALESCE(?, updated_by)
-                WHERE add_service_id = ?
-                """, status, actor, serviceId);
+                WHERE add_service_id = ? AND status IS DISTINCT FROM ?
+                """, status, actor, serviceId, status);
         if (updated == 1) events.publishEvent(new AddServiceAuditListener.Event(serviceId, "SERVICE_STATUS_CHANGED", status, actor));
     }
 
