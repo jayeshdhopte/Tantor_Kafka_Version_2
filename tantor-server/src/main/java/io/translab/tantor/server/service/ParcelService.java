@@ -62,6 +62,11 @@ public class ParcelService {
         }
 
         hostParcelRepository.findFirstByLastTaskIdOrderByCreatedAtDescIdDesc(task.getId()).ifPresent(parcel -> {
+            if ("DISTRIBUTE_PARCEL".equals(task.getCommand())
+                    && Set.of("SUCCESS", "FAILED").contains(task.getStatus())) {
+                hostParcelRepository.flush();
+                hostParcelRepository.recordDownloadReceipt(task.getId());
+            }
             if ("FAILED".equalsIgnoreCase(task.getStatus())) {
                 HostParcel failed = copyEvent(parcel, actionForCommand(task.getCommand()));
                 failed.setStatus("FAILED");
@@ -150,13 +155,16 @@ public class ParcelService {
             parcel.setChecksum(request.getChecksum());
             parcel.setParcelDir(resolveParcelDir(command, request, previous, hostId));
             parcel.setAction(actionForCommand(command));
+            String initiator = defaultString(auditService.currentActor(), "system");
+            parcel.setCreatedBy(initiator);
+            parcel.setUpdatedBy(initiator);
             parcel.setStatus(inProgressStatus(command));
             parcel.setErrorMsg(null);
             if ("REMOVE_PARCEL".equals(command) || "DEACTIVATE_PARCEL".equals(command)) {
                 parcel.setActive(false);
             }
 
-            Task task = createTask(command, hostId, parcel);
+            Task task = createTask(command, host, parcel);
             taskRepository.save(task);
             parcel.setLastTaskId(task.getId());
             HostParcel saved = hostParcelRepository.save(parcel);
@@ -166,9 +174,9 @@ public class ParcelService {
         return scheduled;
     }
 
-    private Task createTask(String command, String hostId, HostParcel parcel) {
+    private Task createTask(String command, Host host, HostParcel parcel) {
         Task task = new Task();
-        task.setHostId(hostId);
+        task.setHostId(host.getId());
         task.setCommand(command);
         task.setStatus("PENDING");
         if ("DISTRIBUTE_PARCEL".equals(command)) {
@@ -183,6 +191,9 @@ public class ParcelService {
         params.put("file_name", parcel.getFileName());
         params.put("parcel_dir", parcel.getParcelDir());
         params.put("checksum", parcel.getChecksum());
+        params.put("initiated_by", parcel.getCreatedBy());
+        params.put("target_hostname", host.getHostname());
+        params.put("target_host_ip", primaryIp(host));
         try {
             task.setParameters(objectMapper.writeValueAsString(params));
         } catch (JsonProcessingException e) {
@@ -192,6 +203,7 @@ public class ParcelService {
     }
 
     private String primaryIp(Host host) {
+        if (host.getHostIp() != null && !host.getHostIp().isBlank()) return host.getHostIp();
         if (host.getIpAddresses() == null || host.getIpAddresses().isBlank()) return null;
         try {
             List<String> values = objectMapper.readValue(host.getIpAddresses(),
@@ -265,6 +277,9 @@ public class ParcelService {
         details.put("destination", String.valueOf(parcel.getParcelDir()));
         details.put("version", parcel.getVersion());
         details.put("parcelStatus", parcel.getStatus());
+        String actor = defaultString(parcel.getCreatedBy(), defaultString(auditService.currentActor(), "system"));
+        details.put("initiatedBy", actor);
+        details.put("executor", "REQUESTED".equals(status) ? "management-server" : "agent:" + task.getHostId());
         if (parcel.getErrorMsg() != null && !parcel.getErrorMsg().isBlank()) {
             details.put("error", parcel.getErrorMsg());
         }
@@ -273,12 +288,6 @@ public class ParcelService {
             detailsJson = objectMapper.writeValueAsString(details);
         } catch (Exception ignored) {}
         
-        String actor = "system";
-        try {
-            actor = auditService.currentActor();
-            if (actor == null || actor.isBlank()) actor = "system";
-        } catch (Exception ignored) {}
-
         hostParcelRepository.recordArtifactAudit(
                 actor,
                 "PARCEL_" + parcel.getAction() + "_" + status,
@@ -303,8 +312,8 @@ public class ParcelService {
         copy.setLastTaskId(source.getLastTaskId());
         copy.setErrorMsg(source.getErrorMsg());
         copy.setAction(action);
-        copy.setCreatedBy(io.translab.tantor.server.security.SecurityUtils.getCurrentUsername());
-        copy.setUpdatedBy(io.translab.tantor.server.security.SecurityUtils.getCurrentUsername());
+        copy.setCreatedBy(source.getCreatedBy());
+        copy.setUpdatedBy(source.getCreatedBy());
         return copy;
     }
 
@@ -312,6 +321,8 @@ public class ParcelService {
         for (HostParcel other : hostParcelRepository.findLatestActive(activatedParcel.getHostId(), activatedParcel.getServiceType())) {
             if (!Objects.equals(other.getId(), activatedParcel.getId())) {
                 HostParcel deactivated = copyEvent(other, "DEACTIVATE");
+                deactivated.setCreatedBy(activatedParcel.getCreatedBy());
+                deactivated.setUpdatedBy(activatedParcel.getCreatedBy());
                 deactivated.setActive(false);
                 deactivated.setStatus("DEACTIVATED");
                 hostParcelRepository.save(deactivated);

@@ -203,7 +203,7 @@ public class ArtifactController {
         Path path = artifactService.resolveForDownload(id);
         Resource resource = new FileSystemResource(path);
 
-        artifactService.logDownload(id, request.getRemoteAddr(), currentUser(), false);
+        artifactService.logDownloadStarted(id, request.getRemoteAddr(), currentUser());
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION,

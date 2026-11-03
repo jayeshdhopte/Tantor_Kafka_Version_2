@@ -35,6 +35,21 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class ArtifactServiceTest {
 
+    @Test
+    void startingDownloadDoesNotClaimThatTheAgentVerifiedTheChecksum() {
+        var source = new Artifact();
+        source.setId(java.util.UUID.randomUUID()); source.setRootArtifactId(source.getId());
+        source.setStatus(io.translab.tantor.artifact.domain.ArtifactStatus.AVAILABLE);
+        when(repository.findById(source.getId())).thenReturn(java.util.Optional.of(source));
+        service.logDownloadStarted(source.getId(), "192.168.3.191", "admin01");
+        var entry = org.mockito.ArgumentCaptor.forClass(Artifact.class);
+        verify(repository).save(entry.capture());
+        assertThat(entry.getValue().getAction()).isEqualTo("DOWNLOAD_STARTED");
+        assertThat(entry.getValue().getVerifiedChecksum()).isNull();
+        assertThat(entry.getValue().getHostIp()).isEqualTo("192.168.3.191");
+        assertThat(entry.getValue().getRootArtifactId()).isEqualTo(source.getId());
+    }
+
     @Mock ArtifactJpaRepository repository;
     @Mock StorageService storageService;
     @Mock ManifestService manifestService;

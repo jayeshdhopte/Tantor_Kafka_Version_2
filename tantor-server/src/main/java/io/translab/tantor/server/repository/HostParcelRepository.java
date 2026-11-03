@@ -10,6 +10,8 @@ import java.util.UUID;
 
 @Repository
 public interface HostParcelRepository extends JpaRepository<HostParcel, UUID> {
+    @org.springframework.data.jpa.repository.Query(value = "select record_parcel_download_receipt(:taskId)", nativeQuery = true)
+    UUID recordDownloadReceipt(@org.springframework.data.repository.query.Param("taskId") UUID taskId);
     List<HostParcel> findByArtifactId(UUID artifactId);
     Optional<HostParcel> findFirstByHostIdAndArtifactIdOrderByCreatedAtDescIdDesc(String hostId, UUID artifactId);
     Optional<HostParcel> findFirstByLastTaskIdOrderByCreatedAtDescIdDesc(UUID lastTaskId);

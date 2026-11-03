@@ -180,12 +180,16 @@ public class ArtifactService {
     }
 
     @Transactional
-    public void logDownload(UUID artifactId, String remoteAddr, String by, boolean verified) {
+    public void logDownloadStarted(UUID artifactId, String remoteAddr, String by) {
         Artifact source = get(artifactId);
-        Artifact entry = actionFrom(source, "DOWNLOAD", source.getStatus(), by);
+        // Starting a response is not acknowledgement that the receiving agent
+        // downloaded and verified the file. Confirmed DOWNLOAD receipts are
+        // written by the management server from authenticated task results.
+        Artifact entry = actionFrom(source, "DOWNLOAD_STARTED", source.getStatus(), by);
         entry.setDownloadedBy(by == null || by.isBlank() ? "agent" : by);
         entry.setDownloadedAt(java.time.OffsetDateTime.now());
-        entry.setVerifiedChecksum(verified);
+        entry.setVerifiedChecksum(null);
+        if (isUsableHostAddress(remoteAddr)) entry.setHostIp(remoteAddr);
         repository.save(entry);
     }
 

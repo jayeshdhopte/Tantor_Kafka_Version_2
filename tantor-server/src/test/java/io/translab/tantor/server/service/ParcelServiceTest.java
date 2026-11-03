@@ -24,6 +24,36 @@ import static org.mockito.Mockito.when;
 class ParcelServiceTest {
 
     @Test
+    void retainsInitiatorAcrossAsyncCompletionAndRequestsCorrelatedDownloadReceipt() throws Exception {
+        Fixture fixture = new Fixture("ONLINE", "ONLINE");
+        HostParcel requested = fixture.service.distribute(fixture.artifactId, fixture.request()).getFirst();
+        var taskCaptor = org.mockito.ArgumentCaptor.forClass(Task.class);
+        verify(fixture.taskRepository).save(taskCaptor.capture());
+        Task task = taskCaptor.getValue();
+        var parameters = new ObjectMapper().readTree(task.getParameters());
+        assertThat(parameters.get("initiated_by").asText()).isEqualTo("admin");
+        assertThat(parameters.get("target_host_ip").asText()).isEqualTo("192.168.3.191");
+        assertThat(requested.getCreatedBy()).isEqualTo("admin");
+
+        task.setStatus("SUCCESS"); task.setLogOutput("Checksum verified successfully");
+        when(fixture.auditService.currentActor()).thenReturn("system");
+        when(fixture.hostParcelRepository.findFirstByLastTaskIdOrderByCreatedAtDescIdDesc(task.getId()))
+                .thenReturn(Optional.of(requested));
+        fixture.service.processTaskResult(task);
+        verify(fixture.hostParcelRepository).recordDownloadReceipt(task.getId());
+        var event = org.mockito.ArgumentCaptor.forClass(HostParcel.class);
+        verify(fixture.hostParcelRepository, org.mockito.Mockito.times(2)).save(event.capture());
+        assertThat(event.getValue().getCreatedBy()).isEqualTo("admin");
+        assertThat(event.getValue().getUpdatedBy()).isEqualTo("admin");
+        var details = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(fixture.hostParcelRepository).recordArtifactAudit(org.mockito.ArgumentMatchers.eq("admin"),
+                org.mockito.ArgumentMatchers.eq("PARCEL_DISTRIBUTE_SUCCESS"), org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.eq("SUCCESS"), details.capture());
+        assertThat(new ObjectMapper().readTree(details.getValue()).get("initiatedBy").asText()).isEqualTo("admin");
+        assertThat(new ObjectMapper().readTree(details.getValue()).get("executor").asText()).isEqualTo("agent:" + task.getHostId());
+    }
+
+    @Test
     void distributesToOccupiedHostWhenAgentIsConnected() {
         Fixture fixture = new Fixture("OCCUPIED", "ONLINE");
 
