@@ -122,6 +122,14 @@ public class AuthController {
         return dn == null ? "" : dn.replaceAll("\\s+", "").toLowerCase(Locale.ROOT);
     }
 
+    /** Internal consumers use the same verified principal and authorities as the management API. */
+    @GetMapping("/identity")
+    public ResponseEntity<Map<String,Object>> identity() {
+        Authentication auth=SecurityContextHolder.getContext().getAuthentication();
+        if(auth==null || !auth.isAuthenticated() || "anonymousUser".equals(auth.getPrincipal()))return ResponseEntity.status(401).build();
+        return ResponseEntity.ok(Map.of("username",auth.getName(),"roles",auth.getAuthorities().stream().map(a->a.getAuthority()).toList()));
+    }
+
     @GetMapping("/me")
     public ResponseEntity<UserDto.UserResponse> getMe() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();

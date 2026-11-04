@@ -32,6 +32,8 @@ class ParcelServiceTest {
         Task task = taskCaptor.getValue();
         var parameters = new ObjectMapper().readTree(task.getParameters());
         assertThat(parameters.get("initiated_by").asText()).isEqualTo("admin");
+        assertThat(parameters.get("download_context_token").asText()).matches("[0-9a-f-]{36}");
+        assertThat(task.getArtifactUrl()).contains("downloadToken="+parameters.get("download_context_token").asText());
         assertThat(parameters.get("target_host_ip").asText()).isEqualTo("192.168.3.191");
         assertThat(requested.getCreatedBy()).isEqualTo("admin");
 

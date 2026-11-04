@@ -181,15 +181,21 @@ public class ArtifactService {
 
     @Transactional
     public void logDownloadStarted(UUID artifactId, String remoteAddr, String by) {
+        logDownloadStarted(artifactId,new ArtifactDownloadIdentity.Identity(by==null || by.isBlank()?"unknown":by,"repository-client",null,null,remoteAddr));
+    }
+
+    @Transactional
+    public void logDownloadStarted(UUID artifactId, ArtifactDownloadIdentity.Identity identity) {
         Artifact source = get(artifactId);
         // Starting a response is not acknowledgement that the receiving agent
         // downloaded and verified the file. Confirmed DOWNLOAD receipts are
         // written by the management server from authenticated task results.
-        Artifact entry = actionFrom(source, "DOWNLOAD_STARTED", source.getStatus(), by);
-        entry.setDownloadedBy(by == null || by.isBlank() ? "agent" : by);
+        Artifact entry = actionFrom(source, "DOWNLOAD_STARTED", source.getStatus(), identity.actor());
+        entry.setDownloadedBy(identity.actor());
+        entry.setTaskId(identity.taskId());entry.setExecutor(identity.executor());entry.setHostname(identity.hostname());
         entry.setDownloadedAt(java.time.OffsetDateTime.now());
         entry.setVerifiedChecksum(null);
-        if (isUsableHostAddress(remoteAddr)) entry.setHostIp(remoteAddr);
+        if (isUsableHostAddress(identity.hostIp())) entry.setHostIp(identity.hostIp());
         repository.save(entry);
     }
 
@@ -198,34 +204,34 @@ public class ArtifactService {
      * SHA-256. Flips the row to CORRUPTED if it does not.
      */
     @Transactional
-    public boolean verifyIntegrity(UUID id) {
+    public boolean verifyIntegrity(UUID id, String actor) {
         Artifact a = get(id);
         String relDir = a.getRelativePath().substring(0, a.getRelativePath().lastIndexOf('/'));
         ChecksumResult cs;
         try (InputStream in = storageService.openStream(relDir, a.getFileName())) {
             cs = new ChecksumService().digest(in);
         } catch (Exception e) {
-            repository.save(actionFrom(a, "VERIFY_FAILED", ArtifactStatus.CORRUPTED, "system"));
+            repository.save(actionFrom(a, "VERIFY_FAILED", ArtifactStatus.CORRUPTED, actor));
             return false;
         }
         boolean ok = cs.sha256().equalsIgnoreCase(a.getChecksumSha256());
         if (!ok) {
             log.warn("Integrity check FAILED for {}: expected {} got {}",
                     id, a.getChecksumSha256(), cs.sha256());
-            repository.save(actionFrom(a, "VERIFY_FAILED", ArtifactStatus.CORRUPTED, "system"));
+            repository.save(actionFrom(a, "VERIFY_FAILED", ArtifactStatus.CORRUPTED, actor));
         } else {
-            repository.save(actionFrom(a, "VERIFY", a.getStatus(), "system"));
+            repository.save(actionFrom(a, "VERIFY", a.getStatus(), actor));
         }
         return ok;
     }
 
     /** Soft-delete: remove the binary from disk, mark the row DELETED. */
     @Transactional
-    public void delete(UUID id) {
+    public void delete(UUID id, String actor) {
         Artifact a = get(id);
         String relDir = a.getRelativePath().substring(0, a.getRelativePath().lastIndexOf('/'));
         storageService.deleteBinary(relDir, a.getFileName());
-        repository.save(actionFrom(a, "DELETE", ArtifactStatus.DELETED, "system"));
+        repository.save(actionFrom(a, "DELETE", ArtifactStatus.DELETED, actor));
         log.info("Artifact {} soft-deleted", id);
     }
 
@@ -244,8 +250,10 @@ public class ArtifactService {
         event.setChecksumSha256(source.getChecksumSha256());
         event.setChecksumMd5(source.getChecksumMd5());
         event.setStatus(status);
-        event.setCreatedBy(actor == null || actor.isBlank() ? "system" : actor);
+        event.setCreatedBy(actor == null || actor.isBlank() ? "unknown" : actor);
         event.setUpdatedBy(event.getCreatedBy());
+        event.setUserName(event.getCreatedBy());
+        event.setExecutor("artifact-repository");
         return event;
     }
 

@@ -48,6 +48,8 @@ spring:
 
 # Tantor artifact repository specific settings
 tantor:
+  auth:
+    identity-url: ${TANTOR_AUTH_IDENTITY_URL:http://127.0.0.1:8443/api/v1/auth/identity}
   cors:
     allowed-origins: ${TANTOR_CORS_ALLOWED_ORIGINS}
   repository:

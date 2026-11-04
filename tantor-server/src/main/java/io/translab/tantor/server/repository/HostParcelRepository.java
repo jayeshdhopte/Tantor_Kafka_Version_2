@@ -42,8 +42,8 @@ public interface HostParcelRepository extends JpaRepository<HostParcel, UUID> {
 
     @org.springframework.data.jpa.repository.Modifying
     @org.springframework.data.jpa.repository.Query(value = """
-        INSERT INTO kf_artifact_audit_log (id, user_name, event_category, action, resource_type, artifact_id, status, details, created_at)
-        VALUES (gen_random_uuid(), :actor, 'DISTRIBUTION', :action, 'HOST_PARCEL', CAST(:artifactId AS UUID), :status, CAST(:details AS jsonb), now())
+        INSERT INTO kf_artifact_audit_log (id, user_name, created_by, event_category, action, resource_type, artifact_id, status, details, created_at)
+        VALUES (gen_random_uuid(), :actor, :actor, 'DISTRIBUTION', :action, 'HOST_PARCEL', CAST(:artifactId AS UUID), :status, CAST(:details AS jsonb), now())
         """, nativeQuery = true)
     void recordArtifactAudit(@org.springframework.data.repository.query.Param("actor") String actor,
                              @org.springframework.data.repository.query.Param("action") String action,

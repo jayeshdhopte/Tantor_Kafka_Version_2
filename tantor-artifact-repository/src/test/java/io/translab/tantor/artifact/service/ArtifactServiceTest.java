@@ -48,6 +48,34 @@ class ArtifactServiceTest {
         assertThat(entry.getValue().getVerifiedChecksum()).isNull();
         assertThat(entry.getValue().getHostIp()).isEqualTo("192.168.3.191");
         assertThat(entry.getValue().getRootArtifactId()).isEqualTo(source.getId());
+        assertThat(entry.getValue().getUserName()).isEqualTo("admin01");
+        assertThat(entry.getValue().getCreatedBy()).isEqualTo("admin01");
+        assertThat(entry.getValue().getUpdatedBy()).isEqualTo("admin01");
+    }
+
+    @Test void taskDownloadStoresTheActualInitiatorSeparatelyFromTheAgentExecutor() {
+        var source=new Artifact();source.setId(java.util.UUID.randomUUID());source.setStatus(ArtifactStatus.AVAILABLE);
+        when(repository.findById(source.getId())).thenReturn(java.util.Optional.of(source));
+        var task=java.util.UUID.randomUUID();
+        service.logDownloadStarted(source.getId(),new ArtifactDownloadIdentity.Identity("release.operator","agent:node-7",task,"node-7","192.168.3.229"));
+        var entry=org.mockito.ArgumentCaptor.forClass(Artifact.class);verify(repository).save(entry.capture());
+        assertThat(entry.getValue().getCreatedBy()).isEqualTo("release.operator");
+        assertThat(entry.getValue().getDownloadedBy()).isEqualTo("release.operator");
+        assertThat(entry.getValue().getUserName()).isEqualTo("release.operator");
+        assertThat(entry.getValue().getTaskId()).isEqualTo(task);assertThat(entry.getValue().getExecutor()).isEqualTo("agent:node-7");
+        assertThat(entry.getValue().getVerifiedChecksum()).isNull();
+    }
+
+    @Test void verifyAndDeleteUseTheUserWhoRequestedThatSpecificAction() throws Exception {
+        var source=new Artifact();source.setId(java.util.UUID.randomUUID());source.setStatus(ArtifactStatus.AVAILABLE);
+        source.setRelativePath("repo/test.tgz");source.setFileName("test.tgz");source.setChecksumSha256("expected");
+        when(repository.findById(source.getId())).thenReturn(java.util.Optional.of(source));
+        when(storageService.openStream("repo","test.tgz")).thenThrow(new IllegalStateException("unavailable"));
+        assertThat(service.verifyIntegrity(source.getId(),"operator.beta")).isFalse();
+        service.delete(source.getId(),"operator.gamma");
+        var entry=org.mockito.ArgumentCaptor.forClass(Artifact.class);verify(repository,times(2)).save(entry.capture());
+        assertThat(entry.getAllValues().get(0).getCreatedBy()).isEqualTo("operator.beta");
+        assertThat(entry.getAllValues().get(1).getCreatedBy()).isEqualTo("operator.gamma");
     }
 
     @Mock ArtifactJpaRepository repository;

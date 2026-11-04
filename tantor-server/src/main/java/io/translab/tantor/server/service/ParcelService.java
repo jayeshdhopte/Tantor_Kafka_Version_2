@@ -192,6 +192,11 @@ public class ParcelService {
         params.put("parcel_dir", parcel.getParcelDir());
         params.put("checksum", parcel.getChecksum());
         params.put("initiated_by", parcel.getCreatedBy());
+        if ("DISTRIBUTE_PARCEL".equals(command)) {
+            String token=UUID.randomUUID().toString();
+            params.put("download_context_token",token);
+            task.setArtifactUrl(task.getArtifactUrl()+"?downloadToken="+token);
+        }
         params.put("target_hostname", host.getHostname());
         params.put("target_host_ip", primaryIp(host));
         try {

@@ -55,6 +55,12 @@ class ArtifactControllerIT {
     @Autowired
     MockMvc mockMvc;
 
+    @org.springframework.boot.test.mock.mockito.MockBean io.translab.tantor.artifact.util.RoleAuthenticationUtil identities;
+    @org.junit.jupiter.api.BeforeEach void verifiedTestIdentity() {
+        org.mockito.Mockito.when(identities.canAccess(org.mockito.ArgumentMatchers.anyString(),org.mockito.ArgumentMatchers.anyString())).thenReturn(true);
+        org.mockito.Mockito.when(identities.username(org.mockito.ArgumentMatchers.anyString())).thenReturn("test-uploader");
+    }
+
     @Test
     void rejectsUnauthenticatedUpload() throws Exception {
         MockMultipartFile file = new MockMultipartFile(

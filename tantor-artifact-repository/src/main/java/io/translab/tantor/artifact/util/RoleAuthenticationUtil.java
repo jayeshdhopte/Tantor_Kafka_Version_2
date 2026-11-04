@@ -22,6 +22,10 @@ public class RoleAuthenticationUtil {
 
     private final ObjectMapper objectMapper;
     private final Map<String, List<String>> permissions;
+    @org.springframework.beans.factory.annotation.Value("${tantor.auth.identity-url:http://127.0.0.1:8443/api/v1/auth/identity}")
+    private String identityUrl="http://127.0.0.1:8443/api/v1/auth/identity";
+    private final java.net.http.HttpClient identityClient=java.net.http.HttpClient.newBuilder()
+            .connectTimeout(java.time.Duration.ofSeconds(3)).followRedirects(java.net.http.HttpClient.Redirect.NEVER).build();
 
     public RoleAuthenticationUtil(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
@@ -40,14 +44,19 @@ public class RoleAuthenticationUtil {
     }
 
     public String username(String authorizationHeader) {
+        String actor=authenticatedUsername(authorizationHeader);
+        return actor==null?"unknown":actor;
+    }
+
+    public String authenticatedUsername(String authorizationHeader) {
         Map<String, Object> claims = claims(authorizationHeader);
-        for (String key : List.of("preferred_username", "name", "email", "sub")) {
+        for (String key : List.of("username", "preferred_username", "name", "email", "sub")) {
             Object value = claims.get(key);
             if (value instanceof String text && !text.isBlank()) {
                 return text;
             }
         }
-        return "system";
+        return null;
     }
 
     private Map<String, List<String>> loadPermissions() {
@@ -84,22 +93,27 @@ public class RoleAuthenticationUtil {
         return roles;
     }
 
-    private Map<String, Object> claims(String authorizationHeader) {
-        try {
-            String token = bearerToken(authorizationHeader);
-            if (token == null) {
-                return Map.of();
+    private Map<String,Object> claims(String authorizationHeader) {
+        if(bearerToken(authorizationHeader)==null)return Map.of();
+        // Cache only within this HTTP request; no global token/principal cache can outlive revocation/expiry.
+        var attributes=org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+        String cacheKey=getClass().getName()+".verified-identity";
+        if(attributes!=null){
+            Object cached=attributes.getAttribute(cacheKey,0);
+            if(cached instanceof Map<?,?> entry && authorizationHeader.equals(entry.get("authorization"))) {
+                @SuppressWarnings("unchecked") var value=(Map<String,Object>)entry.get("identity");return value;
             }
-            String[] parts = token.split("\\.");
-            if (parts.length < 2) {
-                return Map.of();
-            }
-            byte[] payload = Base64.getUrlDecoder().decode(parts[1]);
-            String json = new String(payload, StandardCharsets.UTF_8);
-            return objectMapper.readValue(json, new TypeReference<>() {});
-        } catch (Exception e) {
-            return Map.of();
         }
+        Map<String,Object> identity=Map.of();
+        try {
+            var request=java.net.http.HttpRequest.newBuilder(java.net.URI.create(identityUrl))
+                    .timeout(java.time.Duration.ofSeconds(5)).header("Authorization",authorizationHeader).GET().build();
+            var response=identityClient.send(request,java.net.http.HttpResponse.BodyHandlers.ofString());
+            if(response.statusCode()==200)identity=objectMapper.readValue(response.body(),new TypeReference<>(){});
+        } catch(InterruptedException interrupted){Thread.currentThread().interrupt();}
+        catch(Exception unavailable){/* Fail closed: never decode unverified token claims as an identity. */}
+        if(attributes!=null)attributes.setAttribute(cacheKey,Map.of("authorization",authorizationHeader,"identity",identity),0);
+        return identity;
     }
 
     private String bearerToken(String authorizationHeader) {

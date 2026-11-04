@@ -28,10 +28,15 @@ public class LocalArtifactDownloadController {
     }
 
     @GetMapping("/api/v1/artifacts/{id}/download")
-    public void download(@PathVariable UUID id, HttpServletResponse response) throws IOException {
+    public void download(@PathVariable UUID id, jakarta.servlet.http.HttpServletRequest incoming, HttpServletResponse response) throws IOException {
         String base = repository.getInternalUrl().toString().replaceAll("/+$", "");
-        HttpRequest request = HttpRequest.newBuilder(URI.create(base + "/api/v1/artifacts/" + id + "/download"))
-                .timeout(Duration.ofSeconds(60)).GET().build();
+        String token=incoming.getParameter("downloadToken");
+        if(token!=null && !token.matches("[0-9a-fA-F-]{36}")){response.sendError(400,"Invalid download context");return;}
+        var builder=HttpRequest.newBuilder(URI.create(base+"/api/v1/artifacts/"+id+"/download"+(token==null?"":"?downloadToken="+token)))
+                .timeout(Duration.ofSeconds(60)).GET();
+        String authorization=incoming.getHeader("Authorization");
+        if(authorization!=null)builder.header("Authorization",authorization);
+        HttpRequest request=builder.build();
         HttpResponse<InputStream> upstream;
         try {
             upstream = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
@@ -45,7 +50,7 @@ public class LocalArtifactDownloadController {
         }
         try (InputStream body = upstream.body()) {
             if (upstream.statusCode() != 200) {
-                response.sendError(upstream.statusCode() == 404 ? 404 : 502, "Artifact download unavailable");
+                response.sendError(java.util.Set.of(400,401,403,404).contains(upstream.statusCode()) ? upstream.statusCode() : 502, "Artifact download unavailable");
                 return;
             }
             response.setStatus(200);

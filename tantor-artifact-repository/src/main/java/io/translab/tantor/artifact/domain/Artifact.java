@@ -93,6 +93,13 @@ public class Artifact {
     @Column(name = "user_name", length = 255)
     private String userName;
 
+    @Column(name="task_id") private UUID taskId;
+    @Column(name="executor") private String executor;
+    public UUID getTaskId(){return taskId;}
+    public void setTaskId(UUID value){taskId=value;}
+    public String getExecutor(){return executor;}
+    public void setExecutor(String value){executor=value;}
+
     @PrePersist
     void onCreate() {
         if (id == null) {

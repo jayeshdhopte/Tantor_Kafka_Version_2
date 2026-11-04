@@ -23,6 +23,8 @@ class LocalArtifactDownloadControllerTest {
         check(404, 404);
     }
 
+    @Test void preservesRejectedTaskContextStatus() throws Exception {check(403,403);}
+
     @Test
     void refusesRepositoryRedirects() throws Exception {
         check(302, 502);
@@ -33,6 +35,8 @@ class LocalArtifactDownloadControllerTest {
         byte[] bytes = "artifact-test-payload".getBytes(StandardCharsets.UTF_8);
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/api/v1/artifacts/" + id + "/download", exchange -> {
+            assertEquals("Bearer forwarded-identity",exchange.getRequestHeaders().getFirst("Authorization"));
+            assertEquals("downloadToken=11111111-1111-4111-8111-111111111111",exchange.getRequestURI().getRawQuery());
             exchange.getResponseHeaders().add("Location", "http://127.0.0.1:1/untrusted");
             exchange.sendResponseHeaders(upstreamStatus, bytes.length);
             try (var out = exchange.getResponseBody()) { out.write(bytes); }
@@ -42,7 +46,10 @@ class LocalArtifactDownloadControllerTest {
             var properties = new ArtifactRepositoryProperties();
             properties.setInternalUrl(URI.create("http://127.0.0.1:" + server.getAddress().getPort()));
             var response = new MockHttpServletResponse();
-            new LocalArtifactDownloadController(properties).download(id, response);
+            var incoming=new org.springframework.mock.web.MockHttpServletRequest();
+            incoming.addHeader("Authorization","Bearer forwarded-identity");
+            incoming.addParameter("downloadToken","11111111-1111-4111-8111-111111111111");
+            new LocalArtifactDownloadController(properties).download(id, incoming, response);
             assertEquals(expected, response.getStatus());
             assertNull(response.getHeader("Location"));
             if (expected == 200) {

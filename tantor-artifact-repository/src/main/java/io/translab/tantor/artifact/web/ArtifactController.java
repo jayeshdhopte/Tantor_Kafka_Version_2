@@ -54,6 +54,7 @@ public class ArtifactController {
     private final ObjectMapper objectMapper;
     private final ArtifactAuditService auditService;
     private final RoleAuthenticationUtil roleAuthenticationUtil;
+    @org.springframework.beans.factory.annotation.Autowired private io.translab.tantor.artifact.service.ArtifactDownloadIdentity downloadIdentity;
 
     public ArtifactController(ArtifactService artifactService,
                               ManifestService manifestService,
@@ -203,7 +204,14 @@ public class ArtifactController {
         Path path = artifactService.resolveForDownload(id);
         Resource resource = new FileSystemResource(path);
 
-        artifactService.logDownloadStarted(id, request.getRemoteAddr(), currentUser());
+        String authorization=request.getHeader("Authorization");
+        String authenticated=request.getParameter("downloadToken")==null?roleAuthenticationUtil.authenticatedUsername(authorization):null;
+        var identity=downloadIdentity.resolve(id,request.getParameter("downloadToken"),authenticated,request.getRemoteAddr());
+        artifactService.logDownloadStarted(id,identity);
+        var details=new java.util.LinkedHashMap<String,Object>();
+        details.put("initiatedBy",identity.actor());details.put("executor",identity.executor());
+        details.put("taskId",identity.taskId());details.put("transferStatus","STARTED");
+        safeAudit(identity.actor(),"PACKAGE_DOWNLOAD_STARTED",id.toString(),"SUCCESS",null,null,details,request.getRemoteAddr());
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION,
@@ -223,7 +231,10 @@ public class ArtifactController {
         if (!roleAuthenticationUtil.canAccess(authorization, RoleAuthenticationUtil.ARTIFACT_UPLOAD)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Unauthorized"));
         }
-        boolean ok = artifactService.verifyIntegrity(id);
+        String actor=currentUser(authorization);
+        boolean ok = artifactService.verifyIntegrity(id,actor);
+        safeAudit(actor,ok?"PACKAGE_VERIFIED":"PACKAGE_VERIFY_FAILED",id.toString(),ok?"SUCCESS":"FAILED",null,null,
+                Map.of("initiatedBy",actor,"executor","artifact-repository","verified",ok),null);
         return ResponseEntity.ok(Map.of("id", id, "verified", ok));
     }
 
@@ -236,7 +247,7 @@ public class ArtifactController {
         }
         String actor = currentUser(authorization);
         Artifact artifact = artifactService.get(id);
-        artifactService.delete(id);
+        artifactService.delete(id,actor);
         safeAudit(actor, "PACKAGE_REMOVED", id.toString(), "SUCCESS",
                 Map.of("status", artifact.getStatus().name(), "fileName", artifact.getFileName()),
                 Map.of("status", "DELETED"), null, null);
@@ -270,14 +281,6 @@ public class ArtifactController {
         } catch (IOException e) {
             throw new IllegalArgumentException("attributesJson is not valid JSON: " + e.getMessage());
         }
-    }
-
-    /**
-     * Placeholder for the authenticated principal. Authentication/RBAC is
-     * delivered in Phase 3; until then uploads are attributed to "system".
-     */
-    private String currentUser() {
-        return "system";
     }
 
     private String currentUser(String authorization) {
