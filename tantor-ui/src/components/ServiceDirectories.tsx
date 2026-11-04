@@ -23,10 +23,13 @@ interface DirectoryResult {
   error?: string;
 }
 
-export function ServiceDirectories({ clusterId, serviceType, preview = false }: {
+const normalizeHost = (host?: string | null) => (host || '').trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
+
+export function ServiceDirectories({ clusterId, serviceType, preview = false, connectionHost }: {
   clusterId?: string;
   serviceType: 'SCHEMA_REGISTRY' | 'KAFKA_CONNECT';
   preview?: boolean;
+  connectionHost?: string;
 }) {
   const [result, setResult] = useState<DirectoryResult | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -49,7 +52,10 @@ export function ServiceDirectories({ clusterId, serviceType, preview = false }: 
 
   if (!clusterId) return null;
   const current = result?.clusterId === clusterId && result.attempt === attempt ? result : null;
-  const paths = (current?.paths || []).filter(path => path.serviceType === serviceType)
+  const inspectedHost = normalizeHost(connectionHost);
+  const paths = (current?.paths || []).filter(path => path.serviceType === serviceType
+    && (!preview || (inspectedHost !== ''
+      && [path.hostname, path.ipAddress].some(host => normalizeHost(host) === inspectedHost))))
     .slice().sort((a, b) => (a.hostname || a.hostId).localeCompare(b.hostname || b.hostId) || a.hostId.localeCompare(b.hostId));
   const serviceName = serviceType === 'SCHEMA_REGISTRY' ? 'Schema Registry' : 'Kafka Connect';
 
@@ -68,7 +74,9 @@ export function ServiceDirectories({ clusterId, serviceType, preview = false }: 
     <div id={contentId} className="service-directories-content" hidden={!preview && !expanded}>
     {!current ? <p role="status">Loading service directories...</p>
       : current.error ? <p className="service-directories-error" role="alert">{current.error}</p>
-        : paths.length === 0 ? <p>No directory information has been reported for this service.</p>
+        : paths.length === 0 ? <p>{preview
+          ? 'No directory information has been reported for this connection.'
+          : 'No directory information has been reported for this service.'}</p>
           : paths.map(path => <article className="service-directory-instance" key={path.instanceId || `${path.serviceType}-${path.hostId}-${path.configFile}`}>
             <h4>{path.hostname || path.hostId}{path.serviceName ? ` · ${path.serviceName}` : ''}</h4>
             <p>{path.ipAddress || 'IP not reported'}</p>

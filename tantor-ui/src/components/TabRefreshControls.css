@@ -1,0 +1,10 @@
+.tab-refresh-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+.tab-refresh-controls > button { flex-shrink: 0; }
+.ds-buttons-group:has(> .tab-refresh-controls) { flex-wrap: wrap; }

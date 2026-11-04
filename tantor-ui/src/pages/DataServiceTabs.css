@@ -2424,7 +2424,8 @@
   font-weight: 400;
 }
 
-.ds-sr-subjects-table .ds-table-delete-btn {
+.ds-sr-subjects-table .ds-table-delete-btn,
+.ds-sr-versions-table .ds-table-delete-btn {
   height: auto;
   padding: 4px;
   border: 0;

@@ -107,15 +107,6 @@ const artifactServiceOptions = [
     helper: 'JMX exporter jars are stored for Kafka monitoring deployments.',
   },
   {
-    value: 'KAFKA_CONNECT',
-    label: 'Kafka Connect',
-    versionPlaceholder: 'e.g. 8.1.1',
-    directoryPlaceholder: 'custom/kafka-connect (under configured repository root)',
-    fileLabel: 'Kafka Connect distribution (.tgz or .tar.gz)',
-    fileAccept: '.tgz,.tar.gz',
-    helper: 'Upload a Connect distribution for managed cluster deployment.',
-  },
-  {
     value: 'SCHEMA_REGISTRY',
     label: 'Schema Registry',
     versionPlaceholder: 'e.g. 7.6.0',

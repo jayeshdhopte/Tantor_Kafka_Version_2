@@ -237,7 +237,12 @@ export function ConfigChange() {
   const staticControls = () => <>
       {targetIds.length !== staticTargetIds.length && <p className="cc-error">Combined broker/controller processes are excluded from role-only rolling changes.</p>}
       {staticLoading && <p className="cc-loading"><Loader2 className="spin" size={16} /> Reading active {role.toLowerCase()} properties from selected nodes…</p>}
-      {staticReadError && <p className="cc-error">{staticReadError} <button type="button" onClick={() => void refresh()}>Retry</button></p>}
+      {staticReadError && <div className="cc-error cc-static-read-error" role="alert">
+        <span>{staticReadError}</span>
+        <RefreshButton className="cc-refresh" onClick={() => refresh()} disabled={!!busy || staticLoading}>
+          <RefreshCw size={16} aria-hidden="true" /> Retry
+        </RefreshButton>
+      </div>}
       {fileValues && <>
         <div className="cc-config-toolbar"><input type="search" aria-label="Search restart-required properties" placeholder="Search configuration properties…" value={staticSearch} onChange={event => setStaticSearch(event.target.value)} /><span>{chosenStaticKeys.filter(name => staticVisibleKeys.includes(name)).length} selected</span><button className="cc-primary" disabled={!canManage || !!busy || staticTargetIds.length === 0 || !chosenStaticKeys.some(name => staticVisibleKeys.includes(name))} onClick={() => void reviewStatic()}>Review selected changes</button><button className="cc-delete-button" disabled={!canManage || !!busy || !chosenStaticKeys.some(name => staticVisibleKeys.includes(name))} onClick={() => void reviewDeletion(chosenStaticKeys.filter(name => staticVisibleKeys.includes(name)), true)}>Review deletion</button></div>
         <div className="cc-table-wrap"><table className="cc-property-table">

@@ -56,6 +56,7 @@ function harness(canManage = true, fetchImpl) {
       if (name === 'react-router-dom') return { useParams: () => ({ id: clusterId }), useNavigate: () => path => navigation.push(path) };
       if (name === 'lucide-react') return new Proxy({}, { get: () => () => null });
       if (name.endsWith('RefreshButton')) return { RefreshButton: 'button' };
+      if (name.endsWith('TabRefreshControls')) return { TabRefreshControls: 'div' };
       if (name.endsWith('usePermissions')) return { usePermissions: () => ({ canManage }) };
       if (name.endsWith('TopicActionConfirmationModal')) return { TopicActionConfirmationModal: Modal };
       if (name.endsWith('topicActionTypes')) return { topicActionCopy: { remove: { button: 'Delete' }, clear: { button: 'Clear messages' } } };

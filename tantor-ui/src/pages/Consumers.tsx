@@ -1,3 +1,4 @@
+import { TabRefreshControls } from '../components/TabRefreshControls';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams } from 'react-router-dom';
@@ -175,19 +176,19 @@ export function Consumers() {
               />
             </label>
           </form>
-          <div className="consumer-refresh-controls">
-          <LiveRefreshControl {...liveRefresh} label="Consumers" />
-          <button
-            type="button"
-            className="consumer-refresh-button"
-            onClick={handleManualRefresh}
-            disabled={loading || manualRefreshing}
-            aria-busy={loading || manualRefreshing}
-            aria-label="Refresh consumer groups"
-          >
-            <RefreshCw className={loading || manualRefreshing ? 'consumer-refresh-spin' : ''} size={15} />
-          </button>
-          </div>
+          <TabRefreshControls className="consumer-refresh-controls">
+            <LiveRefreshControl {...liveRefresh} label="Consumers" />
+            <button
+              type="button"
+              className="consumer-refresh-button"
+              onClick={handleManualRefresh}
+              disabled={loading || manualRefreshing}
+              aria-busy={loading || manualRefreshing}
+              aria-label="Refresh consumer groups"
+            >
+              <RefreshCw className={loading || manualRefreshing ? 'consumer-refresh-spin' : ''} size={15} />
+            </button>
+          </TabRefreshControls>
         </div>
       </div>
 

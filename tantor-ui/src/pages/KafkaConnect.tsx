@@ -1,3 +1,4 @@
+import { TabRefreshControls } from '../components/TabRefreshControls';
 import { RefreshButton } from '../components/RefreshButton';
 import { LiveRefreshControl } from '../components/LiveRefreshControl';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
@@ -150,7 +151,7 @@ function CustomSelect({ value, onChange, options, placeholder, disabled, classNa
 
 export function KafkaConnect() {
   const { id } = useParams<{ id: string }>();
-  const [directoryPreview, setDirectoryPreview] = useState<{ connectionName: string; returnFocus: HTMLElement } | null>(null);
+  const [directoryPreview, setDirectoryPreview] = useState<{ connectionName: string; connectionHost: string; returnFocus: HTMLElement } | null>(null);
   const { canManage } = usePermissions();
   const [initialSession] = useState(() => readDataServiceSession<ConnectSummary>('kafka-connect', id));
   const [summary, setSummary] = useState<ConnectSummary | null>(initialSession?.summary ?? null);
@@ -598,9 +599,9 @@ export function KafkaConnect() {
                 className="ds-instance-select"
                 onInspect={(connectionId, returnFocus) => {
                   const connection = savedConnections.find(item => item.id === connectionId);
-                  setDirectoryPreview({ connectionName: connection
-                    ? `${connection.connectionName}${connection.isDefault ? ' (default)' : ''}`
-                    : 'Default connection', returnFocus });
+                  if (!connection) return;
+                  setDirectoryPreview({ connectionName: `${connection.connectionName}${connection.isDefault ? ' (default)' : ''}`,
+                    connectionHost: connection.host, returnFocus });
                 }}
                 value={selectedConnectionId ?? ''}
                 onChange={handleInstanceChange}
@@ -690,27 +691,6 @@ export function KafkaConnect() {
               </button>
             )}
 
-            <LiveRefreshControl {...liveRefresh} label="Kafka Connect" />
-            <RefreshButton
-              className="ds-icon-button icon-gray" 
-              onClick={() => void fetchWithDiscovery()}
-              disabled={loading}
-              style={{
-                width: '35px',
-                height: '35px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: "var(--bg-surface)",
-                border: '1px solid var(--border-mid)',
-                borderRadius: 'var(--radius-md)',
-                cursor: 'pointer'
-              }}
-              title="Refresh"
-            >
-              <RefreshCw size={16} className={loading ? 'spin' : ''} style={{ color: 'var(--text-neutral)' }} />
-            </RefreshButton>
-
             {canManage && (
               <button
                 className="ds-icon-button icon-gray"
@@ -733,6 +713,28 @@ export function KafkaConnect() {
                 <MoreVertical size={16} style={{ color: 'var(--text-neutral)' }} />
               </button>
             )}
+            <TabRefreshControls>
+              <LiveRefreshControl {...liveRefresh} label="Kafka Connect" />
+              <RefreshButton
+                className="ds-icon-button icon-gray"
+                onClick={() => void fetchWithDiscovery()}
+                disabled={loading}
+                style={{
+                  width: '35px',
+                  height: '35px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: "var(--bg-surface)",
+                  border: '1px solid var(--border-mid)',
+                  borderRadius: 'var(--radius-md)',
+                  cursor: 'pointer'
+                }}
+                title="Refresh"
+              >
+                <RefreshCw size={16} className={loading ? 'spin' : ''} style={{ color: 'var(--text-neutral)' }} />
+              </RefreshButton>
+            </TabRefreshControls>
           </div>
         </div>
       </div>
@@ -931,7 +933,7 @@ export function KafkaConnect() {
       </div>
       </>}
       {directoryPreview && <ServiceDirectoriesModal clusterId={id} serviceType="KAFKA_CONNECT"
-        connectionName={directoryPreview.connectionName} returnFocus={directoryPreview.returnFocus}
+        connectionName={directoryPreview.connectionName} connectionHost={directoryPreview.connectionHost} returnFocus={directoryPreview.returnFocus}
         onClose={() => setDirectoryPreview(null)} />}
 
       </div>

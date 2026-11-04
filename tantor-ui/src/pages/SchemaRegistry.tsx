@@ -1,3 +1,4 @@
+import { TabRefreshControls } from '../components/TabRefreshControls';
 import { RefreshButton } from '../components/RefreshButton';
 import { LiveRefreshControl } from '../components/LiveRefreshControl';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
@@ -338,7 +339,7 @@ const modeOptions = [{ value: 'READONLY', label: 'Read only' }, { value: 'READWR
 
 export function SchemaRegistry() {
   const { id } = useParams<{ id: string }>();
-  const [directoryPreview, setDirectoryPreview] = useState<{ connectionName: string; returnFocus: HTMLElement } | null>(null);
+  const [directoryPreview, setDirectoryPreview] = useState<{ connectionName: string; connectionHost: string; returnFocus: HTMLElement } | null>(null);
   const { canManage } = usePermissions();
   const [initialSession] = useState(() => readDataServiceSession<SchemaSummary>('schema-registry', id));
   const [view, setView] = useState<View>('list');
@@ -1206,7 +1207,8 @@ export function SchemaRegistry() {
                       className="ds-instance-select"
                       onInspect={(connectionId, returnFocus) => {
                         const connection = savedConnections.find(item => item.id === connectionId);
-                        setDirectoryPreview({ connectionName: connection?.isDefault ? 'Default connection' : connection?.connectionName || 'Default connection', returnFocus });
+                        if (!connection) return;
+                        setDirectoryPreview({ connectionName: connection.isDefault ? 'Default connection' : connection.connectionName || 'Default connection', connectionHost: connection.host, returnFocus });
                       }}
                       value={selectedConnectionId ?? ''}
                       onChange={handleInstanceChange}
@@ -1268,16 +1270,17 @@ export function SchemaRegistry() {
                   </button>
                 )}
 
-                <LiveRefreshControl {...liveRefresh} label="Schema Registry" />
-                <RefreshButton className="ds-icon-button icon-gray" onClick={() => void fetchWithDiscovery()} disabled={loading} title="Refresh" style={{ width: '35px', height: '35px' }}>
-                  <RefreshCw size={16} className={loading ? 'spin' : ''} />
-                </RefreshButton>
-
                 {canManage && (
                   <button className="ds-icon-button icon-gray" onClick={() => selectedConn && openConnectionModal(selectedConn)} disabled={!selectedConn} title="Edit connection" style={{ width: '35px', height: '35px' }}>
                     <MoreVertical size={16} />
                   </button>
                 )}
+                <TabRefreshControls>
+                  <LiveRefreshControl {...liveRefresh} label="Schema Registry" />
+                  <RefreshButton className="ds-icon-button icon-gray" onClick={() => void fetchWithDiscovery()} disabled={loading} title="Refresh" style={{ width: '35px', height: '35px' }}>
+                    <RefreshCw size={16} className={loading ? 'spin' : ''} />
+                  </RefreshButton>
+                </TabRefreshControls>
               </div>
             </div>
           </div>
@@ -1416,7 +1419,7 @@ export function SchemaRegistry() {
             </div>
           </>}
           {directoryPreview && <ServiceDirectoriesModal clusterId={id} serviceType="SCHEMA_REGISTRY"
-            connectionName={directoryPreview.connectionName} returnFocus={directoryPreview.returnFocus}
+            connectionName={directoryPreview.connectionName} connectionHost={directoryPreview.connectionHost} returnFocus={directoryPreview.returnFocus}
             onClose={() => setDirectoryPreview(null)} />}
         </>
       )}

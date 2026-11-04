@@ -1,3 +1,4 @@
+import { TabRefreshControls } from '../components/TabRefreshControls';
 import { RefreshButton } from '../components/RefreshButton';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -276,89 +277,6 @@ export function Topics() {
           <p>Browse, inspect, and manage the streams in this cluster.</p>
         </div>
         <div className="topics-title-actions">
-          <RefreshButton className="topic-button secondary" onClick={() => fetchTopics(Boolean(data))} disabled={loading || refreshing} aria-label="Refresh topics" title="Refresh">
-            <RefreshCw size={16} className={loading || refreshing ? 'spin' : ''} />
-          </RefreshButton>
-          <div ref={setLiveDropdownAnchor} style={{ position: 'relative', height: '40px', display: 'flex', alignItems: 'center' }}>
-            <div
-              onClick={() => setShowIntervalDropdown(!showIntervalDropdown)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 'var(--space-2)',
-                background: '#F8FAFC',
-                border: `1px solid ${autoRefresh ? 'var(--button-primary)' : 'var(--border-subtle)'}`,
-                borderRadius: 'var(--radius-md)',
-                padding: '8px 12px',
-                cursor: 'pointer',
-                userSelect: 'none',
-                height: '40px',
-                boxSizing: 'border-box'
-              }}
-            >
-              <span style={{
-                width: '8px',
-                height: '8px',
-                borderRadius: '50%',
-                background: autoRefresh ? '#10B981' : '#94A3B8',
-                display: 'inline-block',
-                flexShrink: 0
-              }} />
-              <span style={{ fontSize: '14px', fontWeight: 600, color: '#334155', whiteSpace: 'nowrap' }}>Live</span>
-              <div style={{
-                width: '16px',
-                height: '16px',
-                borderRadius: '4px',
-                border: '1px solid #CBD5E1',
-                background: autoRefresh ? '#3B82F6' : '#fff',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginLeft: '4px',
-                flexShrink: 0
-              }}>
-                {autoRefresh && <Check size={12} strokeWidth={3} color="#fff" />}
-              </div>
-              <span style={{ fontSize: '13px', fontWeight: 500, color: '#64748B', marginLeft: '2px', whiteSpace: 'nowrap' }}>
-                {refreshInterval}s
-              </span>
-            </div>
-
-            {showIntervalDropdown && liveDropdownAnchor && (
-              <AnchoredMenu
-                anchor={liveDropdownAnchor}
-                className="live-dropdown-menu"
-                onClose={() => setShowIntervalDropdown(false)}
-                align="start"
-                minWidth={180}
-              >
-                {[5, 10, 15, 30, 60].map((sec) => (
-                  <div
-                    key={sec}
-                    className={`live-dropdown-item ${refreshInterval === sec && autoRefresh ? 'selected' : ''}`}
-                    onClick={() => {
-                      updateLiveSettings(true, sec);
-                      setShowIntervalDropdown(false);
-                    }}
-                  >
-                    <span className="live-pill-dot active" />
-                    Live | {sec} Sec
-                  </div>
-                ))}
-                <div className="dropdown-divider" />
-                <div
-                  className={`live-dropdown-item ${!autoRefresh ? 'paused' : ''}`}
-                  onClick={() => {
-                    updateLiveSettings(!autoRefresh);
-                    setShowIntervalDropdown(false);
-                  }}
-                >
-                  <span className="live-pill-dot" />
-                  {autoRefresh ? 'Pause Live Feed' : 'Resume Live Feed'}
-                </div>
-              </AnchoredMenu>
-            )}
-          </div>
           <button className="topic-button outline" onClick={exportCsv} disabled={!data?.content.length}>
             <Download size={16} /> Export CSV
           </button>
@@ -367,6 +285,91 @@ export function Topics() {
               <Plus size={16} /> Add Topic
             </button>
           )}
+          <TabRefreshControls>
+            <div ref={setLiveDropdownAnchor} style={{ position: 'relative', height: '40px', display: 'flex', alignItems: 'center' }}>
+              <div
+                onClick={() => setShowIntervalDropdown(!showIntervalDropdown)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 'var(--space-2)',
+                  background: '#F8FAFC',
+                  border: `1px solid ${autoRefresh ? 'var(--button-primary)' : 'var(--border-subtle)'}`,
+                  borderRadius: 'var(--radius-md)',
+                  padding: '8px 12px',
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  height: '40px',
+                  boxSizing: 'border-box'
+                }}
+              >
+                <span style={{
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  background: autoRefresh ? '#10B981' : '#94A3B8',
+                  display: 'inline-block',
+                  flexShrink: 0
+                }} />
+                <span style={{ fontSize: '14px', fontWeight: 600, color: '#334155', whiteSpace: 'nowrap' }}>Live</span>
+                <div style={{
+                  width: '16px',
+                  height: '16px',
+                  borderRadius: '4px',
+                  border: '1px solid #CBD5E1',
+                  background: autoRefresh ? '#3B82F6' : '#fff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginLeft: '4px',
+                  flexShrink: 0
+                }}>
+                  {autoRefresh && <Check size={12} strokeWidth={3} color="#fff" />}
+                </div>
+                <span style={{ fontSize: '13px', fontWeight: 500, color: '#64748B', marginLeft: '2px', whiteSpace: 'nowrap' }}>
+                  {refreshInterval}s
+                </span>
+              </div>
+
+              {showIntervalDropdown && liveDropdownAnchor && (
+                <AnchoredMenu
+                  anchor={liveDropdownAnchor}
+                  className="live-dropdown-menu"
+                  onClose={() => setShowIntervalDropdown(false)}
+                  align="start"
+                  minWidth={180}
+                >
+                  {[5, 10, 15, 30, 60].map((sec) => (
+                    <div
+                      key={sec}
+                      className={`live-dropdown-item ${refreshInterval === sec && autoRefresh ? 'selected' : ''}`}
+                      onClick={() => {
+                        updateLiveSettings(true, sec);
+                        setShowIntervalDropdown(false);
+                      }}
+                    >
+                      <span className="live-pill-dot active" />
+                      Live | {sec} Sec
+                    </div>
+                  ))}
+                  <div className="dropdown-divider" />
+                  <div
+                    className={`live-dropdown-item ${!autoRefresh ? 'paused' : ''}`}
+                    onClick={() => {
+                      updateLiveSettings(!autoRefresh);
+                      setShowIntervalDropdown(false);
+                    }}
+                  >
+                    <span className="live-pill-dot" />
+                    {autoRefresh ? 'Pause Live Feed' : 'Resume Live Feed'}
+                  </div>
+                </AnchoredMenu>
+              )}
+            </div>
+            <RefreshButton className="topic-button secondary" onClick={() => fetchTopics(Boolean(data))} disabled={loading || refreshing} aria-label="Refresh topics" title="Refresh">
+              <RefreshCw size={16} className={loading || refreshing ? 'spin' : ''} />
+            </RefreshButton>
+          </TabRefreshControls>
         </div>
       </div>
 

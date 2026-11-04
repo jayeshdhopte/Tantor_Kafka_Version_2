@@ -83,6 +83,11 @@
 }
 .cc-error { border: 1px solid #f1cad2; background: #fff5f6; color: #a52c48; padding: 11px 13px; border-radius: 8px; font-size: 13px; }
 .cc-loading { display: flex; align-items: center; gap: 9px; color: #777; }
+.cc-page .cc-static-read-error { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.cc-page .cc-static-read-error > span { flex: 1 1 240px; min-width: 0; overflow-wrap: anywhere; line-height: 1.5; }
+.cc-page .cc-static-read-error > .cc-refresh { flex: 0 0 auto; margin-left: auto; border-color: var(--button-primary, #3E1363); color: var(--button-primary, #3E1363); }
+.cc-page .cc-static-read-error > .cc-refresh:hover:not(:disabled) { background: #F5F2F8; }
+.cc-page .cc-static-read-error > .cc-refresh:disabled { opacity: .5; }
 .cc-editor-targets { display: flex; gap: 9px; flex-wrap: wrap; }
 .cc-editor-targets button, .cc-static-link button { color: #64258a; background: #faf5fd; border: 1px solid #e3d1ec; padding: 8px 10px; border-radius: 7px; cursor: pointer; }
 .cc-static-link { font-size: 13px; color: #747786; }

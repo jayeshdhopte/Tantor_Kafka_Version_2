@@ -120,11 +120,11 @@ test('animation is scoped to refresh icons, supports ongoing loading and respect
   assert.doesNotMatch(read('components/RefreshButton.tsx'), /\bfetch\s*\(/);
 });
 
-test('all 29 additional refresh controls use the shared button while existing log and consumer feedback stays intact', () => {
+test('all 30 additional refresh controls use the shared button while existing log and consumer feedback stays intact', () => {
   const coverage = {
     'pages/Alerts.tsx': 1, 'pages/Artifacts.tsx': 1, 'pages/AuditLogs.tsx': 2,
     'pages/ClusterDeployment.tsx': 1, 'pages/ClusterDetails.tsx': 1, 'pages/Clusters.tsx': 1,
-    'pages/ConfigChange.tsx': 1, 'pages/Dashboard.tsx': 1, 'pages/ExternalClusters.tsx': 1,
+    'pages/ConfigChange.tsx': 2, 'pages/Dashboard.tsx': 1, 'pages/ExternalClusters.tsx': 1,
     'pages/Hosts.tsx': 1, 'pages/JobsList.tsx': 1, 'pages/KafkaConnect.tsx': 2,
     'pages/Monitoring.tsx': 1, 'pages/Partitions.tsx': 1, 'pages/SchemaRegistry.tsx': 2,
     'pages/TopicDetails.tsx': 5, 'pages/Topics.tsx': 1,
@@ -153,7 +153,7 @@ test('all 29 additional refresh controls use the shared button while existing lo
     }
     total += count;
   }
-  assert.equal(total, 29);
+  assert.equal(total, 30);
   assert.match(read('pages/Consumers.tsx'), /onClick=\{handleManualRefresh\}/);
   assert.match(read('pages/DeploymentLogs.tsx'), /onClick=\{\(\) => fetchTasks\(true\)\}/);
 });

@@ -1,3 +1,4 @@
+import { TabRefreshControls } from './TabRefreshControls';
 import { RefreshButton } from './RefreshButton';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { LiveRefreshControl } from './LiveRefreshControl';
@@ -216,27 +217,6 @@ export default function SecurityManager({ clusterId }: Props) {
 
         {/* Right side: Actions */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <RefreshButton
-            onClick={() => fetchAcls()}
-            disabled={aclsLoading} 
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '42px',
-              height: '42px',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border-subtle)',
-              background: "var(--bg-surface)",
-              cursor: 'pointer',
-              color: '#475569',
-              transition: 'all 0.2s'
-            }}
-            title="Refresh"
-          >
-            <RefreshCw size={18} className={aclsLoading ? 'spin' : ''} />
-          </RefreshButton>
-          <LiveRefreshControl {...liveRefresh} label="ACLs" />
           {canManage && (
             <button 
               onClick={() => setShowCreateAcl(true)} 
@@ -259,6 +239,29 @@ export default function SecurityManager({ clusterId }: Props) {
               <Plus size={16} /> Add ACL
             </button>
           )}
+          <TabRefreshControls>
+            <LiveRefreshControl {...liveRefresh} label="ACLs" />
+            <RefreshButton
+              onClick={() => fetchAcls()}
+              disabled={aclsLoading}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '42px',
+                height: '42px',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--border-subtle)',
+                background: "var(--bg-surface)",
+                cursor: 'pointer',
+                color: '#475569',
+                transition: 'all 0.2s'
+              }}
+              title="Refresh"
+            >
+              <RefreshCw size={18} className={aclsLoading ? 'spin' : ''} />
+            </RefreshButton>
+          </TabRefreshControls>
         </div>
       </div>
 

@@ -1,3 +1,4 @@
+import { TabRefreshControls } from '../components/TabRefreshControls';
 import { RefreshButton } from '../components/RefreshButton';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { LiveRefreshControl } from '../components/LiveRefreshControl';
@@ -137,30 +138,32 @@ export function Partitions() {
               />
             </label>
           </form>
-          <RefreshButton
-            type="button"
-            onClick={() => fetchPartitions()}
-            disabled={loading} 
-            style={{
-              boxSizing: 'border-box',
-              display: 'flex',
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: 'var(--space-2)',
-              width: '40px',
-              height: '40px',
-              background: "var(--bg-surface)",
-              border: '1px solid var(--border-default)',
-              borderRadius: 'var(--radius-md)',
-              cursor: 'pointer',
-              color: 'var(--text-tertiary)'
-            }}
-            aria-label="Refresh partitions"
-          >
-            <RefreshCw className={loading ? 'spin' : ''} size={15} />
-          </RefreshButton>
-          <LiveRefreshControl {...liveRefresh} label="Partitions" />
+          <TabRefreshControls>
+            <LiveRefreshControl {...liveRefresh} label="Partitions" />
+            <RefreshButton
+              type="button"
+              onClick={() => fetchPartitions()}
+              disabled={loading}
+              style={{
+                boxSizing: 'border-box',
+                display: 'flex',
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 'var(--space-2)',
+                width: '40px',
+                height: '40px',
+                background: "var(--bg-surface)",
+                border: '1px solid var(--border-default)',
+                borderRadius: 'var(--radius-md)',
+                cursor: 'pointer',
+                color: 'var(--text-tertiary)'
+              }}
+              aria-label="Refresh partitions"
+            >
+              <RefreshCw className={loading ? 'spin' : ''} size={15} />
+            </RefreshButton>
+          </TabRefreshControls>
         </div>
       </div>
 
