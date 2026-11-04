@@ -25,6 +25,14 @@ import static org.mockito.Mockito.when;
 
 class DataServiceConnectionTruststoreTest {
 
+    @org.junit.jupiter.api.Test void retiredClusterCannotAcquireANewActiveConnection() {
+        var repository=mock(DataServiceConnectionRepository.class);var audit=mock(AuditService.class);
+        var service=new DataServiceConnectionService(repository,mock(ExternalClusterRepository.class),mock(EncryptionService.class),audit);
+        UUID cluster=UUID.randomUUID();when(repository.isRetiredCluster(cluster)).thenReturn(true);
+        var request=new SaveConnectionRequest();request.setProtocol("http");request.setHost("192.168.3.229");request.setPort(8083);
+        org.assertj.core.api.Assertions.assertThatThrownBy(()->service.saveConnection(cluster,"KAFKA_CONNECT",request,"requester")).hasMessageContaining("deleted");
+        org.mockito.Mockito.verify(repository,org.mockito.Mockito.never()).save(any());org.mockito.Mockito.verifyNoInteractions(audit);
+    }
     @ParameterizedTest
     @ValueSource(strings = {"SCHEMA_REGISTRY", "KAFKA_CONNECT"})
     void editingWithoutNewFileRetainsTruststoreAndPassword(String serviceType) throws Exception {

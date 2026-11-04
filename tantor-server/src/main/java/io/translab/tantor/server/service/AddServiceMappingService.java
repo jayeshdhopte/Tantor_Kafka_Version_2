@@ -64,7 +64,8 @@ public class AddServiceMappingService {
         int updated = jdbc.update("""
                 UPDATE kf_add_service SET status = ?, updated_by = COALESCE(?, updated_by)
                 WHERE add_service_id = ? AND status IS DISTINCT FROM ?
-                """, status, actor, serviceId, status);
+                  AND (?='DELETED' OR NOT EXISTS(SELECT 1 FROM kf_clusters c WHERE c.id=kf_add_service.cluster_id AND c.status='DELETED'))
+                """, status, actor, serviceId, status,status);
         if (updated == 1) events.publishEvent(new AddServiceAuditListener.Event(serviceId, "SERVICE_STATUS_CHANGED", status, actor));
     }
 

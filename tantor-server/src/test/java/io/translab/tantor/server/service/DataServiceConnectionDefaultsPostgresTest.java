@@ -36,6 +36,7 @@ class DataServiceConnectionDefaultsPostgresTest {
         admin = new JdbcTemplate(source);
         schema = "tantor_default_test_"+UUID.randomUUID().toString().replace("-", "");
         admin.execute("create schema "+schema);
+        admin.execute("create table "+schema+".kf_clusters(id uuid primary key,status text)");
         var properties = new Properties(); properties.setProperty("currentSchema", schema);
         source.setConnectionProperties(properties);
         factory = new LocalContainerEntityManagerFactoryBean();

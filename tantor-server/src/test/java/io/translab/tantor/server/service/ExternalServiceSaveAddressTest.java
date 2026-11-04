@@ -13,7 +13,7 @@ class ExternalServiceSaveAddressTest {
   var jobs=mock(JobService.class);var manager=mock(ExternalDataServiceManager.class);
   var services=mock(ExternalDataServiceRepository.class);var connections=mock(DataServiceConnectionService.class);
   var mappings=mock(AddServiceMappingService.class);
-  var handler=new ExternalServicesJobHandler(jobs,manager,services,mock(ExternalServiceTaskRepository.class),mock(KafkaAdminService.class),connections,mappings);
+  var handler=new ExternalServicesJobHandler(jobs,manager,services,mock(ExternalServiceTaskRepository.class),mock(KafkaAdminService.class),connections,mappings,mock(DataServiceReadiness.class));
   UUID cluster=UUID.randomUUID(),serviceId=UUID.randomUUID();
   var job=new Job();job.setId(UUID.randomUUID());job.setRequestedBy("operator");
   var step=new JobStep();step.setId(UUID.randomUUID());step.setStatus(JobStepStatus.FAILED);step.setPayload("step");

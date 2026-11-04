@@ -10,6 +10,9 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface ClusterServiceAssignmentRepository extends JpaRepository<ClusterServiceAssignment, UUID> {
+    @Query("select service from ClusterServiceAssignment service join fetch service.cluster cluster where cluster.status is null or cluster.status <> 'DELETED'")
+    List<ClusterServiceAssignment> findReservationsForLiveClusters();
+
     @Query("select service from ClusterServiceAssignment service where service.cluster.id = :clusterId")
     List<ClusterServiceAssignment> findByClusterId(@Param("clusterId") UUID clusterId);
 

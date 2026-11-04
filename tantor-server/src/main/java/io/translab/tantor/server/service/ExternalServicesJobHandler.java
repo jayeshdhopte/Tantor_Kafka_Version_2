@@ -20,6 +20,7 @@ public class ExternalServicesJobHandler implements JobHandler {
  private final KafkaAdminService kafka;
  private final DataServiceConnectionService connections;
  private final AddServiceMappingService addServiceMapping;
+ private final DataServiceReadiness readiness;
  public boolean supports(JobType type) { return type==JobType.EXTERNAL_SERVICES; }
  public void execute(Job job) {
   for(JobStep step:jobs.getSteps(job.getId())) {
@@ -36,11 +37,19 @@ public class ExternalServicesJobHandler implements JobHandler {
      case "PRECHECK", "INSTALL" -> {
       UUID taskId=step.getExternalServiceTaskId();
       if(taskId==null) { var t=manager.enqueue(s,op); taskId=t.getId(); jobs.attachExternalServiceTask(step.getId(),taskId); }
-      output=await(taskId);
+      try {output=await(taskId);}
+      catch(IllegalStateException failure) {
+       String message=Objects.toString(failure.getMessage(),"");
+       if(!"INSTALL".equals(op) || !startupVerificationTimeout(message))throw failure;
+       jobs.appendLog(job.getId(),"Agent installed the service but its initial REST readiness window expired; waiting for management-server readiness before deciding deployment status.");
+       readiness.await(s.getRole(),manager.serviceHost(agent),Integer.parseInt(p.get("rest_port")),p.get("kafka_cluster_id"));
+       output="Agent startup verification timed out; native REST readiness subsequently confirmed. Original agent-task result retained.";
+      }
      }
      case "TOPICS" -> { ensureTopics(s,p); output="Kafka internal topics created or verified; existing broker configuration unchanged."; }
      case "SAVE" -> {
       var req=new SaveConnectionRequest(); req.setConnectionName("Deployed "+s.getRole()+" on "+p.getOrDefault("host_display_name",p.get("host_name"))+":"+p.get("rest_port")); req.setProtocol("http"); req.setHost(manager.serviceHost(agent)); req.setPort(Integer.parseInt(p.get("rest_port")));
+      readiness.await(s.getRole(),req.getHost(),req.getPort(),p.get("kafka_cluster_id"));
       var saved=connections.saveConnection(s.getClusterId(),s.getRole().toUpperCase(Locale.ROOT),req,job.getRequestedBy());
       if(!"ONLINE".equals(saved.getStatus())) throw new IllegalStateException("Service started but management-server REST verification failed: "+saved.getLastError());
       s.setStatus("ONLINE"); services.save(s); output="Service verified and connection associated with the external cluster.";
@@ -57,6 +66,10 @@ public class ExternalServicesJobHandler implements JobHandler {
     throw new IllegalStateException("External service deployment failed: "+e.getMessage(),e);
    }
   }
+ }
+ static boolean startupVerificationTimeout(String message) {
+  return (message.contains("schema-registry verification failed:") || message.contains("kafka-connect verification failed:"))
+    && message.contains("context deadline exceeded");
  }
  private String await(UUID id) throws InterruptedException {
   while(true) {

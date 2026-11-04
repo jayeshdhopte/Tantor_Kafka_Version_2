@@ -30,6 +30,11 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class ExternalDataServiceManagerTest {
+    @Test void connectorPortIsPreservedAndConflictingAliasesAreRejected() {
+        assertThat(ExternalDataServiceManager.configuration("kafka_connect",Map.of("port",8083))).containsEntry("rest_port","8083");
+        assertThat(ExternalDataServiceManager.configuration("kafka_connect",Map.of("rest_port",8084))).containsEntry("rest_port","8084");
+        assertThatThrownBy(()->ExternalDataServiceManager.configuration("kafka_connect",Map.of("port",8083,"rest_port",8081))).hasMessageContaining("disagree");
+    }
     @Test
     void validatesAndPreservesSeparateServiceHeapValues() {
         var range = ExternalDataServiceManager.configuration("kafka_connect", Map.of(
@@ -74,7 +79,7 @@ class ExternalDataServiceManagerTest {
         agent.setCanDeployServices(true);
         when(agents.findById("agent-1")).thenReturn(Optional.of(agent));
         when(agents.findByClusterId(clusterId)).thenReturn(List.of(agent));
-        when(services.findByAgentId("agent-1")).thenReturn(List.of());
+        when(services.findLiveReservationsByAgentId("agent-1")).thenReturn(List.of());
         @SuppressWarnings("unchecked")
         var defaults = (Map<String, Map<String, String>>) manager.options(clusterId).get("pathDefaults");
         assertThat(defaults.get("schema_registry")).containsEntry("install_dir", "/opt/tantor/schema-registry");

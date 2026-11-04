@@ -50,7 +50,7 @@ class ExternalInternalServiceCollisionTest {
 
     @Test void existingInternalSchemaReservesItsUnitAndStateDirectoriesAcrossAgentIdentities() {
         var existing=installed("schema_registry","192.168.3.229",8086);String original=existing.getConfigJson();
-        when(internal.findAll()).thenReturn(List.of(existing));
+        when(internal.findReservationsForLiveClusters()).thenReturn(List.of(existing));
         manager.create(cluster.getId(),Map.of("schema_registry",request(8081)),"operator");
         assertThat(saved).hasSize(1);
         assertThat(manager.read(saved.get(0).getConfigJson()))
@@ -61,20 +61,20 @@ class ExternalInternalServiceCollisionTest {
         verify(internal,never()).save(any());
     }
     @Test void occupiedInternalConnectPortIsRejectedBeforeAnyServiceOrJobIsCreated() {
-        when(internal.findAll()).thenReturn(List.of(installed("kafka_connect","192.168.3.229",8083)));
+        when(internal.findReservationsForLiveClusters()).thenReturn(List.of(installed("kafka_connect","192.168.3.229",8083)));
         assertThatThrownBy(()->manager.create(cluster.getId(),Map.of("kafka_connect",request(8083)),"operator"))
                 .hasMessageContaining("8083").hasMessageContaining("kafka-connect").hasMessageContaining("Choose a free port");
         verify(services,never()).saveAndFlush(any());verify(jobs,never()).createJob(any(),anyList());
     }
     @Test void explicitDirectoryOverlapWithInternalServiceIsRejected() {
-        when(internal.findAll()).thenReturn(List.of(installed("schema_registry","192.168.3.229",8086)));
+        when(internal.findReservationsForLiveClusters()).thenReturn(List.of(installed("schema_registry","192.168.3.229",8086)));
         var input=request(8081);input.put("working_dir","/var/lib/tantor/schema-registry");
         assertThatThrownBy(()->manager.create(cluster.getId(),Map.of("schema_registry",input),"operator"))
                 .hasMessageContaining("directories overlap");
         verify(jobs,never()).createJob(any(),anyList());
     }
     @Test void anotherPhysicalHostsInternalServicesDoNotReserveThisHostsResources() {
-        when(internal.findAll()).thenReturn(List.of(installed("kafka_connect","192.168.3.191",8083)));
+        when(internal.findReservationsForLiveClusters()).thenReturn(List.of(installed("kafka_connect","192.168.3.191",8083)));
         manager.create(cluster.getId(),Map.of("kafka_connect",request(8083)),"operator");
         assertThat(manager.read(saved.get(0).getConfigJson())).containsEntry("service_name","kafka-connect")
                 .containsEntry("rest_port","8083");

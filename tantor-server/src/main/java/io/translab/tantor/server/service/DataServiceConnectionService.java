@@ -118,6 +118,7 @@ public class DataServiceConnectionService {
                 : FALLBACK_CONNECTION_NAME;
 
         repository.lockConnectionScope(clusterId, serviceType);
+        if(repository.isRetiredCluster(clusterId))throw new IllegalArgumentException("Cluster has been deleted; new connections cannot be saved.");
         // Count existing active rows BEFORE creating new one (for auto-default logic)
         long existingCount = repository.countByClusterIdAndServiceTypeAndIsActiveTrue(clusterId, serviceType);
         boolean isFirstConnection = (existingCount == 0);

@@ -42,7 +42,7 @@ class RollingRestartMappingDatabaseTest {
             var factory=new LocalContainerEntityManagerFactoryBean(); factory.setDataSource(source);
             factory.setPackagesToScan("io.translab.tantor.server.domain");
             factory.setJpaVendorAdapter(new HibernateJpaVendorAdapter());
-            factory.setJpaPropertyMap(Map.of("hibernate.hbm2ddl.auto","none")); return factory;
+            factory.setJpaPropertyMap(Map.of("hibernate.hbm2ddl.auto","none","hibernate.physical_naming_strategy","org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy")); return factory;
         }
         @Bean PlatformTransactionManager transactionManager(EntityManagerFactory factory) { return new JpaTransactionManager(factory); }
         @Bean JdbcTemplate jdbc(DataSource source) { return new JdbcTemplate(source); }

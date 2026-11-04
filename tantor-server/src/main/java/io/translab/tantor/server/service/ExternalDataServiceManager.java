@@ -94,7 +94,7 @@ public class ExternalDataServiceManager {
    List<ExternalDataService> neighbours=hostServices;
    for(var other:neighbours) if(agent.getId().equals(other.getAgentId()) && !"DELETED".equalsIgnoreCase(other.getStatus())) {
     var op=read(other.getConfigJson());
-    if(p.get("rest_port").equals(op.get("rest_port"))) throw new IllegalArgumentException("REST port "+p.get("rest_port")+" is already reserved by "+op.getOrDefault("service_name",other.getRole().replace('_','-'))+" on "+serviceHost(agent)+". Choose a free port.");
+    if(p.get("rest_port").equals(op.get("rest_port"))) throw new IllegalArgumentException("Cannot deploy "+("kafka_connect".equals(role)?"Kafka Connect":"Schema Registry")+": requested REST port "+p.get("rest_port")+" is already reserved by "+op.getOrDefault("service_name",other.getRole().replace('_','-'))+" on "+serviceHost(agent)+". Choose a free port.");
     for(String a:paths(p)) for(String b:paths(op)) if(overlaps(a,b)) throw new IllegalArgumentException("Service directories overlap another service on this host.");
    }
    ExternalDataService s=new ExternalDataService(); s.setClusterId(id); s.setAgentId(agent.getId()); s.setRole(role); s.setStatus("PENDING"); s.setConfigJson(json(p)); additions.add(s);
@@ -148,10 +148,10 @@ public class ExternalDataServiceManager {
  }
  static List<String> paths(Map<String,String> p) { return List.of("install_dir","config_dir","log_dir","working_dir","plugin_dir").stream().map(p::get).filter(Objects::nonNull).filter(v->!v.isBlank()).toList(); }
  List<ExternalDataService> hostServices(DiscoveryAgent agent,List<ExternalDataService> additions) {
-  List<ExternalDataService> occupied=new ArrayList<>(services.findByAgentId(agent.getId()));
+  List<ExternalDataService> occupied=new ArrayList<>(services.findLiveReservationsByAgentId(agent.getId()));
   occupied.addAll(additions);
   String address=serviceHost(agent);
-  for(var assignment:internalServices.findAll()) {
+  for(var assignment:internalServices.findReservationsForLiveClusters()) {
    if(!ROLES.contains(assignment.getRole()) || "DELETED".equalsIgnoreCase(Objects.toString(assignment.getStatus(),""))) continue;
    var config=read(assignment.getConfigJson());
    boolean sameHost=address.equals(value(config,"host_name",""))
@@ -205,7 +205,9 @@ public class ExternalDataServiceManager {
   p.put("log_dir",value(in,"log_dir","/var/log/tantor/"+kind)); p.put("working_dir",value(in,"working_dir","/var/lib/tantor/"+kind));
   if(role.equals("kafka_connect")) p.put("plugin_dir",value(in,"plugin_dir",p.get("install_dir")+"/plugins"));
   for(String path:paths(p)) if(!path.matches("/[a-zA-Z0-9_./-]+")||path.contains("//")||path.endsWith("/")||Arrays.asList(path.split("/")).contains("..")||Arrays.asList(path.split("/")).contains(".")) throw new IllegalArgumentException("Use clean absolute service paths without spaces or traversal.");
-  int port=Integer.parseInt(value(in,"port",role.equals("schema_registry")?"8081":"8083"));
+  String explicitPort=value(in,"port","");String legacyPort=value(in,"rest_port","");
+  if(!explicitPort.isEmpty() && !legacyPort.isEmpty() && !explicitPort.equals(legacyPort))throw new IllegalArgumentException("port and rest_port disagree for "+role);
+  int port=Integer.parseInt(!explicitPort.isEmpty()?explicitPort:!legacyPort.isEmpty()?legacyPort:role.equals("schema_registry")?"8081":"8083");
   if(port<1||port>65535) throw new IllegalArgumentException("Invalid REST port."); p.put("rest_port",String.valueOf(port));
   String heap=value(in,"heap_size","1G");
   String heapMin=value(in,"heap_xms",heap), heapMax=value(in,"heap_xmx",heap);

@@ -11,6 +11,9 @@ import java.util.UUID;
 @Repository
 public interface DataServiceConnectionRepository extends JpaRepository<DataServiceConnection, UUID> {
 
+    @org.springframework.data.jpa.repository.Query(value="select exists(select 1 from kf_clusters where id=:clusterId and status='DELETED')",nativeQuery=true)
+    boolean isRetiredCluster(@org.springframework.data.repository.query.Param("clusterId") UUID clusterId);
+
     /** Serialize writers even when the scope has no connections yet. Held until transaction end. */
     @org.springframework.data.jpa.repository.Query(value = """
             select true from pg_advisory_xact_lock(

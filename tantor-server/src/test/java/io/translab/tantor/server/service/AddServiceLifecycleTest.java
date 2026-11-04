@@ -43,7 +43,7 @@ class AddServiceLifecycleTest {
         var jobs = mock(JobService.class); var manager = mock(ExternalDataServiceManager.class);
         var services = mock(ExternalDataServiceRepository.class); var mappings = mock(AddServiceMappingService.class);
         var handler = new ExternalServicesJobHandler(jobs, manager, services, mock(ExternalServiceTaskRepository.class),
-                mock(KafkaAdminService.class), mock(DataServiceConnectionService.class), mappings);
+                mock(KafkaAdminService.class), mock(DataServiceConnectionService.class), mappings,mock(DataServiceReadiness.class));
         var job = new Job(); job.setId(UUID.randomUUID()); job.setRequestedBy("operator");
         var step = new JobStep(); step.setId(UUID.randomUUID()); step.setPayload("step");
         var service = new ExternalDataService(); service.setId(UUID.randomUUID()); service.setClusterId(UUID.randomUUID());
