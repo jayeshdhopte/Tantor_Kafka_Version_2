@@ -184,6 +184,7 @@ public class ClusterOverviewService {
             var host = hostRepository.findById(service.getHostId());
             String install = path(config, "install_dir"), dir = path(config, "config_dir");
             rows.add(ClusterOverviewDto.DataServicePathRow.builder()
+                    .restHost(path(config,"host_name")).restPort(servicePort(config))
                     .serviceType(schema ? "SCHEMA_REGISTRY" : "KAFKA_CONNECT")
                     .hostId(service.getHostId()).hostname(host.map(io.translab.tantor.server.domain.Host::getHostname).orElse(service.getHostId()))
                     .ipAddress(host.map(io.translab.tantor.server.domain.Host::getHostIp).orElse(null))
@@ -211,6 +212,7 @@ public class ClusterOverviewService {
                     && a.getLastHeartbeat().isAfter(OffsetDateTime.now().minusSeconds(120))).isPresent();
             String configDir = path(config,"config_dir");
             rows.add(ClusterOverviewDto.DataServicePathRow.builder()
+                    .restHost(path(config,"host_name")).restPort(servicePort(config))
                     .instanceId(service.getId() == null ? null : service.getId().toString())
                     .serviceName(path(config,"service_name")).deploymentStatus(service.getStatus())
                     .pathSource("DEPLOYMENT_CONFIGURATION").agentStatus(online ? "ONLINE" : "OFFLINE")
@@ -237,6 +239,7 @@ public class ClusterOverviewService {
                     if (addresses.isArray() && !addresses.isEmpty()) ip = addresses.get(0).asText();
                 } catch (Exception ignored) {}
                 rows.add(ClusterOverviewDto.DataServicePathRow.builder()
+                        .restHost(ip).restPort(discovered.restPort())
                         .instanceId(agent.getId()+":"+discovered.serviceName()).serviceName(discovered.serviceName())
                         .serviceType(discovered.serviceType()).hostId(agent.getId()).hostname(agent.getHostname()).ipAddress(ip)
                         .pathSource("AGENT_DISCOVERY").agentStatus(online ? "ONLINE" : "OFFLINE").reportedAt(agent.getServicePathsReportedAt())
@@ -248,6 +251,15 @@ public class ClusterOverviewService {
                 .thenComparing(ClusterOverviewDto.DataServicePathRow::getHostId)
                 .thenComparing(row -> java.util.Objects.toString(row.getInstanceId(), "")));
         return rows;
+    }
+
+    private static Integer servicePort(Map<String, Object> config) {
+        Object raw = config.get("rest_port");
+        if (raw == null) raw = config.get("port");
+        try {
+            int port = Integer.parseInt(java.util.Objects.toString(raw, ""));
+            return port >= 1 && port <= 65535 ? port : null;
+        } catch (NumberFormatException ignored) { return null; }
     }
 
     private static String path(Map<String, Object> config, String key) {

@@ -28,6 +28,7 @@ class ExternalServiceDirectoriesTest {
         when(agents.findById("agent")).thenReturn(Optional.of(agent));
         when(agents.findByClusterId(cluster)).thenReturn(List.of(agent));
         var rows = overview.externalDataServicePaths(cluster);
+        assertThat(rows).extracting(r->r.getRestPort()).containsExactlyInAnyOrder(8081,8083);
         assertThat(rows).hasSize(2).allSatisfy(row->assertThat(row.getPathSource()).isEqualTo("AGENT_DISCOVERY"));
         assertThat(rows).extracting(row->row.getServiceType()).containsExactlyInAnyOrder("SCHEMA_REGISTRY","KAFKA_CONNECT");
         assertThat(rows.stream().filter(r->r.getServiceType().equals("SCHEMA_REGISTRY")).findFirst().orElseThrow().getInstallDir())
@@ -53,6 +54,8 @@ class ExternalServiceDirectoriesTest {
         assertThat(rows).hasSize(3);
         assertThat(rows).extracting(r->r.getInstanceId()).doesNotHaveDuplicates();
         var schema = rows.stream().filter(r->r.getInstanceId().equals(first.getId().toString())).findFirst().orElseThrow();
+        assertThat(schema.getRestHost()).isEqualTo("192.168.3.229");
+        assertThat(schema.getRestPort()).isEqualTo(8082);
         assertThat(schema.getInstallDir()).isEqualTo("/client/tantor/schema-registry");
         assertThat(schema.getConfigFile()).isEqualTo("/client/tantor/schema-registry/etc/schema-registry.properties");
         assertThat(schema.getPathSource()).isEqualTo("DEPLOYMENT_CONFIGURATION");
@@ -66,7 +69,7 @@ class ExternalServiceDirectoriesTest {
     }
     private ExternalDataService service(String role,String status,String install) {
         var s = new ExternalDataService(); s.setId(UUID.randomUUID());s.setAgentId("agent");s.setRole(role);s.setStatus(status);
-        s.setConfigJson("{\"install_dir\":\""+install+"\",\"config_dir\":\""+install+"/etc\",\"plugin_dir\":\""+install+"/plugins\",\"host_name\":\"192.168.3.229\",\"service_name\":\""+role+"\"}");
+        s.setConfigJson("{\"rest_port\":\"8082\",\"install_dir\":\""+install+"\",\"config_dir\":\""+install+"/etc\",\"plugin_dir\":\""+install+"/plugins\",\"host_name\":\"192.168.3.229\",\"service_name\":\""+role+"\"}");
         return s;
     }
 }

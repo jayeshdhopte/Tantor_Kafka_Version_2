@@ -338,7 +338,7 @@ const modeOptions = [{ value: 'READONLY', label: 'Read only' }, { value: 'READWR
 
 export function SchemaRegistry() {
   const { id } = useParams<{ id: string }>();
-  const [directoryPreview, setDirectoryPreview] = useState<{ connectionName: string; returnFocus: HTMLElement } | null>(null);
+  const [directoryPreview, setDirectoryPreview] = useState<{ connectionName: string; connection: { host: string; port: number }; returnFocus: HTMLElement } | null>(null);
   const { canManage } = usePermissions();
   const [initialSession] = useState(() => readDataServiceSession<SchemaSummary>('schema-registry', id));
   const [view, setView] = useState<View>('list');
@@ -1223,7 +1223,8 @@ export function SchemaRegistry() {
                       className="ds-instance-select"
                       onInspect={(connectionId, returnFocus) => {
                         const connection = savedConnections.find(item => item.id === connectionId);
-                        setDirectoryPreview({ connectionName: connection?.isDefault ? 'Default connection' : connection?.connectionName || 'Default connection', returnFocus });
+                        if (!connection) return;
+                        setDirectoryPreview({ connectionName: `${connection.connectionName}${connection.isDefault ? ' (default)' : ''}`, connection, returnFocus });
                       }}
                       value={selectedConnectionId ?? ''}
                       onChange={handleInstanceChange}
@@ -1433,7 +1434,7 @@ export function SchemaRegistry() {
             </div>
           </>}
           {directoryPreview && <ServiceDirectoriesModal clusterId={id} serviceType="SCHEMA_REGISTRY"
-            connectionName={directoryPreview.connectionName} returnFocus={directoryPreview.returnFocus}
+            connectionName={directoryPreview.connectionName} connection={directoryPreview.connection} returnFocus={directoryPreview.returnFocus}
             onClose={() => setDirectoryPreview(null)} />}
         </>
       )}

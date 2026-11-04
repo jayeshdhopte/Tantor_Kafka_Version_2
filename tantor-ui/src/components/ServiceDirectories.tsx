@@ -2,9 +2,12 @@ import { RefreshButton } from './RefreshButton';
 import { useEffect, useId, useState } from 'react';
 import { ChevronDown, RefreshCw } from 'lucide-react';
 import './ServiceDirectories.css';
+import { matchesServiceConnection } from '../utils/serviceDirectories';
 
 interface ServicePath {
   instanceId?: string; serviceName?: string; deploymentStatus?: string; pathSource?: string; agentStatus?: string; reportedAt?: string;
+  restHost?: string | null;
+  restPort?: number | null;
   serviceType: string;
   hostId: string;
   hostname: string | null;
@@ -23,10 +26,11 @@ interface DirectoryResult {
   error?: string;
 }
 
-export function ServiceDirectories({ clusterId, serviceType, preview = false }: {
+export function ServiceDirectories({ clusterId, serviceType, connection, preview = false }: {
   clusterId?: string;
   serviceType: 'SCHEMA_REGISTRY' | 'KAFKA_CONNECT';
   preview?: boolean;
+  connection?: { host: string; port: number };
 }) {
   const [result, setResult] = useState<DirectoryResult | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -49,7 +53,7 @@ export function ServiceDirectories({ clusterId, serviceType, preview = false }: 
 
   if (!clusterId) return null;
   const current = result?.clusterId === clusterId && result.attempt === attempt ? result : null;
-  const paths = (current?.paths || []).filter(path => path.serviceType === serviceType)
+  const paths = (current?.paths || []).filter(path => path.serviceType === serviceType && (!connection || matchesServiceConnection(path, connection)))
     .slice().sort((a, b) => (a.hostname || a.hostId).localeCompare(b.hostname || b.hostId) || a.hostId.localeCompare(b.hostId));
   const serviceName = serviceType === 'SCHEMA_REGISTRY' ? 'Schema Registry' : 'Kafka Connect';
 

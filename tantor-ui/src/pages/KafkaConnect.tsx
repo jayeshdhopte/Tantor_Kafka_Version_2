@@ -151,7 +151,7 @@ function CustomSelect({ value, onChange, options, placeholder, disabled, classNa
 
 export function KafkaConnect() {
   const { id } = useParams<{ id: string }>();
-  const [directoryPreview, setDirectoryPreview] = useState<{ connectionName: string; returnFocus: HTMLElement } | null>(null);
+  const [directoryPreview, setDirectoryPreview] = useState<{ connectionName: string; connection: { host: string; port: number }; returnFocus: HTMLElement } | null>(null);
   const { canManage } = usePermissions();
   const [initialSession] = useState(() => readDataServiceSession<ConnectSummary>('kafka-connect', id));
   const [summary, setSummary] = useState<ConnectSummary | null>(initialSession?.summary ?? null);
@@ -638,9 +638,8 @@ export function KafkaConnect() {
                 className="ds-instance-select"
                 onInspect={(connectionId, returnFocus) => {
                   const connection = savedConnections.find(item => item.id === connectionId);
-                  setDirectoryPreview({ connectionName: connection
-                    ? `${connection.connectionName}${connection.isDefault ? ' (default)' : ''}`
-                    : 'Default connection', returnFocus });
+                  if (!connection) return;
+                  setDirectoryPreview({ connectionName: `${connection.connectionName}${connection.isDefault ? ' (default)' : ''}`, connection, returnFocus });
                 }}
                 value={selectedConnectionId ?? ''}
                 onChange={handleInstanceChange}
@@ -971,7 +970,7 @@ export function KafkaConnect() {
       </div>
       </>}
       {directoryPreview && <ServiceDirectoriesModal clusterId={id} serviceType="KAFKA_CONNECT"
-        connectionName={directoryPreview.connectionName} returnFocus={directoryPreview.returnFocus}
+        connectionName={directoryPreview.connectionName} connection={directoryPreview.connection} returnFocus={directoryPreview.returnFocus}
         onClose={() => setDirectoryPreview(null)} />}
 
       </div>

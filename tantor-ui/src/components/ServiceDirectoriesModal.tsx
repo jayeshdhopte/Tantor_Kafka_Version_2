@@ -3,10 +3,11 @@ import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { ServiceDirectories } from './ServiceDirectories';
 
-export function ServiceDirectoriesModal({ clusterId, serviceType, connectionName, returnFocus, onClose }: {
+export function ServiceDirectoriesModal({ clusterId, serviceType, connectionName, connection, returnFocus, onClose }: {
   clusterId?: string;
   serviceType: 'SCHEMA_REGISTRY' | 'KAFKA_CONNECT';
   connectionName: string;
+  connection: { host: string; port: number };
   returnFocus: HTMLElement;
   onClose: () => void;
 }) {
@@ -44,7 +45,7 @@ export function ServiceDirectoriesModal({ clusterId, serviceType, connectionName
         <button type="button" className="ds-icon-button" aria-label="Close directory preview" onClick={onClose}><X size={20} /></button>
       </div>
       <p className="ds-sr-directories-connection">{connectionName}</p>
-      <ServiceDirectories clusterId={clusterId} serviceType={serviceType} preview />
+      <ServiceDirectories clusterId={clusterId} serviceType={serviceType} connection={connection} preview />
     </div>
   </div>, document.body);
 }
