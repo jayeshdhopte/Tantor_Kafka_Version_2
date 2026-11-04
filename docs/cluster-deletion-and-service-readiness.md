@@ -4,6 +4,8 @@ The failure had two paths. Internal cleanup marked the cluster DELETED and relea
 
 V103 retires node and internal/external service status to DELETED, deactivates saved connections (including default flags), updates Add Service mappings, and releases membership of hosts still assigned to that deleted parent. It preserves historical inventory rows and does not change unrelated active clusters. Host ONLINE describes agent connectivity; a connected agent remains ONLINE/available after its cluster membership is removed. DELETING and DELETE_FAILED parents retain their reservations because physical cleanup may still be incomplete.
 
+The derived node-ID refresh trigger also preserves the parent actor and avoids unnecessary parent writes on child-status-only changes.
+
 The retirement hook runs on final DELETED transitions and parent removal, with a one-time repair of existing deleted parents. Database guards prevent late heartbeat or callback writes from resurrecting their nodes, services, mappings or active connections. New connection saves reject a deleted owner. Reservation queries join live parents independently, so a historical assignment cannot block another cluster even if its child status had become stale. Real listeners and path ownership still undergo agent prerequisite checks; a physically busy port remains blocked.
 
 Port-validation errors name the requested service and exact REST port. The API accepts `port` and the existing `rest_port` alias, rejects conflicting values, and preserves distinct Schema Registry and Kafka Connect port values. When both services are requested, a Schema Registry port failure is explicitly labelled instead of looking like a Kafka Connect error.

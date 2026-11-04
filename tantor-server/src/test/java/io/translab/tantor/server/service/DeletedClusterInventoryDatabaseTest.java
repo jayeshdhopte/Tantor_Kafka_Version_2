@@ -25,6 +25,7 @@ class DeletedClusterInventoryDatabaseTest {
     }
     void rollback(Runnable body){tx.executeWithoutResult(status->{status.setRollbackOnly();body.run();jdbc.execute("SET CONSTRAINTS ALL IMMEDIATE");});}
     void retired(Fixture f) {
+        assertThat(jdbc.queryForObject("SELECT updated_by FROM kf_clusters WHERE id=?",String.class,f.cluster())).isEqualTo("delete-requester");
         for(String table:List.of("kf_cluster_services","kf_nodes","kf_add_service"))
             assertThat(jdbc.queryForObject("SELECT count(*) FROM "+table+" WHERE cluster_id=? AND status IS DISTINCT FROM 'DELETED'",Integer.class,f.cluster())).isZero();
         assertThat(jdbc.queryForMap("SELECT status,is_active,is_default FROM kf_data_service_connections WHERE id=?",f.connection())).containsEntry("status","DELETED").containsEntry("is_active",false).containsEntry("is_default",false);

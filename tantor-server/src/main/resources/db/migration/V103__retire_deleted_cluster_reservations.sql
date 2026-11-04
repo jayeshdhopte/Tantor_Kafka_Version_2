@@ -2,6 +2,26 @@
 ALTER TABLE public.kf_data_service_connections DROP CONSTRAINT chk_dsc_status;
 ALTER TABLE public.kf_data_service_connections ADD CONSTRAINT chk_dsc_status
     CHECK(status IN ('UNKNOWN','ONLINE','OFFLINE','ERROR','DELETED'));
+-- Node-ID aggregation is derived inventory, not a new action by a system user.
+-- In particular, retiring a child status must not overwrite the deletion requester's identity.
+CREATE OR REPLACE FUNCTION public.refresh_cluster_node_ids() RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE affected UUID; owners UUID[]; observed JSONB;
+BEGIN
+    IF TG_OP='UPDATE' THEN
+        IF NEW.cluster_id IS NOT DISTINCT FROM OLD.cluster_id AND NEW.node_id IS NOT DISTINCT FROM OLD.node_id THEN RETURN NEW;END IF;
+        owners:=ARRAY[OLD.cluster_id,NEW.cluster_id];
+    ELSIF TG_OP='INSERT' THEN owners:=ARRAY[NEW.cluster_id];
+    ELSE owners:=ARRAY[OLD.cluster_id];END IF;
+    FOR affected IN SELECT DISTINCT id FROM unnest(owners) AS changed(id) WHERE id IS NOT NULL LOOP
+        SELECT COALESCE(jsonb_agg(ids.node_id ORDER BY ids.node_id),'[]'::jsonb) INTO observed
+        FROM(SELECT DISTINCT node_id FROM public.kf_cluster_services WHERE cluster_id=affected AND node_id IS NOT NULL) ids;
+        UPDATE public.kf_clusters SET node_ids=observed,updated_at=CURRENT_TIMESTAMP
+          WHERE id=affected AND node_ids IS DISTINCT FROM observed;
+    END LOOP;
+    RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END;
+END;
+$$;
+
 CREATE FUNCTION public.retire_deleted_cluster_inventory(owner UUID) RETURNS VOID LANGUAGE plpgsql AS $$
 DECLARE actor TEXT;
 BEGIN
