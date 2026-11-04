@@ -13,6 +13,14 @@ import java.util.UUID;
 
 @Repository
 public interface JobRepository extends JpaRepository<Job, UUID> {
+    @org.springframework.data.jpa.repository.Query("select j from Job j where j.resourceKey = :resource "
+            + "and j.id <> :jobId and j.type in :types "
+            + "and (j.createdAt >= :since or j.endTime >= :since) order by j.createdAt desc, j.id desc")
+    List<Job> findConfigRollbackCandidates(
+            @org.springframework.data.repository.query.Param("resource") String resource,
+            @org.springframework.data.repository.query.Param("jobId") UUID jobId,
+            @org.springframework.data.repository.query.Param("types") List<io.translab.tantor.server.domain.JobType> types,
+            @org.springframework.data.repository.query.Param("since") java.time.Instant since);
     Optional<Job> findFirstByResourceKeyAndTypeOrderByCreatedAtDesc(String resourceKey, io.translab.tantor.server.domain.JobType type);
     org.springframework.data.domain.Page<Job> findByResourceKeyAndType(String resourceKey, io.translab.tantor.server.domain.JobType type, org.springframework.data.domain.Pageable pageable);
     List<Job> findByStatus(JobStatus status);

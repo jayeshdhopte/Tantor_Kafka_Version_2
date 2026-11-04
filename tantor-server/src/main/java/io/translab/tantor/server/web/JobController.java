@@ -53,6 +53,11 @@ public class JobController {
         }
     }
 
+    @GetMapping("/{id}/rollback-eligibility")
+    public ResponseEntity<?> rollbackEligibility(@PathVariable UUID id) {
+        return ResponseEntity.ok(jobService.getConfigRollbackEligibility(id));
+    }
+
     @PostMapping("/{id}/retry")
     public ResponseEntity<?> retryJob(@PathVariable UUID id) {
         try {

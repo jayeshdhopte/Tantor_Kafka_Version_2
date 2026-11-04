@@ -41,6 +41,12 @@ class ConfigChangeRollbackTest {
         JobStep s = new JobStep();s.setId(UUID.randomUUID());s.setJob(job);s.setStepOrder(1);s.setStatus(JobStepStatus.FAILED);s.setPayload(mapper.writeValueAsString(p));
         when(jobs.getSteps(job.getId())).thenReturn(List.of(s));return s;
     }
+    @Test void staleQueuedRollbackIsRejectedBeforeAnyAgentOrKafkaOperation() {
+        doThrow(new ClusterOperationConflictException("A newer configuration change affects recovery"))
+                .when(jobs).assertConfigRollbackCurrent(job);
+        assertThatThrownBy(() -> handler.rollback(job)).isInstanceOf(ClusterOperationConflictException.class);
+        verifyNoInteractions(deployment, kafka, awaiter);
+    }
     @Test void stoppedFailedNodeCanRecoverBeforeFullClusterHealthReturns() throws Exception {
         var s=step(Map.of());
         when(awaiter.await(read,90)).thenReturn(task("{\"properties\":{\"num.io.threads\":\"12\"}}"),task("{\"properties\":{\"num.io.threads\":\"8\"}}"));

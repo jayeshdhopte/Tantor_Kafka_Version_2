@@ -373,6 +373,7 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
 
     @Override
     public void rollback(Job job) {
+        jobs.assertConfigRollbackCurrent(job);
         UUID clusterId = UUID.fromString(String.valueOf(read(job.getPayload()).get("clusterId")));
         var steps = new java.util.ArrayList<>(jobs.getSteps(job.getId()));
         // Recover the failed node first, then undo completed nodes in reverse order.
@@ -380,6 +381,7 @@ public class TargetedConfigChangeJobHandler implements JobHandler {
                 .thenComparing(java.util.Comparator.comparingInt(JobStep::getStepOrder).reversed()));
         for (JobStep step : steps) {
             if (step.getStatus() == JobStepStatus.ROLLED_BACK) continue;
+            jobs.assertConfigRollbackCurrent(job);
             Map<String, Object> payload = read(step.getPayload());
             if (!Boolean.TRUE.equals(payload.get("configMutationStarted"))) {
                 if (step.getStatus() == JobStepStatus.SUCCESS && !payload.containsKey("recoveryCheckpoint"))

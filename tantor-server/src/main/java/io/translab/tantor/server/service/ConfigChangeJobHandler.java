@@ -81,6 +81,7 @@ public class ConfigChangeJobHandler implements JobHandler {
 
     @Override
     public void rollback(Job job) {
+        jobService.assertConfigRollbackCurrent(job);
         Map<String, Object> jobPayload = readMap(job.getPayload());
         UUID clusterId = UUID.fromString(String.valueOf(jobPayload.get("clusterId")));
         Object versionValue = jobPayload.get("configVersionId");

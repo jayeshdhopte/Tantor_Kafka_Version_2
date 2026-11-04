@@ -9,6 +9,7 @@ import java.util.UUID;
 
 @Repository
 public interface JobStepRepository extends JpaRepository<JobStep, UUID> {
+    List<JobStep> findByJob_IdIn(List<UUID> jobIds);
     boolean existsByAgentTaskIdAndJob_Type(UUID agentTaskId, io.translab.tantor.server.domain.JobType type);
     List<JobStep> findByJobIdOrderByStepOrderAsc(UUID jobId);
 }

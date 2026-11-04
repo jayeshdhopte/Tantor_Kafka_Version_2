@@ -92,6 +92,21 @@ public class JobService {
                 .orElseThrow(() -> new RuntimeException("Job not found: " + id));
     }
 
+    @Transactional(readOnly = true)
+    public ConfigRollbackPolicy.Eligibility getConfigRollbackEligibility(UUID id) {
+        return configRollbackEligibility(getJob(id));
+    }
+
+    private ConfigRollbackPolicy.Eligibility configRollbackEligibility(Job job) {
+        return new ConfigRollbackPolicy(jobRepository, jobStepRepository, objectMapper).evaluate(job);
+    }
+
+    @Transactional(readOnly = true)
+    public void assertConfigRollbackCurrent(Job job) {
+        var eligibility = configRollbackEligibility(job);
+        if (!eligibility.allowed()) throw new ClusterOperationConflictException(eligibility.reason());
+    }
+
     public List<Job> getAllJobs() {
         return jobRepository.findAllByOrderByCreatedAtDesc();
     }
@@ -350,6 +365,7 @@ public class JobService {
 
         lockAndCheck(job.getResourceKey(), job.getType(), id);
         boolean retryRollback = job.getStatus() == JobStatus.ROLLBACK_FAILED;
+        if (retryRollback) assertConfigRollbackCurrent(job);
         if (!retryRollback) {
             for (JobStep step : getSteps(id)) {
                 if (step.getStatus() != JobStepStatus.SUCCESS) {
@@ -386,6 +402,7 @@ public class JobService {
         }
         if ((job.getType() == JobType.TARGETED_CONFIG_CHANGE || job.getType() == JobType.CONFIG_CHANGE) && job.getStatus() == JobStatus.SUCCESS)
             throw new IllegalArgumentException("Use configuration version restore for a successful change.");
+        assertConfigRollbackCurrent(job);
         job.setStatus(JobStatus.ROLLBACK_PENDING);
         job.setEndTime(null);
         appendLog(id, "Rollback requested by " + currentRequester() + "; restoring this job's pre-change checkpoint.");

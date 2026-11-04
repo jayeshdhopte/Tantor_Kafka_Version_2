@@ -12,6 +12,22 @@
   gap: 1.5rem;
 }
 
+.job-status-page .config-rollback-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid #E5D7BA;
+  border-radius: 8px;
+  background: #FFFBF2;
+  color: #79551D;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.job-status-page .config-rollback-notice svg { flex-shrink: 0; margin-top: 1px; }
+.job-status-page .action-buttons button:disabled { opacity: .5; cursor: not-allowed; }
+
 .page-header-actions {
   display: flex;
   justify-content: space-between;

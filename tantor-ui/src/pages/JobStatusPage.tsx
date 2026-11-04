@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, RefreshCw, AlertTriangle, Undo2, Check, MoreVertical } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
+import { useConfigRollbackEligibility } from '../hooks/useConfigRollbackEligibility';
 import { confirmAction, notifyAction } from '../components/confirmUtils';
 import { formatIstDateTime, formatLogTimestampsIst } from '../utils/istLogTime';
 import './JobStatusPage.css';
@@ -105,6 +106,9 @@ export function JobStatusPage() {
   const navigate = useNavigate();
   const { canManage } = usePermissions();
   const [job, setJob] = useState<Job | null>(null);
+  const checkRollback = job?.status === 'ROLLBACK_FAILED'
+    && ['TARGETED_CONFIG_CHANGE', 'CONFIG_CHANGE'].includes(job.type);
+  const rollbackEligibility = useConfigRollbackEligibility(job?.id, checkRollback);
   const [steps, setSteps] = useState<JobStep[]>([]);
   const stepHosts = useMemo(() => Object.fromEntries(steps.flatMap(step => {
     try {
@@ -164,10 +168,15 @@ export function JobStatusPage() {
   }, [job?.logs, isLogsExpanded]);
 
   const handleRetry = async () => {
+    if (checkRollback && !rollbackEligibility.allowed) return;
     try {
       const res = await fetch(`/api/v1/ui/jobs/${id}/retry`, { method: 'POST' });
       if (res.ok) fetchJob();
-      else { const result = await res.json().catch(() => ({})); notifyAction(result.message || result.error || 'Job action failed.'); }
+      else {
+        const result = await res.json().catch(() => ({}));
+        notifyAction(result.message || result.error || 'Job action failed.');
+        if (checkRollback) rollbackEligibility.refresh();
+      }
     } catch (err) {
       console.error(err);
     }
@@ -372,7 +381,10 @@ export function JobStatusPage() {
         </div>
         <div className="action-buttons">
           {canManage && ['FAILED', 'PARTIAL_SUCCESS', 'ROLLBACK_FAILED'].includes(job.status) && (
-            <button className="btn btn-outline-primary" onClick={handleRetry}>
+            <button className="btn btn-outline-primary" onClick={handleRetry}
+              disabled={checkRollback && !rollbackEligibility.allowed}
+              title={checkRollback ? rollbackEligibility.reason : undefined}
+              aria-describedby={checkRollback && !rollbackEligibility.allowed ? 'config-rollback-reason' : undefined}>
               <RefreshCw size={14} style={{ marginRight: '6px' }} /> {job.status === 'ROLLBACK_FAILED' ? 'Retry rollback' : ['ROLLING_RESTART', 'TARGETED_CONFIG_CHANGE', 'CONFIG_CHANGE'].includes(job.type) ? 'Retry / Resume' : 'Retry Job'}
             </button>
           )}
@@ -383,7 +395,14 @@ export function JobStatusPage() {
           )}
         </div>
       </div>
-      
+
+      {checkRollback && !rollbackEligibility.allowed && (
+        <div id="config-rollback-reason" className="config-rollback-notice" role="status" aria-live="polite">
+          <AlertTriangle size={18} aria-hidden="true" />
+          <span>{rollbackEligibility.reason}</span>
+        </div>
+      )}
+
       {job.status === 'FAILED' && steps.some(s => s.name === 'ROLLBACK' && s.status === 'SUCCESS') && (
         <div className="overview-alert error" style={{ marginBottom: '16px' }}>
           <AlertTriangle size={17} />
