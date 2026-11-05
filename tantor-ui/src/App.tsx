@@ -1,5 +1,5 @@
 import React, { useState, useEffect, Suspense } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useParams, useNavigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { Sidebar } from './components/Sidebar';
 import { ClusterProvider } from './contexts/ClusterContext';
 import { TopNavbar } from './components/TopNavbar';
@@ -29,6 +29,7 @@ const Brokers = React.lazy(() => import('./pages/Brokers').then(m => ({ default:
 const ExternalClusters = React.lazy(() => import('./pages/ExternalClusters').then(m => ({ default: m.ExternalClusters })));
 const ExternalConnectionSettings = React.lazy(() => import('./pages/ExternalConnectionSettings').then(m => ({ default: m.ExternalConnectionSettings })));
 const ClusterDeployment = React.lazy(() => import('./pages/ClusterDeployment').then(m => ({ default: m.ClusterDeployment })));
+const ClusterAddNode = React.lazy(() => import('./pages/ClusterAddNode').then(m => ({ default: m.ClusterAddNode })));
 const LdapSettings = React.lazy(() => import('./pages/LdapSettings').then(m => ({ default: m.LdapSettings })));
 const SchemaRegistry = React.lazy(() => import('./pages/SchemaRegistry').then(m => ({ default: m.SchemaRegistry })));
 const KafkaConnect = React.lazy(() => import('./pages/KafkaConnect').then(m => ({ default: m.KafkaConnect })));
@@ -65,6 +66,12 @@ function DeploymentLogsGuard() {
   return <DeploymentLogs />;
 }
 
+function ClusterDeploymentEntry() {
+  const [params] = useSearchParams();
+  const clusterId = params.get('mode') === 'add' ? params.get('clusterId') : null;
+  return clusterId ? <Navigate to={`/clusters/${encodeURIComponent(clusterId)}/add-node`} replace /> : <ClusterDeployment />;
+}
+
 function App() {
   const { isAdmin } = usePermissions();
 
@@ -83,7 +90,8 @@ function App() {
                   <Route path="/dashboard" element={<Dashboard />} />
                   <Route path="/hosts" element={<Hosts />} />
                   <Route path="/clusters" element={<Clusters />} />
-                  <Route path="/cluster-deployment" element={<ClusterDeployment />} />
+                  <Route path="/cluster-deployment" element={<ClusterDeploymentEntry />} />
+                  <Route path="/clusters/:id/add-node" element={<ClusterAddNode />} />
                   <Route path="/external-clusters" element={<ExternalClusters />} />
                   <Route path="/external-clusters/:id/connection-settings" element={<ExternalConnectionSettings />} />
                   <Route path="/clusters/:id" element={<ClusterDetails />}>

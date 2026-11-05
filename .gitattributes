@@ -1,1 +1,3 @@
 internal-agent/source/internal/deploy/dataservice/precheck.sh text eol=lf
+internal-agent/upgrade-add-node.sh text eol=lf
+internal-agent/SHA256SUMS text eol=lf

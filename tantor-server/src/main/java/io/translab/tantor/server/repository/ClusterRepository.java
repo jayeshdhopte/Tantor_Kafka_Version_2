@@ -35,6 +35,7 @@ public interface ClusterRepository extends JpaRepository<Cluster, UUID> {
     @org.springframework.data.jpa.repository.Query(value = """
             WITH history_reference AS MATERIALIZED (
                 SELECT EXISTS (SELECT 1 FROM kf_add_service WHERE cluster_id = :clusterId)
+                    OR EXISTS (SELECT 1 FROM kf_broker_addition_operation WHERE cluster_id = :clusterId)
                     OR EXISTS (SELECT 1 FROM kf_config_change WHERE cluster_id = :clusterId)
                     OR EXISTS (SELECT 1 FROM kf_rolling_restart_table WHERE cluster_id = :clusterId)
                     OR EXISTS (SELECT 1 FROM kf_cluster_operation_lock WHERE cluster_id = :clusterId) AS keep_parent

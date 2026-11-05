@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
-import { Loader2 } from 'lucide-react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { Loader2, Plus } from 'lucide-react';
+import { usePermissions } from '../hooks/usePermissions';
+import { useActiveClusterJobs } from '../hooks/useActiveClusterJobs';
 import './ClusterNodes.css';
 
 type ClusterType = 'INTERNAL' | 'EXTERNAL';
@@ -50,7 +52,10 @@ const statusClass = (status: AgentStatus | TelemetryStatus) =>
 
 export function ClusterNodes() {
   const { id } = useParams<{ id: string }>();
-  const [, setCluster] = useState<CanonicalClusterIdentity | null>(null);
+  const navigate = useNavigate();
+  const { canManage } = usePermissions();
+  const activeJobs = useActiveClusterJobs();
+  const [cluster, setCluster] = useState<CanonicalClusterIdentity | null>(null);
   const [nodes, setNodes] = useState<CanonicalNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -100,6 +105,10 @@ export function ClusterNodes() {
           <h2 className="cluster-section-heading">Cluster Nodes</h2>
 
         </div>
+        {canManage && <button type="button"
+          disabled={Boolean(error) || !cluster || cluster.type !== 'INTERNAL' || cluster.mode !== 'KRAFT' || activeJobs.some(job => job.clusterId === id)}
+          title={cluster?.type === 'EXTERNAL' || cluster?.mode !== 'KRAFT' ? 'Add Node is available for managed KRaft clusters only.' : 'Check broker readiness. Deployment is not available yet.'}
+          onClick={() => navigate(`/clusters/${id}/add-node`)}><Plus size={16} /> Add Node</button>}
       </header>
 
       {error && <div className="cluster-nodes-error">{error}</div>}

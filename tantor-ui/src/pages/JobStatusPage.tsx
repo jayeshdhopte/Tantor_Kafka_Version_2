@@ -9,7 +9,7 @@ import './JobStatusPage.css';
 type Job = {
   id: string;
   type: string;
-  payload?: string | { clusterName?: string; mode?: string; force?: boolean };
+  payload?: string | { clusterName?: string; mode?: string; force?: boolean; clusterId?: string; operationId?: string };
   status: string;
   requestedBy: string;
   startTime: string;
@@ -169,7 +169,13 @@ export function JobStatusPage() {
   const handleRetry = async () => {
     if (job?.configRecoveryBlockedReason) return;
     try {
-      const res = await fetch(`/api/v1/ui/jobs/${id}/retry`, { method: 'POST' });
+      let endpoint = `/api/v1/ui/jobs/${id}/retry`;
+      if (job?.type === 'BROKER_ADDITION') {
+        const payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
+        if (!payload?.clusterId || !payload?.operationId) throw new Error('Broker operation identity is missing.');
+        endpoint = `/api/v1/ui/clusters/${encodeURIComponent(payload.clusterId)}/add-node/operations/${encodeURIComponent(payload.operationId)}/resume`;
+      }
+      const res = await fetch(endpoint, { method: 'POST' });
       if (res.ok) fetchJob();
       else { const result = await res.json().catch(() => ({})); notifyAction(result.message || result.error || 'Job action failed.'); void fetchJob(); }
     } catch (err) {

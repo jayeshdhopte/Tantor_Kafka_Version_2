@@ -1,5 +1,13 @@
 Tantor Internal Agent
 
+Add Node build: 1.0.0-prod.17-dataservices.4-configchange.10-rollingrestart.1-addnode.4
+Existing enrolled nodes: drain tasks, then use
+  sudo bash upgrade-add-node.sh --tasks-drained
+This preserves agent.yaml and the enrolled identity, backs up the old executable,
+and restarts only the internal agent. Use agent.sh for fresh enrollment.
+Broker Add Node mutations in this adapter require a Linux root agent. Deployment
+and current Kafka-version acceptance status: docs/add-node-deployment-194.md.
+
 Config backup integrity (configchange.10-backupintegrity.1):
 Physical Kafka config backups are read back and SHA-256 compared with captured
 source bytes before mutation. Task receipts allow the matching backend to store

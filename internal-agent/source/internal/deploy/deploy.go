@@ -6,19 +6,23 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
 	"io.translab/tantor-agent/internal/client"
 	"io.translab/tantor-agent/internal/config"
+	"io.translab/tantor-agent/internal/deploy/brokeradd"
 	"io.translab/tantor-agent/internal/deploy/connect"
 	"io.translab/tantor-agent/internal/deploy/dataservice"
 	"io.translab/tantor-agent/internal/deploy/kafka"
 	"io.translab/tantor-agent/internal/deploy/ksqldb"
 	"io.translab/tantor-agent/internal/deploy/monitoring"
 	"io.translab/tantor-agent/internal/deploy/parcel"
+	"io.translab/tantor-agent/internal/deploy/readiness"
 	"io.translab/tantor-agent/internal/deploy/schema"
 	"io.translab/tantor-agent/internal/executor"
 	"io.translab/tantor-agent/internal/taskvalidate"
@@ -45,6 +49,38 @@ func (e *Engine) Execute(ctx context.Context, t *api.Task) (*api.TaskResult, err
 	slog.Info("Executing deployment task", "taskId", t.TaskID, "command", t.Command)
 
 	switch t.Command {
+	case "PREPARE_ADD_BROKER", "FORMAT_ADD_BROKER", "START_ADD_BROKER", "INSPECT_ADD_BROKER":
+		output, err := brokeradd.Run(ctx, t.Command, e.cfg.Agent.HostID, e.cfg.Paths.DataDir, t.Parameters, e.exec, e.client)
+		if err != nil {
+			return e.fail(t, err.Error()), nil
+		}
+		return &api.TaskResult{TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS", LogOutput: output}, nil
+	case "VALIDATE_ADD_BROKER_PLAN":
+		plan, err := readiness.ValidateBrokerPlan(t.Parameters["broker_plan"], e.cfg.Agent.HostID)
+		if err == nil {
+			err = readiness.ValidateBrokerPayload(ctx, plan)
+		}
+		if err != nil {
+			return e.fail(t, err.Error()), nil
+		}
+		encoded, _ := json.Marshal(map[string]any{"schemaVersion": "add-broker/v1", "operationId": plan.OperationID, "hostId": plan.HostID, "contextHash": plan.ContextHash, "payloadVerified": true, "mutationPerformed": false, "rootMutationSupported": runtime.GOOS == "linux" && os.Geteuid() == 0, "supportedActions": []string{"PREPARE_ADD_BROKER", "FORMAT_ADD_BROKER", "START_ADD_BROKER", "INSPECT_ADD_BROKER"}})
+		return &api.TaskResult{TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS", LogOutput: string(encoded)}, nil
+	case "PROBE_ADD_NODE":
+		if err := readiness.Probe(ctx, t.Parameters["readiness_request"], e.cfg.Agent.HostID); err != nil {
+			return e.fail(t, err.Error()), nil
+		}
+		return &api.TaskResult{TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS", LogOutput: "Nonce-bound readiness route probe completed; no service changes"}, nil
+	case "INSPECT_ADD_NODE":
+		request, err := readiness.Validate(t.Parameters["readiness_request"], e.cfg.Agent.HostID)
+		if err != nil {
+			return e.fail(t, err.Error()), nil
+		}
+		report := readiness.Inspect(ctx, request, e.cfg.Agent.HostID, e.exec)
+		encoded, err := json.Marshal(report)
+		if err != nil {
+			return e.fail(t, "Cannot encode readiness evidence"), nil
+		}
+		return &api.TaskResult{TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS", LogOutput: string(encoded)}, nil
 	case "INSTALL_KAFKA":
 		return e.installKafka(ctx, t)
 	case "UPGRADE_KAFKA":

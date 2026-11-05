@@ -771,6 +771,7 @@ public class DeploymentService {
     @Transactional
     public boolean resumeTask(UUID taskId) {
         return taskRepository.findById(taskId).map(task -> {
+            rejectBrokerAdditionTask(task);
             if ("FAILED".equals(task.getStatus()) || "CANCELLED".equals(task.getStatus())) {
                 task.setStatus("PENDING");
                 task.setErrorMsg(null);
@@ -801,6 +802,7 @@ public class DeploymentService {
     @Transactional
     public boolean rollbackTask(UUID clusterId, UUID taskId) {
         return taskRepository.findById(taskId).map(task -> {
+            rejectBrokerAdditionTask(task);
             if ("FAILED".equals(task.getStatus())) {
                 task.setStatus("ROLLBACK_PENDING");
                 taskRepository.save(task);
@@ -824,6 +826,7 @@ public class DeploymentService {
     @Transactional
     public boolean cleanupTask(UUID clusterId, UUID taskId) {
         return taskRepository.findById(taskId).map(task -> {
+            rejectBrokerAdditionTask(task);
             if ("FAILED".equals(task.getStatus()) || "ROLLBACK_DONE".equals(task.getStatus())) {
                 task.setStatus("CLEANUP_PENDING");
                 taskRepository.save(task);
@@ -860,6 +863,10 @@ public class DeploymentService {
         if ("zookeeper".equals(role)) return "zookeeper.properties";
         if ("broker_controller".equals(role)) return "server.properties";
         return "broker.properties";
+    }
+    private void rejectBrokerAdditionTask(Task task) {
+        if(task.getCommand()!=null&&(task.getCommand().contains("_ADD_BROKER")||java.util.Set.of("INSPECT_ADD_NODE","PROBE_ADD_NODE").contains(task.getCommand())))
+            throw new IllegalArgumentException("Use the broker addition operation resume/cancel API; generic task retry, rollback and cleanup are disabled.");
     }
     private Task createTask(UUID clusterId, String hostId, String command) {
         Task task = new Task();

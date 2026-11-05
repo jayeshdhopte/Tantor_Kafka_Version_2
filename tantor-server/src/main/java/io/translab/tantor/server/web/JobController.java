@@ -56,6 +56,8 @@ public class JobController {
     @PostMapping("/{id}/retry")
     public ResponseEntity<?> retryJob(@PathVariable UUID id) {
         try {
+            if(jobService.getJob(id).getType()==io.translab.tantor.server.domain.JobType.BROKER_ADDITION)
+                return ResponseEntity.badRequest().body(java.util.Map.of("error","Use the permission-checked broker operation resume endpoint."));
             return ResponseEntity.ok(jobService.retryJob(id));
         } catch (io.translab.tantor.server.service.ClusterOperationConflictException e) {
             return ResponseEntity.status(409).body(java.util.Map.of("error", e.getMessage()));
