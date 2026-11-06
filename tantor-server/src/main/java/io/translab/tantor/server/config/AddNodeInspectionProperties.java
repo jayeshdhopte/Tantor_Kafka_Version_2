@@ -13,7 +13,10 @@ public class AddNodeInspectionProperties {
     private List<String> excludedHostIps = List.of();
     public boolean allows(String hostId, String hostIp) {
         return allowedHostIds.contains(java.util.Objects.toString(hostId, ""))
-                && !excludedHostIds.contains(java.util.Objects.toString(hostId, ""))
-                && !excludedHostIps.contains(java.util.Objects.toString(hostIp, ""));
+                && !excludes(hostId, hostIp);
+    }
+    public boolean excludes(String hostId, String hostIp) {
+        return excludedHostIds.contains(java.util.Objects.toString(hostId, ""))
+                || excludedHostIps.contains(java.util.Objects.toString(hostIp, ""));
     }
 }

@@ -41,6 +41,8 @@ public class ControllerAdditionPlanningService {
         var cluster=clusters.findWithServicesById(clusterId).orElseThrow(()->error("Cluster not found."));
         if(!"kraft".equalsIgnoreCase(cluster.getMode())||"EXTERNAL".equalsIgnoreCase(cluster.getOriginType())||!"SUCCESS".equals(cluster.getStatus()))throw error("Controller addition requires an available managed KRaft cluster.");
         var host=hosts.findById(Objects.toString(hostId,"")).orElseThrow(()->error("Select an enrolled candidate host."));
+        AddNodeProtectedHostGuard.host(host,inspectionPolicy);
+        AddNodeProtectedHostGuard.cluster(cluster,hosts,inspectionPolicy,mapper);
         Map<String,Object> config=readConfig(cluster.getConfigJson());
         var blockers=new ArrayList<String>();
         if(Boolean.TRUE.equals(host.getRemoved())||!hostStatus.isInfrastructureHost(host)||!"ONLINE".equals(hostStatus.agentConnectivityStatus(host)))blockers.add("Candidate must have an online enrolled infrastructure agent.");

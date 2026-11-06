@@ -2,6 +2,8 @@
 
 Updated: 6 November 2026. Current deployment/acceptance status is recorded in [the 194 deployment report](add-node-deployment-194.md). Phase 1 notes below describe the original local milestone.
 
+The latest execution work and remaining release gates are recorded in [the controller/separate-process execution core report](add-node-expansion-execution-core.md). Phases 5 and 6 are still in progress; their UI/API remain planning-only. Deployment is deferred until all remaining implementation and acceptance gates pass. Only 194 (platform), 191 and 229 (internal agents) are authorized rollout targets; 213 is excluded from all connections and task work.
+
 ## Phase 1: integrated setup preview
 
 Status: implemented locally; not deployed to a VM.

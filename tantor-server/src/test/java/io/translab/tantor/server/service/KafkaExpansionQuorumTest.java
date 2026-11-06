@@ -1,0 +1,29 @@
+package io.translab.tantor.server.service;
+
+import io.translab.tantor.server.config.AddNodeInspectionProperties;
+import org.junit.jupiter.api.Test;
+import java.time.Instant;
+import java.util.*;
+import static io.translab.tantor.server.service.KafkaExpansionQuorum.*;
+import static org.junit.jupiter.api.Assertions.*;
+
+class KafkaExpansionQuorumTest {
+    final Instant now=Instant.parse("2026-11-06T09:00:00Z");
+    final String oldDirectory="b".repeat(22),newDirectory="c".repeat(22);
+    final Map<String,Short> features=Map.of("metadata.version",(short)25,"kraft.version",(short)1);
+    final KafkaExpansionQuorum service=new KafkaExpansionQuorum(new AddNodeInspectionProperties());
+    final Candidate candidate=new Candidate(102,newDirectory,"192.0.2.3:9093");
+    Baseline baseline(boolean dynamic){return new Baseline("a".repeat(22),features,Map.of(101,oldDirectory),Set.of(1,101),dynamic);}
+    Replica replica(int id,String directory,long offset){return new Replica(id,directory,offset,now.minusSeconds(1).toEpochMilli());}
+    Snapshot snapshot(boolean admitted){return new Snapshot("a".repeat(22),features,101,98,admitted?Map.of(101,replica(101,oldDirectory,100),102,replica(102,newDirectory,99)):Map.of(101,replica(101,oldDirectory,100)),admitted?Map.of():Map.of(102,replica(102,newDirectory,99)),Map.of(101,List.of("192.0.2.2:9093"),102,List.of(candidate.endpoint())),now);}
+    Snapshot change(Snapshot source,Map<Integer,Replica> voters,Map<Integer,Replica> observers,Map<Integer,List<String>> endpoints,Instant at){return new Snapshot(source.clusterId(),source.features(),source.leaderId(),source.highWatermark(),voters,observers,endpoints,at);}
+    @Test void observerMustCatchUpBeforeAdmissionAndMembershipIsIndependentlyConfirmed(){var caught=service.caughtUp(baseline(true),snapshot(false),candidate,10,now);assertFalse(caught.voter());assertEquals(1,caught.lag());assertTrue(service.member(baseline(true),snapshot(true),candidate,10,false,now).voter());assertTrue(service.caughtUp(baseline(true),snapshot(true),candidate,10,now).voter());}
+    @Test void expectedObserverOnlyStageIsWaitingRatherThanAnUnrelatedMembershipChange(){assertThrows(NotReady.class,()->service.member(baseline(true),snapshot(false),candidate,10,false,now));}
+    @Test void uncommittedOrStaleObserverCannotBeAdmitted(){var s=snapshot(false);for(var observer:List.of(replica(102,newDirectory,97),new Replica(102,newDirectory,99,null),new Replica(102,newDirectory,99,now.minusSeconds(61).toEpochMilli()),replica(102,"d".repeat(22),99))){var altered=change(s,s.voters(),Map.of(102,observer),s.endpoints(),now);assertThrows(IllegalStateException.class,()->service.caughtUp(baseline(true),altered,candidate,10,now));}}
+    @Test void anotherMutationCannotBeHiddenByAnOtherwiseHealthyCandidate(){var s=snapshot(true);var voters=new HashMap<>(s.voters());voters.put(103,replica(103,"d".repeat(22),100));assertThrows(IllegalStateException.class,()->service.member(baseline(true),change(s,voters,s.observers(),s.endpoints(),now),candidate,10,false,now));voters.remove(103);voters.put(101,replica(101,"e".repeat(22),100));assertThrows(IllegalStateException.class,()->service.member(baseline(true),change(s,voters,s.observers(),s.endpoints(),now),candidate,10,false,now));}
+    @Test void unrelatedObserverAndOldOrFutureSnapshotFailClosed(){var s=snapshot(false);assertThrows(IllegalStateException.class,()->service.caughtUp(baseline(true),change(s,s.voters(),Map.of(103,replica(103,newDirectory,100)),s.endpoints(),now),candidate,10,now));for(var at:List.of(now.minusSeconds(61),now.plusSeconds(6)))assertThrows(IllegalStateException.class,()->service.caughtUp(baseline(true),change(s,s.voters(),s.observers(),s.endpoints(),at),candidate,10,now));}
+    @Test void dynamicMembershipNeedsExactDirectoryAndEndpoint(){var s=snapshot(true);assertThrows(IllegalStateException.class,()->service.member(baseline(true),change(s,s.voters(),s.observers(),Map.of(),now),candidate,10,false,now));var voters=new HashMap<>(s.voters());voters.put(102,replica(102,"AAAAAAAAAAAAAAAAAAAAAA",99));assertThrows(IllegalStateException.class,()->service.member(baseline(true),change(s,voters,s.observers(),s.endpoints(),now),candidate,10,true,now));}
+    @Test void staticZeroDirectoryNeedsIndependentNativeAndConfigEvidence(){var s=snapshot(true);var voters=new HashMap<>(s.voters());voters.put(102,replica(102,"AAAAAAAAAAAAAAAAAAAAAA",99));var staticLive=change(s,voters,Map.of(),Map.of(),now);assertThrows(IllegalStateException.class,()->service.member(baseline(false),staticLive,candidate,10,false,now));assertEquals("NATIVE_STORAGE_AND_STATIC_VOTER_ID",service.member(baseline(false),staticLive,candidate,10,true,now).directoryEvidence());assertThrows(IllegalStateException.class,()->service.caughtUp(baseline(false),snapshot(false),candidate,10,now));}
+    @Test void identityFeaturesAndCommittedLeaderAreMandatory(){var s=snapshot(true);for(var altered:List.of(new Snapshot("z".repeat(22),features,101,98,s.voters(),s.observers(),s.endpoints(),now),new Snapshot(s.clusterId(),Map.of("kraft.version",(short)0),101,98,s.voters(),s.observers(),s.endpoints(),now),new Snapshot(s.clusterId(),features,999,98,s.voters(),s.observers(),s.endpoints(),now)))assertThrows(IllegalStateException.class,()->service.member(baseline(true),altered,candidate,10,false,now));}
+    @Test void invalidOrExcludedEndpointsAreRejectedBeforeCreatingAnyKafkaClient(){var policy=new AddNodeInspectionProperties();policy.setExcludedHostIps(List.of("192.168.3.213"));var guarded=new KafkaExpansionQuorum(policy);for(var endpoints:List.of(List.of("192.168.3.213:9093"),List.of("hostname.invalid:9093"),List.of("192.0.2.1:0"),List.of("192.0.2.1:9093/path")))assertThrows(IllegalArgumentException.class,()->guarded.observe(endpoints));policy.setExcludedHostIps(List.of("hostname.invalid"));assertThrows(IllegalArgumentException.class,()->guarded.observe(List.of("192.0.2.1:9093")));}
+}

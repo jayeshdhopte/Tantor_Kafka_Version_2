@@ -34,6 +34,7 @@ public class AddNodeReadinessService {
     private final KafkaDeploymentProperties deployment;
     private final ObjectMapper mapper;
     private final AuditService audit;
+    private final AddNodeInspectionProperties inspectionPolicy;
 
     public Preview start(UUID clusterId, String hostId) {
         return startForOperation(clusterId,hostId,null);
@@ -47,6 +48,9 @@ public class AddNodeReadinessService {
         if(!brokerRack.matches("[A-Za-z0-9_.-]{0,128}"))throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Broker rack must use up to 128 letters, numbers, dots, underscores or hyphens.");
         Cluster cluster = requireCluster(clusterId);
         Host host = requireHost(hostId);
+        AddNodeProtectedHostGuard.host(host, inspectionPolicy);
+        AddNodeProtectedHostGuard.cluster(cluster, hosts, inspectionPolicy, mapper);
+        policy.getClientProbeHostIds().forEach(peer -> AddNodeProtectedHostGuard.hostId(peer, hosts, inspectionPolicy));
         if (!hostStatus.isInfrastructureHost(host) || !hostStatus.isOnline(host))
             throw new ResponseStatusException(HttpStatus.CONFLICT, "An online enrolled deployment agent is required.");
         Instant started = Instant.now();
@@ -254,6 +258,7 @@ public class AddNodeReadinessService {
         values.put("artifact", Objects.toString(artifactId, "") + ":" + Objects.toString(checksum, ""));
         values.put("policy", mapper.valueToTree(policy));
         values.put("deploymentPolicy", mapper.valueToTree(deployment));
+        values.put("protectedHosts", List.of(inspectionPolicy.getExcludedHostIds(), inspectionPolicy.getExcludedHostIps()));
         try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(json(values).getBytes(StandardCharsets.UTF_8))); }
         catch (Exception e) { throw new IllegalStateException("Cannot fingerprint readiness context.", e); }
     }

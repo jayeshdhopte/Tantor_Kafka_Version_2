@@ -32,6 +32,6 @@ class ControllerAdditionPlanningServiceTest {
  @Test void inspectionAvailabilityRequiresExplicitScopeAndCompatibleAgent(){
   var participant=cluster.getServices().get(2);participant.setId(UUID.randomUUID());var enrolled=new Host();enrolled.setId(participant.getHostId());enrolled.setHostIp("192.0.2.191");enrolled.setAgentVersion("1.0.0-addnode.6");when(hosts.findById(enrolled.getId())).thenReturn(Optional.of(enrolled));when(connectivity.agentConnectivityStatus(enrolled)).thenReturn("ONLINE");
   inspectionPolicy.setAllowedHostIds(List.of(enrolled.getId()));assertTrue(planning.review(cluster.getId(),host.getId()).participants().stream().anyMatch(p->p.inspectionAllowed()));
-  inspectionPolicy.setExcludedHostIps(List.of(enrolled.getHostIp()));assertTrue(planning.review(cluster.getId(),host.getId()).participants().stream().noneMatch(p->p.inspectionAllowed()));
+  inspectionPolicy.setExcludedHostIps(List.of(enrolled.getHostIp()));assertThrows(org.springframework.web.server.ResponseStatusException.class,()->planning.review(cluster.getId(),host.getId()));
   inspectionPolicy.setExcludedHostIps(List.of());enrolled.setAgentVersion("1.0.0-addnode.5");assertTrue(planning.review(cluster.getId(),host.getId()).participants().stream().noneMatch(p->p.inspectionAllowed()));
- }}
+ } @Test void excludedControllerCandidateIsRejectedBeforeKafkaObservation(){inspectionPolicy.setExcludedHostIds(List.of(host.getId()));assertThrows(org.springframework.web.server.ResponseStatusException.class,()->planning.review(cluster.getId(),host.getId()));verifyNoInteractions(kafka);}}

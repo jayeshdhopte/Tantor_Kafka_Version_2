@@ -29,7 +29,8 @@ class AddNodeReadinessServiceTest {
     final AddNodeReadinessProperties policy = new AddNodeReadinessProperties();
     final KafkaDeploymentProperties deployment = new KafkaDeploymentProperties();
     final AuditService audit = mock(AuditService.class);
-    final AddNodeReadinessService service = new AddNodeReadinessService(clusters, hosts, assignments, parcels, tasks, hostStatus, jobs, kafka, catalog, policy, deployment, mapper, audit);
+    final AddNodeInspectionProperties inspectionPolicy = new AddNodeInspectionProperties();
+    final AddNodeReadinessService service = new AddNodeReadinessService(clusters, hosts, assignments, parcels, tasks, hostStatus, jobs, kafka, catalog, policy, deployment, mapper, audit, inspectionPolicy);
     final UUID id = UUID.randomUUID();
     final String artifactId = UUID.randomUUID().toString();
     final Cluster cluster = new Cluster(); final Host host = new Host();
@@ -137,4 +138,13 @@ class AddNodeReadinessServiceTest {
         for(String heap:List.of("1G","2G")){var b=new ClusterServiceAssignment();b.setHostId(heap);b.setRole("broker");b.setConfigJson("{\"heap_xmx\":\""+heap+"\"}");cluster.getServices().add(b);}
         assertThatThrownBy(()->service.start(id,"candidate")).isInstanceOf(ResponseStatusException.class);verify(tasks,never()).saveAndFlush(any());
     }
-}
+    @Test void excludedCandidateCannotDispatchOrObserveKafka() {
+        inspectionPolicy.setExcludedHostIps(List.of(host.getHostIp()));
+        assertThatThrownBy(() -> service.start(id,host.getId())).isInstanceOf(ResponseStatusException.class);
+        verifyNoInteractions(kafka,tasks);
+    }
+    @Test void excludedClientProbeBlocksBeforeKafkaOrAnyTask() {
+        inspectionPolicy.setExcludedHostIds(List.of("protected-client"));policy.setClientProbeHostIds(List.of("protected-client"));
+        assertThatThrownBy(() -> service.start(id,host.getId())).isInstanceOf(ResponseStatusException.class);
+        verifyNoInteractions(kafka,tasks);
+    }}
