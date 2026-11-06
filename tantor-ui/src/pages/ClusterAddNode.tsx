@@ -7,6 +7,7 @@ import { useAddNodeReadiness, type ReadinessCheck } from '../hooks/useAddNodeRea
 import './ClusterAddNode.css';
 import { BrokerAdditionPlanReview } from '../components/BrokerAdditionPlanReview';
 import { ControllerAdditionPlanReview } from '../components/ControllerAdditionPlanReview';
+import { SeparateProcessAdditionPlanReview } from '../components/SeparateProcessAdditionPlanReview';
 
 type Host = {
   id: string;
@@ -93,7 +94,7 @@ function AddNodeWizard({ clusterId }: { clusterId: string }) {
   const [hostId, setHostId] = useState('');
   const [brokerRack, setBrokerRack] = useState('');
   const [step, setStep] = useState<Step>(1);
-  const [role, setRole] = useState<'broker' | 'controller'>('broker');
+  const [role, setRole] = useState<'broker' | 'controller' | 'separate'>('broker');
   const readiness = useAddNodeReadiness(clusterId, hostId, revision, brokerRack);
   const heading = useRef<HTMLHeadingElement>(null);
 
@@ -141,7 +142,7 @@ function AddNodeWizard({ clusterId }: { clusterId: string }) {
   const canPreview = Boolean(canManage && cluster && selectedHost && !unavailableReason(selectedHost, cluster) && !clusterBlocker && !blockingJob);
   const reported = (value: unknown) => (typeof value === 'string' && value.trim()) || (typeof value === 'number' && Number.isFinite(value)) ? String(value) : 'Not reported';
   const next = () => {
-    if (!canPreview || (step === 2 && !readiness.commonPassed) || (step === 3 && (role === 'controller' || !readiness.brokerPassed))) return;
+    if (!canPreview || (step === 2 && !readiness.commonPassed) || (step === 3 && (role !== 'broker' || !readiness.brokerPassed))) return;
     if (step < 4) setStep((step + 1) as Step);
   };
   const evidence = (value: unknown) => value === '' || value === null || value === undefined ? 'Not reported' : typeof value === 'string' ? value : JSON.stringify(value) ?? 'Not reported';
@@ -161,7 +162,7 @@ function AddNodeWizard({ clusterId }: { clusterId: string }) {
       <span aria-current="page">Add Node</span>
     </nav>
     <header className="add-node-header">
-      <div><h1 id="add-node-title">Add Node</h1><p>Add a broker or review controller expansion for an existing managed Kafka cluster.</p></div>
+      <div><h1 id="add-node-title">Add Node</h1><p>Add a broker or review controller and separate-process expansion for an existing managed Kafka cluster.</p></div>
       {canManage && <button className="add-node-button" onClick={refreshInventory} disabled={!inventory && !error}><RefreshCw size={16} /> Refresh inventory</button>}
     </header>
     <div className="add-node-notice"><Info size={18} /><span><strong>Broker readiness.</strong> Checks observe the host and live Kafka cluster. Review the broker plan after checks pass. Final validation runs again before deployment changes the candidate.</span></div>
@@ -229,13 +230,13 @@ function AddNodeWizard({ clusterId }: { clusterId: string }) {
                 </>}
 
                 {step === 3 && <>
-                  <p>Select the process layout for {selectedHost?.hostname || hostId}. Broker execution is available; controller addition currently offers a planning preview.</p>
+                  <p>Select the process layout for {selectedHost?.hostname || hostId}. Broker execution is available; controller and separate-process additions currently offer planning previews.</p>
                   <fieldset className="add-node-roles"><legend className="add-node-sr-only">Kafka process layout</legend>
                     <label className={`add-node-role ${role === 'broker' ? 'selected' : ''}`}><span><input type="radio" name="add-node-role" value="broker" checked={role === 'broker'} onChange={() => setRole('broker')} /><Server size={18} /><strong>Broker</strong></span><p>Stores partitions and serves producer and consumer traffic.</p><small>Broker-only execution</small></label>
                     <label className={`add-node-role ${role === 'controller' ? 'selected' : ''}`}><span><input type="radio" name="add-node-role" value="controller" checked={role === 'controller'} onChange={() => setRole('controller')} /><strong>Controller</strong></span><p>Participates in the metadata quorum.</p><small>Planning preview · execution unavailable</small></label>
-                    <label className="add-node-role disabled"><span><input type="radio" name="add-node-role" value="separate" disabled /><strong>Broker + Controller</strong></span><p>Two separate processes with distinct identities and storage.</p><small>Unavailable · separate-process support comes later</small></label>
+                    <label className={`add-node-role ${role === 'separate' ? 'selected' : ''}`}><span><input type="radio" name="add-node-role" value="separate" checked={role === 'separate'} onChange={() => setRole('separate')} /><strong>Broker + Controller</strong></span><p>Two separate processes with distinct identities and storage.</p><small>Planning preview · execution unavailable</small></label>
                   </fieldset>
-                  {role === 'controller' ? <ControllerAdditionPlanReview clusterId={clusterId} hostId={hostId} /> : <>
+                  {role === 'separate' ? <SeparateProcessAdditionPlanReview clusterId={clusterId} hostId={hostId} brokerRack={brokerRack} /> : role === 'controller' ? <ControllerAdditionPlanReview clusterId={clusterId} hostId={hostId} /> : <>
                   <div className="add-node-notice"><Info size={18} /><span>Adding a broker leaves controller voting membership unchanged. Existing partitions are not automatically moved; reassignment is a separate operation.</span></div>
                   {readiness.preview && checkTable(readiness.preview.checks.filter(check => check.phase === 'BROKER'))}
                   <p>{readiness.brokerPassed ? 'Broker checks passed. Final deployment validation will still be required.' : 'All B01–B11 broker checks must pass before review. Missing remote-probe evidence remains a blocker.'}</p>
@@ -266,7 +267,7 @@ function AddNodeWizard({ clusterId }: { clusterId: string }) {
                 <footer className="add-node-footer">
                   {step === 1 ? <Link className="add-node-button" to={`/clusters/${encodeURIComponent(clusterId)}/nodes`}><ArrowLeft size={16} /> Cancel</Link>
                     : <button className="add-node-button" onClick={() => setStep((step - 1) as Step)}><ArrowLeft size={16} /> Back</button>}
-                  {step < 4 ? <button className="add-node-button primary" disabled={!canPreview || (step === 2 && !readiness.commonPassed) || (step === 3 && (role === 'controller' || !readiness.brokerPassed))} onClick={next}>{['Continue to checks', 'Continue to role', 'Review broker setup'][step - 1]}<ArrowRight size={16} /></button>
+                  {step < 4 ? <button className="add-node-button primary" disabled={!canPreview || (step === 2 && !readiness.commonPassed) || (step === 3 && (role !== 'broker' || !readiness.brokerPassed))} onClick={next}>{['Continue to checks', 'Continue to role', 'Review broker setup'][step - 1]}<ArrowRight size={16} /></button>
                     : null}
                 </footer>
               </section>

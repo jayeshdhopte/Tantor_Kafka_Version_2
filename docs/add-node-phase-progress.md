@@ -33,7 +33,7 @@ The acceptance runner and evidence are in the parent workspace's `ui-verificatio
 | 3 | Broker job execution with final checks, host/ID reservations and safe candidate preparation | Deployed and exercised through the authenticated API; Kafka 4.3.0 candidate prepared, formatted and started as a non-root user |
 | 4 | Verified publication, durable evidence, reconciliation and broker resume | Broker-only 4.3.0 pilot passed: same-operation resume without reformat, stable unfenced registration, unchanged voters, atomic publication and candidate produce/consume |
 | 5 | Script-aligned static controller maintenance and dynamic observer/catch-up/admission | In progress: read-only backend/UI planning implemented; execution, durable recovery and controller pilots pending |
-| 6 | Separate controller and broker processes with controller-first verification | Deferred; resolve source-design difference before implementation |
+| 6 | Separate controller and broker processes with controller-first verification | In progress: two-process planning API/UI implemented; depends on Phase 5 execution and needs parent reservations, native execution/recovery and atomic publication |
 | 7 | Full release acceptance, compatibility certification and deployment documentation | Not implemented |
 
 Phase 2 replaces the old check action with dedicated read-only agent commands and Kafka/catalog observations. The backend/UI and internal agents are deployed, with the 4.3.0 follow-up validated on 6 November. Agents on 213, 229 and 191 preserve their configuration and identities. Broker execution is enabled and broker 102 was successfully published on 191. See [the deployment and readiness verdict](add-node-deployment-194.md) for the scope, evidence and production limits.
@@ -52,6 +52,6 @@ The HTML reference is `Tantor Add Node – Updated 3.html`. The additional Draw.
 
 Both references support the initial broker-only milestone, preserve the existing Kafka identity, keep readiness separate from inventory and treat reassignment as a separate operation. Static controller expansion and automatic partition redistribution are outside this first-release flow.
 
-The Draw.io file proposes one new broker-only or controller-only process per fresh host and one service intent per operation; the HTML reference additionally offers two separate processes on one host. Do not apply its single-node/service cardinality constraints blindly to a future separate-process phase. Resolve that scope and persistence difference before Phase 6.
+The Draw.io file proposes one new broker-only or controller-only process per fresh host and one service intent per operation; the agreed HTML reference additionally offers two separate processes on one fresh host. Phase 6 planning follows that explicit two-process choice: two role-only service identities owned by one parent operation. It does not add a second process to an occupied host. See [the Phase 6 contract and source-order differences](add-node-phase6-separate-process-contract.md). Its execution remains unavailable while the controller dependency and parent-operation safeguards are unfinished.
 
 The ER table names describe logical responsibilities; reconcile them with existing Tantor job/task/service tables instead of creating duplicate operation infrastructure by name alone.

@@ -31,7 +31,7 @@ ADD_NODE permission is mandatory. The response uses `add-controller-review/v1` a
 - Static or dynamic script steps, impact and blockers. An unknown mode selects neither workflow.
 - `status=PLANNING_ONLY` and `executionEnabled=false`, regardless of the broker execution release switch.
 
-The Choose Role screen exposes this planning preview and blocks advancement into broker submission while Controller is selected. Switching back to Broker preserves its existing review/execution flow. Separate-process addition remains disabled for Phase 6.
+The Choose Role screen exposes this planning preview and blocks advancement into broker submission while Controller is selected. Switching back to Broker preserves its existing review/execution flow. Phase 6 now adds a separate two-process planning preview; its execution remains disabled and cannot bypass the unfinished Phase 5 executor. The controller review also returns observed IDs and controller endpoints so the two-process plan can bind their identity and invalidate its context when endpoints change.
 
 ## Static execution contract to implement next
 

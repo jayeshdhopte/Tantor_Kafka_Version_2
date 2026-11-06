@@ -34,7 +34,7 @@ public class ControllerAdditionPlanningService {
                          String quorumMode,Integer proposedControllerId,String artifactId,String artifactChecksum,
                          Instant observedAt,Instant expiresAt,String contextHash,boolean maintenanceRequired,
                          boolean executionEnabled,String status,List<Participant> participants,List<Step> steps,
-                         List<Check> checks,List<String> blockers) {}
+                         List<Check> checks,List<String> blockers,List<Integer> observedNodeIds,List<String> controllerEndpoints) {}
 
     public Review review(UUID clusterId,String hostId) {
         var cluster=clusters.findWithServicesById(clusterId).orElseThrow(()->error("Cluster not found."));
@@ -43,7 +43,7 @@ public class ControllerAdditionPlanningService {
         Map<String,Object> config=readConfig(cluster.getConfigJson());
         var blockers=new ArrayList<String>();
         if(Boolean.TRUE.equals(host.getRemoved())||!hostStatus.isInfrastructureHost(host)||!"ONLINE".equals(hostStatus.agentConnectivityStatus(host)))blockers.add("Candidate must have an online enrolled infrastructure agent.");
-        if(host.getClusterId()!=null||assignments.findReservationsForLiveClusters().stream().anyMatch(s->host.getId().equals(s.getHostId())))blockers.add("Controller-only addition requires a fresh unassigned host. Adding a second process to an occupied host belongs to Phase 6.");
+        if(host.getClusterId()!=null||assignments.findReservationsForLiveClusters().stream().anyMatch(s->host.getId().equals(s.getHostId())))blockers.add("Controller addition requires a fresh unassigned host. The separate-process flow also requires a fresh host; it does not add a second process to an occupied host.");
         if(jobs.getActiveClusterJobs().stream().anyMatch(j->clusterId.toString().equals(j.get("clusterId"))))blockers.add("Resolve the existing cluster operation or retained reservation before planning maintenance.");
         var observation=kafka.observe(cluster,config);
         String mode=Objects.toString(observation.quorumMode(),"UNKNOWN");
@@ -75,8 +75,8 @@ public class ControllerAdditionPlanningService {
         var fingerprint=new TreeMap<String,Object>();fingerprint.put("cluster",List.of(clusterId.toString(),Objects.toString(cluster.getKafkaClusterId(),""),Objects.toString(cluster.getKafkaVersion(),""),Objects.toString(cluster.getConfigJson(),"")));
         fingerprint.put("host",List.of(host.getId(),Objects.toString(host.getHostIp(),""),Objects.toString(host.getAgentVersion(),""),Objects.toString(host.getClusterId(),"")));
         fingerprint.put("members",cluster.getServices().stream().map(s->s.getHostId()+":"+s.getRole()+":"+s.getNodeId()+":"+s.getConfigJson()).sorted().toList());
-        fingerprint.put("observedNodeIds",used);fingerprint.put("quorumMode",mode);fingerprint.put("artifact",artifactId+":"+checksum);fingerprint.put("policy",mapper.valueToTree(policy));
-        return new Review("add-controller-review/v1",clusterId,host.getId(),cluster.getKafkaClusterId(),cluster.getKafkaVersion(),mode,proposed,artifactId,checksum,now,now.plusSeconds(policy.getTtlSeconds()),hash(fingerprint),"STATIC".equals(mode),false,"PLANNING_ONLY",List.copyOf(participants),workflow(mode),observation.checks(),List.copyOf(blockers));
+        fingerprint.put("observedNodeIds",used);fingerprint.put("controllerEndpoints",observation.controllerEndpoints());fingerprint.put("quorumMode",mode);fingerprint.put("artifact",artifactId+":"+checksum);fingerprint.put("policy",mapper.valueToTree(policy));
+        return new Review("add-controller-review/v1",clusterId,host.getId(),cluster.getKafkaClusterId(),cluster.getKafkaVersion(),mode,proposed,artifactId,checksum,now,now.plusSeconds(policy.getTtlSeconds()),hash(fingerprint),"STATIC".equals(mode),false,"PLANNING_ONLY",List.copyOf(participants),workflow(mode),observation.checks(),List.copyOf(blockers),List.copyOf(used),List.copyOf(observation.controllerEndpoints()));
     }
     static List<Step> workflow(String mode) {
         if("STATIC".equals(mode))return List.of(
