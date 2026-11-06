@@ -31,7 +31,7 @@ func (d *Deployer) PatchConfig(ctx context.Context, task *api.Task) (string, err
 	if os.Geteuid() != 0 {
 		return "", fmt.Errorf("targeted Kafka config patch requires a root agent")
 	}
-	configPath, err := validatedPatchPath(task)
+	configPath, err := d.validatedPatchPath(task)
 	if err != nil {
 		return "", err
 	}
@@ -114,7 +114,7 @@ func (d *Deployer) ReadConfigProperty(_ context.Context, task *api.Task) (string
 	if err := validatePatchKey(key); err != nil {
 		return "", err
 	}
-	path, err := validatedPatchPath(task)
+	path, err := d.validatedPatchPath(task)
 	if err != nil {
 		return "", err
 	}
@@ -150,7 +150,7 @@ func (d *Deployer) ReadConfigProperty(_ context.Context, task *api.Task) (string
 // ReadConfigProperties returns editable properties from the active node file.
 // Protected and sensitive keys are omitted before the result leaves the agent.
 func (d *Deployer) ReadConfigProperties(_ context.Context, task *api.Task) (string, error) {
-	path, err := validatedPatchPath(task)
+	path, err := d.validatedPatchPath(task)
 	if err != nil {
 		return "", err
 	}
@@ -202,6 +202,17 @@ func validatePatchKey(key string) error {
 		return fmt.Errorf("property %q cannot be inspected or patched", key)
 	}
 	return nil
+}
+
+func (d *Deployer) validatedPatchPath(task *api.Task) (string, error) {
+	requested := strings.TrimSpace(task.Parameters["config_path"])
+	if strings.HasPrefix(requested, "/etc/tantor-kafka/add-") {
+		if d.cfg == nil {
+			return "", fmt.Errorf("agent identity is required for added-node configuration")
+		}
+		return validateAddedConfig(task, d.cfg.Paths.DataDir, d.cfg.Agent.HostID)
+	}
+	return validatedPatchPath(task)
 }
 
 func validatedPatchPath(task *api.Task) (string, error) {
@@ -329,7 +340,7 @@ func (d *Deployer) BackupDynamicConfig(ctx context.Context, task *api.Task) (str
 	if os.Geteuid() != 0 {
 		return "", fmt.Errorf("dynamic config backup requires a root agent")
 	}
-	configPath, err := validatedPatchPath(task)
+	configPath, err := d.validatedPatchPath(task)
 	if err != nil {
 		return "", err
 	}

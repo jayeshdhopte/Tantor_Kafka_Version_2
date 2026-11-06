@@ -8,9 +8,92 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
+
+func TestNativeConfigurationReplacementPreservesExtendedAttributes(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "controller.properties")
+	if err := os.WriteFile(file, []byte("original"), 0640); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Setxattr(file, "user.tantor-review", []byte("verified-owner"), 0); err == syscall.ENOTSUP {
+		t.Skip("filesystem has no extended attribute support")
+	} else if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := durableReplace(file, "expanded", 0640, info); err != nil {
+		t.Fatal(err)
+	}
+	value := make([]byte, 64)
+	n, err := syscall.Getxattr(file, "user.tantor-review", value)
+	if err != nil || string(value[:n]) != "verified-owner" {
+		t.Fatal("configuration attributes lost", err)
+	}
+}
+func TestFrozenParticipantAliasCannotRetargetEvenToIdenticalConfigBytes(t *testing.T) {
+	root, err := os.MkdirTemp("/var/tmp", "tantor-frozen-alias-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(root)
+	a, b := filepath.Join(root, "a"), filepath.Join(root, "b")
+	for _, dir := range []string{a, b} {
+		if err := os.Mkdir(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "controller.properties"), []byte("node.id=101\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	alias := filepath.Join(root, "current")
+	if err := os.Symlink(a, alias); err != nil {
+		t.Fatal(err)
+	}
+	logical := filepath.Join(alias, "controller.properties")
+	m := Participant{ConfigPath: logical, ResolvedPaths: map[string]string{logical: filepath.Join(a, "controller.properties")}}
+	if _, err := readParticipantFile(context.Background(), m, logical, 1024); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(alias); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(b, alias); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readParticipantFile(context.Background(), m, logical, 1024); err == nil {
+		t.Fatal("retargeted installation alias accepted")
+	}
+}
+func TestCatalogParcelCacheUsesTheEstablishedParentDownloadLayout(t *testing.T) {
+	root, err := os.MkdirTemp("/var/tmp", "tantor-parcel-cache-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(root)
+	parcel := filepath.Join(root, "parcels")
+	if err := os.Mkdir(parcel, 0700); err != nil {
+		t.Fatal(err)
+	}
+	downloads := filepath.Join(root, ".downloads")
+	if err := os.Mkdir(downloads, 0700); err != nil {
+		t.Fatal(err)
+	}
+	raw := archiveFixture(t, nil)
+	if err := os.WriteFile(filepath.Join(downloads, "parcel_kafka_4.3.0.tgz"), raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	m, err := loadManifest(context.Background(), Plan{ParcelDir: parcel, KafkaVersion: "4.3.0", ArtifactSHA256: Digest(string(raw))})
+	if err != nil || len(m.Files) != 6 {
+		t.Fatal("established parcel cache rejected", m, err)
+	}
+}
 
 func TestNativeOwnedFilesRejectSymlinksAndConflictingStaging(t *testing.T) {
 	dir := t.TempDir()

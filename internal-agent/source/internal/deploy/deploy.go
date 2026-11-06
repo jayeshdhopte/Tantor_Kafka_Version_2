@@ -18,6 +18,7 @@ import (
 	"io.translab/tantor-agent/internal/deploy/brokeradd"
 	"io.translab/tantor-agent/internal/deploy/connect"
 	"io.translab/tantor-agent/internal/deploy/dataservice"
+	"io.translab/tantor-agent/internal/deploy/expansion"
 	"io.translab/tantor-agent/internal/deploy/kafka"
 	"io.translab/tantor-agent/internal/deploy/ksqldb"
 	"io.translab/tantor-agent/internal/deploy/monitoring"
@@ -50,6 +51,27 @@ func (e *Engine) Execute(ctx context.Context, t *api.Task) (*api.TaskResult, err
 	slog.Info("Executing deployment task", "taskId", t.TaskID, "command", t.Command)
 
 	switch t.Command {
+	case "INSPECT_QUORUM_RUNTIME":
+		output, err := expansion.InspectRuntime(ctx, t.Parameters["runtime_inspection_request"], e.cfg.Agent.HostID, e.exec)
+		if err != nil {
+			return e.fail(t, err.Error()), nil
+		}
+		return &api.TaskResult{TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS", LogOutput: output}, nil
+	case "EXECUTE_QUORUM_CANDIDATE", "VALIDATE_QUORUM_EXPANSION":
+		if t.Command == "VALIDATE_QUORUM_EXPANSION" && t.Parameters["action"] != "VALIDATE" || t.Command == "EXECUTE_QUORUM_CANDIDATE" && t.Parameters["action"] == "VALIDATE" {
+			return e.fail(t, "Expansion command/action mismatch"), nil
+		}
+		output, err := expansion.RunCandidate(ctx, e.cfg.Agent.HostID, e.cfg.Paths.DataDir, t.Parameters, e.exec, e.client.DownloadArtifactByID)
+		if err != nil {
+			return e.fail(t, err.Error()), nil
+		}
+		return &api.TaskResult{TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS", LogOutput: output}, nil
+	case "EXECUTE_QUORUM_PARTICIPANT":
+		output, err := expansion.RunParticipant(ctx, e.cfg.Agent.HostID, e.cfg.Paths.DataDir, t.Parameters, e.exec)
+		if err != nil {
+			return e.fail(t, err.Error()), nil
+		}
+		return &api.TaskResult{TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS", LogOutput: output}, nil
 	case "INSPECT_ADD_NODE_PROCESS":
 		if runtime.GOOS != "linux" {
 			return e.fail(t, "Kafka process inspection requires a Linux agent"), nil

@@ -1,0 +1,142 @@
+{
+  "schemaVersion": "add-quorum-expansion/v1",
+  "operationId": "12345678-1234-1234-1234-123456789abc",
+  "clusterId": "12345678-1234-1234-1234-123456789abd",
+  "contextHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "candidateHostId": "candidate",
+  "candidateIp": "192.0.2.3",
+  "kafkaClusterId": "aaaaaaaaaaaaaaaaaaaaaa",
+  "kafkaVersion": "4.3.0",
+  "quorumMode": "DYNAMIC",
+  "layout": "SEPARATE",
+  "features": {
+    "metadata.version": 25,
+    "kraft.version": 1
+  },
+  "artifactId": "12345678-1234-1234-1234-123456789abc",
+  "artifactSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "parcelDir": "/opt/tantor/parcels",
+  "javaHome": "/opt/java/jdk21",
+  "runtimeUser": "kafka",
+  "processes": [
+    {
+      "role": "controller",
+      "nodeId": 102,
+      "port": 9093,
+      "dataPaths": [
+        "/data/new-controller/data"
+      ],
+      "metadataPath": "/data/new-controller/metadata",
+      "logPath": "/var/log/new-controller",
+      "heapXmx": "512m",
+      "brokerRack": "",
+      "inherited": {
+        "num.network.threads": "3"
+      },
+      "runtime": {
+        "jmxArtifactId": null,
+        "jmxChecksum": "",
+        "jmxPort": 0,
+        "limitNofile": 100000
+      }
+    },
+    {
+      "role": "broker",
+      "nodeId": 2,
+      "port": 9092,
+      "dataPaths": [
+        "/data/new-broker/data"
+      ],
+      "metadataPath": "",
+      "logPath": "/var/log/new-broker",
+      "heapXmx": "512m",
+      "brokerRack": "",
+      "inherited": {
+        "num.network.threads": "3"
+      },
+      "runtime": {
+        "jmxArtifactId": null,
+        "jmxChecksum": "",
+        "jmxPort": 0,
+        "limitNofile": 100000
+      }
+    }
+  ],
+  "participants": [
+    {
+      "serviceIds": [
+        "12345678-1234-1234-1234-123456789abc"
+      ],
+      "hostId": "existing-broker",
+      "hostIp": "192.0.2.1",
+      "role": "broker",
+      "nodeId": 1,
+      "unit": "broker.service",
+      "configPath": "/opt/kafka/config/broker.properties",
+      "configSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "unitSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "artifactProofSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "runtimeHome": "/opt/kafka",
+      "javaAgents": {},
+      "storage": [
+        {
+          "path": "/data/broker",
+          "directoryId": "ffffffffffffffffffffff"
+        }
+      ],
+      "pid": 42,
+      "startTicks": "123456",
+      "controllerPort": 0
+    },
+    {
+      "serviceIds": [
+        "12345678-1234-1234-1234-123456789abd"
+      ],
+      "hostId": "existing-controller",
+      "hostIp": "192.0.2.2",
+      "role": "controller",
+      "nodeId": 101,
+      "unit": "controller.service",
+      "configPath": "/opt/kafka/config/controller.properties",
+      "configSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "unitSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "artifactProofSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "runtimeHome": "/opt/kafka",
+      "javaAgents": {},
+      "storage": [
+        {
+          "path": "/data/controller",
+          "directoryId": "dddddddddddddddddddddd"
+        }
+      ],
+      "pid": 42,
+      "startTicks": "123456",
+      "controllerPort": 9093
+    }
+  ],
+  "voters": [
+    {
+      "nodeId": 101,
+      "directoryId": "dddddddddddddddddddddd",
+      "hostIp": "192.0.2.2",
+      "port": 9093
+    }
+  ],
+  "excludedHostIds": [
+    "broker6"
+  ],
+  "excludedHostIps": [
+    "192.168.3.213"
+  ],
+  "maintenanceAcknowledged": false,
+  "resourcePolicy": {
+    "minAvailableMemoryMb": 4096,
+    "osReserveMb": 2048,
+    "minDiskGb": 20,
+    "minInodes": 10000,
+    "allowedJavaMajors": [
+      17,
+      21
+    ]
+  }
+}

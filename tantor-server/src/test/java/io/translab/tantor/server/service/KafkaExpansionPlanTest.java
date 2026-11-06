@@ -1,0 +1,19 @@
+package io.translab.tantor.server.service;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.junit.jupiter.api.Test;
+import java.nio.file.*;
+import java.util.*;
+import static org.junit.jupiter.api.Assertions.*;
+
+class KafkaExpansionPlanTest {
+    final ObjectMapper mapper=new ObjectMapper().findAndRegisterModules();
+    String fixture()throws Exception {Path file=Path.of("../internal-agent/source/internal/deploy/expansion/testdata/separate-dynamic-v1.json");if(!Files.exists(file))file=Path.of("internal-agent/source/internal/deploy/expansion/testdata/separate-dynamic-v1.json");return Files.readString(file);}
+    KafkaExpansionPlan plan()throws Exception{return mapper.readValue(fixture(),KafkaExpansionPlan.class);}
+    @Test void backendAndNativeReadTheSameFrozenBytesAndOwnership()throws Exception{var p=plan();p.validate();var frozen=KafkaExpansionPlan.read(mapper,fixture(),BrokerAdditionLedger.hash(fixture()));assertEquals(102,frozen.plan().process("controller").nodeId());assertEquals(2,frozen.plan().process("broker").nodeId());assertEquals(List.of("candidate","existing-broker","existing-controller"),p.reservedHosts());assertNotEquals(p.configPath("controller"),p.configPath("broker"));assertTrue(frozen.steps().stream().noneMatch(s->s.kind()==KafkaExpansionWorkflow.Kind.STOP));assertThrows(IllegalArgumentException.class,()->KafkaExpansionPlan.read(mapper,fixture()+" ",frozen.digest()));}
+    @Test void serializationRoundTripRetainsDigestAndImmutableNestedValues()throws Exception{var frozen=plan().freeze(mapper);var loaded=KafkaExpansionPlan.read(mapper,frozen.raw(),frozen.digest());assertEquals(frozen.plan(),loaded.plan());assertEquals(frozen.steps(),loaded.steps());assertThrows(UnsupportedOperationException.class,()->loaded.plan().processes().clear());assertThrows(UnsupportedOperationException.class,()->loaded.plan().process("broker").inherited().put("node.id","9"));}
+    @Test void sequentialIdsVersionExclusionsAndMissingProofCannotBeOverridden()throws Exception{for(String field:List.of("kafkaVersion","candidateIp","contextHash")){ObjectNode raw=(ObjectNode)mapper.readTree(fixture());raw.put(field,switch(field){case "kafkaVersion"->"4.2.0";case "candidateIp"->"192.168.3.213";default->"";});assertThrows(IllegalArgumentException.class,()->mapper.treeToValue(raw,KafkaExpansionPlan.class).validate());}ObjectNode raw=(ObjectNode)mapper.readTree(fixture());((ObjectNode)raw.path("processes").get(1)).put("nodeId",3);assertThrows(IllegalArgumentException.class,()->mapper.treeToValue(raw,KafkaExpansionPlan.class).validate());}
+    @Test void staticMaintenanceCannotBeImplicitlyAcknowledged()throws Exception{ObjectNode raw=(ObjectNode)mapper.readTree(fixture());raw.put("quorumMode","STATIC");((ObjectNode)raw.path("features")).put("kraft.version",0);assertThrows(IllegalArgumentException.class,()->mapper.treeToValue(raw,KafkaExpansionPlan.class).validate());raw.put("maintenanceAcknowledged",true);var p=mapper.treeToValue(raw,KafkaExpansionPlan.class);p.validate();assertTrue(p.steps().stream().anyMatch(s->s.kind()==KafkaExpansionWorkflow.Kind.STOP));}
+    @Test void runtimeIdentityAndSecretAdaptersCannotBeInherited()throws Exception{for(String key:List.of("node.id","cluster.id","sasl.jaas.config","security.protocol")){ObjectNode raw=(ObjectNode)mapper.readTree(fixture());((ObjectNode)raw.path("processes").get(1).path("inherited")).put(key,"unsafe");assertThrows(IllegalArgumentException.class,()->mapper.treeToValue(raw,KafkaExpansionPlan.class).validate());}}
+}

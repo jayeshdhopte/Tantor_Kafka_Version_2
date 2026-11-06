@@ -3,6 +3,7 @@
 package expansion
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -14,9 +15,20 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"io.translab/tantor-agent/internal/taskvalidate"
 )
+
+func dispatchContext(ctx context.Context, params map[string]string) (context.Context, context.CancelFunc, error) {
+	expires, err := time.Parse(time.RFC3339Nano, params["dispatch_expires_at"])
+	now := time.Now()
+	if err != nil || !expires.After(now) || expires.After(now.Add(125*time.Second)) {
+		return nil, nil, fmt.Errorf("fresh bounded expansion dispatch deadline required")
+	}
+	bounded, cancel := context.WithDeadline(ctx, expires)
+	return bounded, cancel, nil
+}
 
 type Runtime struct {
 	JmxArtifactID string `json:"jmxArtifactId"`
@@ -60,6 +72,7 @@ type Participant struct {
 	ArtifactProofSHA256 string            `json:"artifactProofSha256"`
 	RuntimeHome         string            `json:"runtimeHome"`
 	JavaAgents          map[string]string `json:"javaAgents"`
+	ResolvedPaths       map[string]string `json:"resolvedPaths"`
 	Storage             []Storage         `json:"storage"`
 	PID                 int               `json:"pid"`
 	StartTicks          string            `json:"startTicks"`
@@ -183,6 +196,14 @@ func (p Plan) Validate() error {
 		for file, checksum := range m.JavaAgents {
 			if !safePath(file) || !hash.MatchString(checksum) {
 				return fmt.Errorf("invalid participant Java agent approval")
+			}
+		}
+		if len(m.ResolvedPaths) > 32 {
+			return fmt.Errorf("too many participant path bindings")
+		}
+		for logical, resolved := range m.ResolvedPaths {
+			if !participantBinding(m, logical, resolved) {
+				return fmt.Errorf("path binding is outside participant configuration, unit or storage")
 			}
 		}
 		if owner, exists := hosts[canonicalIP]; exists && owner != m.HostID {
@@ -380,6 +401,23 @@ func safeConfig(p string) bool {
 	switch path.Base(p) {
 	case "server.properties", "broker.properties", "controller.properties":
 		return true
+	}
+	return false
+}
+func unitFilePath(name, unitName string) bool {
+	return path.Clean(name) == name && path.Base(name) == unitName && (strings.HasPrefix(name, "/etc/systemd/system/") || strings.HasPrefix(name, "/usr/lib/systemd/system/") || strings.HasPrefix(name, "/lib/systemd/system/"))
+}
+func participantBinding(m Participant, logical, resolved string) bool {
+	if logical == m.ConfigPath {
+		return safeConfig(resolved) && path.Base(logical) == path.Base(resolved)
+	}
+	if unitFilePath(logical, m.Unit) {
+		return unitFilePath(resolved, m.Unit)
+	}
+	for _, storage := range m.Storage {
+		if logical == path.Join(storage.Path, "meta.properties") {
+			return path.Base(resolved) == "meta.properties" && safePath(path.Dir(resolved))
+		}
 	}
 	return false
 }

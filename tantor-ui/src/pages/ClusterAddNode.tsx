@@ -142,7 +142,7 @@ function AddNodeWizard({ clusterId }: { clusterId: string }) {
   const canPreview = Boolean(canManage && cluster && selectedHost && !unavailableReason(selectedHost, cluster) && !clusterBlocker && !blockingJob);
   const reported = (value: unknown) => (typeof value === 'string' && value.trim()) || (typeof value === 'number' && Number.isFinite(value)) ? String(value) : 'Not reported';
   const next = () => {
-    if (!canPreview || (step === 2 && !readiness.commonPassed) || (step === 3 && (role !== 'broker' || !readiness.brokerPassed))) return;
+    if (!canPreview || (step === 2 && !readiness.commonPassed) || (step === 3 && role !== 'controller' && !readiness.brokerPassed)) return;
     if (step < 4) setStep((step + 1) as Step);
   };
   const evidence = (value: unknown) => value === '' || value === null || value === undefined ? 'Not reported' : typeof value === 'string' ? value : JSON.stringify(value) ?? 'Not reported';
@@ -188,7 +188,7 @@ function AddNodeWizard({ clusterId }: { clusterId: string }) {
               </ol>
 
               <section className="add-node-panel" aria-labelledby="add-node-step-heading">
-                <h2 id="add-node-step-heading" ref={heading} tabIndex={-1}>{['Select a registered host', 'Common readiness checks', 'Choose the Kafka process layout', 'Review broker setup'][step - 1]}</h2>
+                <h2 id="add-node-step-heading" ref={heading} tabIndex={-1}>{['Select a registered host', 'Common readiness checks', 'Choose the Kafka process layout', 'Review selected layout'][step - 1]}</h2>
                 {step === 1 && <>
                   <p>Cluster settings are inherited. Selecting a host does not assign it to this cluster.</p>
                   <div className="add-node-fields">
@@ -230,13 +230,13 @@ function AddNodeWizard({ clusterId }: { clusterId: string }) {
                 </>}
 
                 {step === 3 && <>
-                  <p>Select the process layout for {selectedHost?.hostname || hostId}. Broker execution is available; controller and separate-process additions currently offer planning previews.</p>
+                  <p>Select the process layout for {selectedHost?.hostname || hostId}. Final review checks the selected layout and shows release availability before deployment.</p>
                   <fieldset className="add-node-roles"><legend className="add-node-sr-only">Kafka process layout</legend>
                     <label className={`add-node-role ${role === 'broker' ? 'selected' : ''}`}><span><input type="radio" name="add-node-role" value="broker" checked={role === 'broker'} onChange={() => setRole('broker')} /><Server size={18} /><strong>Broker</strong></span><p>Stores partitions and serves producer and consumer traffic.</p><small>Broker-only execution</small></label>
                     <label className={`add-node-role ${role === 'controller' ? 'selected' : ''}`}><span><input type="radio" name="add-node-role" value="controller" checked={role === 'controller'} onChange={() => setRole('controller')} /><strong>Controller</strong></span><p>Participates in the metadata quorum.</p><small>Planning preview · execution unavailable</small></label>
                     <label className={`add-node-role ${role === 'separate' ? 'selected' : ''}`}><span><input type="radio" name="add-node-role" value="separate" checked={role === 'separate'} onChange={() => setRole('separate')} /><strong>Broker + Controller</strong></span><p>Two separate processes with distinct identities and storage.</p><small>Planning preview · execution unavailable</small></label>
                   </fieldset>
-                  {role === 'separate' ? <SeparateProcessAdditionPlanReview clusterId={clusterId} hostId={hostId} brokerRack={brokerRack} /> : role === 'controller' ? <ControllerAdditionPlanReview clusterId={clusterId} hostId={hostId} /> : <>
+                  {role !== 'broker' ? <p>The final review verifies existing participant runtimes, the live quorum and the selected process layout. Static quorum expansion requires planned broker and controller downtime.</p> : <>
                   <div className="add-node-notice"><Info size={18} /><span>Adding a broker leaves controller voting membership unchanged. Existing partitions are not automatically moved; reassignment is a separate operation.</span></div>
                   {readiness.preview && checkTable(readiness.preview.checks.filter(check => check.phase === 'BROKER'))}
                   <p>{readiness.brokerPassed ? 'Broker checks passed. Final deployment validation will still be required.' : 'All B01–B11 broker checks must pass before review. Missing remote-probe evidence remains a blocker.'}</p>
@@ -245,6 +245,7 @@ function AddNodeWizard({ clusterId }: { clusterId: string }) {
                 </>}
 
                 {step === 4 && <>
+                  {role === 'separate' ? <SeparateProcessAdditionPlanReview clusterId={clusterId} hostId={hostId} brokerRack={brokerRack} commonPreview={readiness.preview} /> : role === 'controller' ? <ControllerAdditionPlanReview clusterId={clusterId} hostId={hostId} commonPreview={readiness.preview} /> : <>
                   <p>Review the selected host, inherited settings and proposed broker plan.</p>
                   <dl className="add-node-review">
                     <dt>Cluster</dt><dd>{cluster.name}</dd>
@@ -261,13 +262,14 @@ function AddNodeWizard({ clusterId }: { clusterId: string }) {
                   </dl>
                   {canPreview && readiness.preview && readiness.commonPassed && readiness.brokerPassed && <BrokerAdditionPlanReview key={`${readiness.preview.previewId}:${readiness.preview.contextHash}`} clusterId={clusterId} preview={readiness.preview} />}
                   <div className="add-node-notice warning"><CircleAlert size={18} /><span>Review does not reserve a host or node ID. An accepted deployment job reserves them and repeats final checks before changing the candidate.</span></div>
+                  </>}
                 </>}
 
                 {!canPreview && step > 1 && <div className="add-node-notice warning" role="alert">This selection is no longer available. Return to host selection or refresh inventory.</div>}
                 <footer className="add-node-footer">
                   {step === 1 ? <Link className="add-node-button" to={`/clusters/${encodeURIComponent(clusterId)}/nodes`}><ArrowLeft size={16} /> Cancel</Link>
                     : <button className="add-node-button" onClick={() => setStep((step - 1) as Step)}><ArrowLeft size={16} /> Back</button>}
-                  {step < 4 ? <button className="add-node-button primary" disabled={!canPreview || (step === 2 && !readiness.commonPassed) || (step === 3 && (role !== 'broker' || !readiness.brokerPassed))} onClick={next}>{['Continue to checks', 'Continue to role', 'Review broker setup'][step - 1]}<ArrowRight size={16} /></button>
+                  {step < 4 ? <button className="add-node-button primary" disabled={!canPreview || (step === 2 && !readiness.commonPassed) || (step === 3 && role !== 'controller' && !readiness.brokerPassed)} onClick={next}>{['Continue to checks', 'Continue to role', 'Review selected layout'][step - 1]}<ArrowRight size={16} /></button>
                     : null}
                 </footer>
               </section>

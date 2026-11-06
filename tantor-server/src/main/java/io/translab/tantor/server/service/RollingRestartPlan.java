@@ -12,8 +12,13 @@ public final class RollingRestartPlan {
     }
     public static String unit(ClusterServiceAssignment service) {
         if(service.getHostId().startsWith("external:")) { try { return new com.fasterxml.jackson.databind.ObjectMapper().readTree(service.getConfigJson()).get("service_name").asText(); } catch(Exception e){throw new IllegalArgumentException("Discovered service name missing",e);} }
+        if(service.getConfigJson()!=null&&!service.getConfigJson().isBlank())try{
+            var config=new com.fasterxml.jackson.databind.ObjectMapper().readTree(service.getConfigJson());
+            if(config.hasNonNull("service_name")&&!config.path("service_name").asText().isBlank())return recordedUnit(config.path("service_name").asText());
+        }catch(com.fasterxml.jackson.core.JsonProcessingException e){throw new IllegalArgumentException("Recorded Kafka service configuration is invalid.",e);}
         return unit(service.getRole());
     }
+    static String recordedUnit(String value){if(value==null||!value.matches("[A-Za-z0-9][A-Za-z0-9_@.-]{0,180}")||value.contains(".."))throw new IllegalArgumentException("Recorded Kafka systemd unit is invalid.");return value.endsWith(".service")?value.substring(0,value.length()-8):value;}
     public static String unit(String role) {
         return switch (role) {
             case "controller" -> "controller";

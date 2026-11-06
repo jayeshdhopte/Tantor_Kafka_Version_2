@@ -29,7 +29,7 @@ public class ControllerAdditionPlanningService {
     private final io.translab.tantor.server.config.AddNodeInspectionProperties inspectionPolicy;
 
     public record Participant(String hostId,String role,Integer nodeId,String serviceName,String configurationPath,
-                              String evidenceStatus,UUID serviceId,boolean inspectionAllowed) {}
+                              String evidenceStatus,UUID serviceId,boolean inspectionAllowed,boolean runtimeInspectionAllowed) {}
     public record Step(String code,String name,String scope,String script) {}
     public record Review(String schemaVersion,UUID clusterId,String hostId,String kafkaClusterId,String kafkaVersion,
                          String quorumMode,Integer proposedControllerId,String artifactId,String artifactChecksum,
@@ -60,12 +60,13 @@ public class ControllerAdditionPlanningService {
             if(service.getRole()==null||!(service.getRole().contains("broker")||service.getRole().contains("controller")))continue;
             if(service.getNodeId()!=null)used.add(service.getNodeId());
             var sc=readConfig(service.getConfigJson());
+            var reference=KafkaProcessReference.resolve(cluster,service,mapper);
             // Inventory references are not represented as fresh process/file observations.
             var participantHost=hosts.findById(service.getHostId()).orElse(null);
             boolean inspectable=participantHost!=null && inspectionPolicy.allows(participantHost.getId(),participantHost.getHostIp())
                     && AddNodeProcessInspectionService.supportedAgent(participantHost.getAgentVersion())
-                    && "ONLINE".equals(hostStatus.agentConnectivityStatus(participantHost)) && !text(sc,"service_name").isBlank() && !text(sc,"config_path").isBlank();
-            participants.add(new Participant(service.getHostId(),service.getRole(),service.getNodeId(),text(sc,"service_name"),text(sc,"config_path"),"RUNTIME_INSPECTION_REQUIRED",service.getId(),inspectable));
+                    && "ONLINE".equals(hostStatus.agentConnectivityStatus(participantHost)) && !reference.unit().isBlank() && !reference.configPath().isBlank();
+            participants.add(new Participant(service.getHostId(),service.getRole(),service.getNodeId(),reference.unit().replaceFirst("\\.service$",""),reference.configPath(),"RUNTIME_INSPECTION_REQUIRED",service.getId(),inspectable,inspectable&&KafkaExpansionRuntimeInspection.supported(participantHost.getAgentVersion())));
         }
         participants.sort(Comparator.comparing(Participant::hostId).thenComparing(Participant::role));
         if(participants.stream().noneMatch(p->p.role().contains("controller")))blockers.add("No existing controller assignment is available for a reviewed quorum baseline.");
@@ -82,6 +83,7 @@ public class ControllerAdditionPlanningService {
         var fingerprint=new TreeMap<String,Object>();fingerprint.put("cluster",List.of(clusterId.toString(),Objects.toString(cluster.getKafkaClusterId(),""),Objects.toString(cluster.getKafkaVersion(),""),Objects.toString(cluster.getConfigJson(),"")));
         fingerprint.put("host",List.of(host.getId(),Objects.toString(host.getHostIp(),""),Objects.toString(host.getAgentVersion(),""),Objects.toString(host.getClusterId(),"")));
         fingerprint.put("members",cluster.getServices().stream().map(s->s.getHostId()+":"+s.getRole()+":"+s.getNodeId()+":"+s.getConfigJson()).sorted().toList());
+        fingerprint.put("processReferences",participants);
         fingerprint.put("observedNodeIds",used);fingerprint.put("controllerEndpoints",observation.controllerEndpoints());fingerprint.put("quorumMode",mode);fingerprint.put("artifact",artifactId+":"+checksum);fingerprint.put("policy",mapper.valueToTree(policy));fingerprint.put("inspectionPolicy",mapper.valueToTree(inspectionPolicy));
         return new Review("add-controller-review/v1",clusterId,host.getId(),cluster.getKafkaClusterId(),cluster.getKafkaVersion(),mode,proposed,artifactId,checksum,now,now.plusSeconds(policy.getTtlSeconds()),hash(fingerprint),"STATIC".equals(mode),false,"PLANNING_ONLY",List.copyOf(participants),workflow(mode),observation.checks(),List.copyOf(blockers),List.copyOf(used),List.copyOf(observation.controllerEndpoints()));
     }

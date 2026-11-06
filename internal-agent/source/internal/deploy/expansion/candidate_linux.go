@@ -31,6 +31,12 @@ func RunCandidate(ctx context.Context, hostID, base string, params map[string]st
 	if err != nil {
 		return "", err
 	}
+	bounded, deadlineCancel, err := dispatchContext(ctx, params)
+	if err != nil {
+		return "", err
+	}
+	defer deadlineCancel()
+	ctx = bounded
 	if hostID != p.CandidateHostID || !safePath(base) {
 		return "", fmt.Errorf("candidate host/runtime scope mismatch")
 	}
@@ -54,6 +60,18 @@ func RunCandidate(ctx context.Context, hostID, base string, params map[string]st
 		return "", err
 	}
 	env := &nativeCandidateEnvironment{dir: dir, exec: e, download: download}
+	if params["action"] == "VALIDATE" {
+		if err = env.ValidateArtifact(ctx, p); err != nil {
+			return "", err
+		}
+		for _, process := range p.Processes {
+			if err = env.ValidateFresh(ctx, p, process); err != nil {
+				return "", err
+			}
+		}
+		raw, err := json.Marshal(map[string]any{"schemaVersion": "add-quorum-capability/v1", "operationId": p.OperationID, "hostId": hostID, "planDigest": params["plan_digest"], "contextHash": p.ContextHash, "payloadVerified": true, "candidateReady": true, "rootMutationSupported": true, "observedAt": time.Now().UTC(), "supportedCommands": []string{"EXECUTE_QUORUM_CANDIDATE", "EXECUTE_QUORUM_PARTICIPANT", "VALIDATE_QUORUM_EXPANSION"}})
+		return string(raw), err
+	}
 	var proof *ControllerProof
 	if raw := params["controller_proof"]; raw != "" {
 		if len(raw) > 16384 || json.Unmarshal([]byte(raw), &proof) != nil {
@@ -108,11 +126,8 @@ func (e *nativeCandidateEnvironment) ValidateArtifact(ctx context.Context, p Pla
 		return err
 	}
 	home := filepath.Join(p.ParcelDir, "kafka", p.KafkaVersion)
-	for name, expected := range m.Files {
-		actual, err := fileSHA256(ctx, filepath.Join(home, name), 256*1024*1024)
-		if err != nil || actual != expected {
-			return fmt.Errorf("candidate executable payload differs from catalog distribution")
-		}
+	if err = verifyRuntimePayload(ctx, m, home); err != nil {
+		return err
 	}
 	e.manifest = &m
 	return nil
@@ -385,11 +400,14 @@ func (e *nativeCandidateEnvironment) Format(ctx context.Context, p Plan, c Proce
 			return err
 		}
 	}
-	args := []string{"format", "--cluster-id", p.KafkaClusterID, "--config", p.ConfigPath(c.Role)}
+	return runKafkaCLI(ctx, p, c, "kafka-storage.sh", formatArguments(p, c, p.ConfigPath(c.Role))...)
+}
+func formatArguments(p Plan, c Process, config string) []string {
+	args := []string{"format", "--cluster-id", p.KafkaClusterID, "--config", config}
 	if p.QuorumMode == "DYNAMIC" && c.Role == "controller" {
 		args = append(args, "--no-initial-controllers")
 	}
-	return runKafkaCLI(ctx, p, c, "kafka-storage.sh", args...)
+	return args
 }
 func (e *nativeCandidateEnvironment) Start(ctx context.Context, p Plan, c Process) error {
 	if _, _, err := e.exec.Run(ctx, "systemctl", "daemon-reload"); err != nil {

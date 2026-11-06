@@ -60,6 +60,11 @@ public class KafkaExpansionQuorum {
             throw new NotReady("Observer catch-up timestamp is unavailable or stale.");
         return new Verification(false,"OBSERVER_API_DIRECTORY",lag,live.observedAt());
     }
+    public void healthyBaseline(Baseline baseline,Snapshot live,int maxLag,Instant now){
+        identity(baseline,live,maxLag,now);requireVoters(baseline,live,false,-1);
+        for(int observer:live.observers().keySet())if(!baseline.knownNodeIds().contains(observer))throw new IllegalStateException("An unrelated metadata observer appeared before expansion.");
+        for(var voter:live.voters().values())lag(live,voter,maxLag);
+    }
     public Verification member(Baseline baseline, Snapshot live, Candidate candidate, int maxLag, boolean staticConfigsVerified, Instant now) {
         common(baseline,live,candidate,maxLag,now);
         if(!live.voters().containsKey(candidate.nodeId())) {
@@ -82,13 +87,16 @@ public class KafkaExpansionQuorum {
         return new Verification(true,evidence,lag(live,replica,maxLag),live.observedAt());
     }
     private void common(Baseline baseline,Snapshot live,Candidate candidate,int maxLag,Instant now) {
-        if(maxLag<0 || !Objects.equals(baseline.clusterId(),live.clusterId()) || !baseline.features().equals(live.features()) || live.observedAt()==null
-                || live.observedAt().isBefore(now.minusSeconds(60)) || live.observedAt().isAfter(now.plusSeconds(5)) || live.highWatermark()<0 || !live.voters().containsKey(live.leaderId()))
-            throw new IllegalStateException("Quorum identity, finalized features, leader or freshness changed.");
+        identity(baseline,live,maxLag,now);
         if(candidate.nodeId()<0 || candidate.directoryId()==null || !candidate.directoryId().matches("[A-Za-z0-9_-]{22}") || ZERO_DIRECTORY.equals(candidate.directoryId()) || baseline.knownNodeIds().contains(candidate.nodeId()))
             throw new IllegalStateException("Candidate identity collides with the frozen baseline.");
         for(int observer:live.observers().keySet())if(observer!=candidate.nodeId() && !baseline.knownNodeIds().contains(observer))throw new IllegalStateException("An unrelated metadata observer appeared during expansion.");
         for(var voter:live.voters().values())lag(live,voter,maxLag);
+    }
+    private void identity(Baseline baseline,Snapshot live,int maxLag,Instant now){
+        if(maxLag<0 || !Objects.equals(baseline.clusterId(),live.clusterId()) || !baseline.features().equals(live.features()) || live.observedAt()==null
+                || live.observedAt().isBefore(now.minusSeconds(60)) || live.observedAt().isAfter(now.plusSeconds(5)) || live.highWatermark()<0 || !live.voters().containsKey(live.leaderId()))
+            throw new IllegalStateException("Quorum identity, finalized features, leader or freshness changed.");
     }
     private void requireVoters(Baseline baseline,Snapshot live,boolean expanded,int candidate) {
         var ids=new HashSet<>(baseline.voters().keySet());if(expanded)ids.add(candidate);

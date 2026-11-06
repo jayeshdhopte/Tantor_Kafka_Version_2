@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { QuorumExpansionExecution } from './QuorumExpansionExecution';
+import type { ReadinessPreview } from '../hooks/useAddNodeReadiness';
 import { ParticipantInspectionTable, type InspectionParticipant } from './ParticipantInspectionTable';
 
 type Process = {
@@ -15,12 +17,16 @@ type Review = {
   contextHash: string; participants: InspectionParticipant[];
 };
 
-export function SeparateProcessAdditionPlanReview(props: { clusterId: string; hostId: string; brokerRack: string }) {
+export function SeparateProcessAdditionPlanReview(props: { clusterId: string; hostId: string; brokerRack: string; commonPreview: ReadinessPreview | null }) {
   return <SeparateReviewSession key={`${props.clusterId}:${props.hostId}:${props.brokerRack}`} {...props} />;
 }
 
-function SeparateReviewSession({ clusterId, hostId, brokerRack }: { clusterId: string; hostId: string; brokerRack: string }) {
+function SeparateReviewSession({ clusterId, hostId, brokerRack, commonPreview }: { clusterId: string; hostId: string; brokerRack: string; commonPreview: ReadinessPreview | null }) {
   const [review, setReview] = useState<Review | null>(null);
+  const [runtimeEvidence, setRuntimeEvidence] = useState<Record<string, string>>({});
+  const onRuntimeEvidence = useCallback((serviceId: string, taskId: string | null) => {
+    setRuntimeEvidence(previous => { if ((previous[serviceId] || null) === taskId) return previous; const next = { ...previous }; if (taskId) next[serviceId] = taskId; else delete next[serviceId]; return next; });
+  }, []);
   const [error, setError] = useState('');
   const [expired, setExpired] = useState(false);
   const [revision, setRevision] = useState(0);
@@ -67,7 +73,7 @@ function SeparateReviewSession({ clusterId, hostId, brokerRack }: { clusterId: s
       <h4>Two-process readiness</h4>
       <p>A broker-only readiness pass does not validate this layout. Both JVMs need resource, port and storage checks.</p>
       <ul>{review.checks.filter(check => check.phase === 'SEPARATE').map(check => <li key={check.code}><strong>{check.name} · {check.status}</strong><p>{check.expected}<br />{check.observed}</p></li>)}</ul>
-      {review.participants?.length > 0 && <><h4>Existing participant observations</h4><ParticipantInspectionTable clusterId={clusterId} contextHash={review.contextHash} participants={review.participants} /></>}
+      {review.participants?.length > 0 && <><h4>Existing participant observations</h4><ParticipantInspectionTable clusterId={clusterId} contextHash={review.contextHash} participants={review.participants} onRuntimeEvidence={onRuntimeEvidence} /></>}
       <h4>Controller-first workflow</h4>
       <ol>{review.steps.map(step => <li key={step.code}><strong>{step.name}</strong><p>{step.scope}<br /><small>{step.script}</small></p></li>)}</ol>
       <h4>Failure and resume behavior required before execution</h4>
@@ -76,7 +82,7 @@ function SeparateReviewSession({ clusterId, hostId, brokerRack }: { clusterId: s
       <p>No host/ID reservation, job, agent command or membership publication is created by this review.</p>
     </>}
     <button className="add-node-button" onClick={() => { setReview(null); setError(''); setExpired(false); setRevision(value => value + 1); }}>Refresh separate-process plan</button>
-    <button className="add-node-button primary" disabled>Separate-process execution unavailable</button>
+    {review && !expired && <QuorumExpansionExecution clusterId={clusterId} hostId={hostId} layout="SEPARATE" brokerRack={brokerRack} commonPreview={commonPreview} runtimeTaskIds={Object.values(runtimeEvidence)} expectedParticipants={new Set(review.participants.map(p => p.serviceId).filter(Boolean)).size} maintenanceRequired={review.maintenanceRequired} />}
   </section>;
 }
 

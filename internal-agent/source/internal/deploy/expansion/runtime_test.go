@@ -46,6 +46,22 @@ type runtimeFiles struct {
 	fail      string
 }
 
+func (f runtimeFiles) Canonical(_ context.Context, p string) (string, error) {
+	return path.Clean(p), nil
+}
+func TestKafkaLauncherBinParentClasspathIsVerifiedByCanonicalBytes(t *testing.T) {
+	m, f, args := runtimeFixture()
+	before, err := VerifyRuntime(context.Background(), m, "/opt/kafka", args[len(args)-1], args, nil, f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	args[3] = strings.ReplaceAll(args[3], "/opt/kafka/libs/", "/opt/kafka/bin/../libs/")
+	after, err := VerifyRuntime(context.Background(), m, "/opt/kafka", args[len(args)-1], args, nil, f)
+	if err != nil || before != after {
+		t.Fatal("standard Kafka launcher classpath rejected", after, err)
+	}
+}
+
 func (f runtimeFiles) SHA256(_ context.Context, p string) (string, error) {
 	if p == f.fail {
 		return "", errors.New("changed inode")

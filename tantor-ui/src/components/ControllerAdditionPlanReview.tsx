@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { QuorumExpansionExecution } from './QuorumExpansionExecution';
+import type { ReadinessPreview } from '../hooks/useAddNodeReadiness';
 import { ParticipantInspectionTable, type InspectionParticipant } from './ParticipantInspectionTable';
 
 type Review = {
@@ -9,11 +11,15 @@ type Review = {
   steps: { code: string; name: string; scope: string; script: string }[]; blockers: string[];
 };
 
-export function ControllerAdditionPlanReview({ clusterId, hostId }: { clusterId: string; hostId: string }) {
-  return <ControllerReviewSession key={`${clusterId}:${hostId}`} clusterId={clusterId} hostId={hostId} />;
+export function ControllerAdditionPlanReview({ clusterId, hostId, commonPreview }: { clusterId: string; hostId: string; commonPreview: ReadinessPreview | null }) {
+  return <ControllerReviewSession key={`${clusterId}:${hostId}`} clusterId={clusterId} hostId={hostId} commonPreview={commonPreview} />;
 }
-function ControllerReviewSession({ clusterId, hostId }: { clusterId: string; hostId: string }) {
+function ControllerReviewSession({ clusterId, hostId, commonPreview }: { clusterId: string; hostId: string; commonPreview: ReadinessPreview | null }) {
   const [review, setReview] = useState<Review | null>(null);
+  const [runtimeEvidence, setRuntimeEvidence] = useState<Record<string, string>>({});
+  const onRuntimeEvidence = useCallback((serviceId: string, taskId: string | null) => {
+    setRuntimeEvidence(previous => { if ((previous[serviceId] || null) === taskId) return previous; const next = { ...previous }; if (taskId) next[serviceId] = taskId; else delete next[serviceId]; return next; });
+  }, []);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
   const [expired, setExpired] = useState(false);
@@ -49,12 +55,12 @@ function ControllerReviewSession({ clusterId, hostId }: { clusterId: string; hos
       </dl>
       {expired && <p role="alert">This review expired. Refresh it before discussing the maintenance plan.</p>}
       <h4>Existing services in scope</h4>
-      <ParticipantInspectionTable clusterId={clusterId} contextHash={review.contextHash} participants={review.participants} />
+      <ParticipantInspectionTable clusterId={clusterId} contextHash={review.contextHash} participants={review.participants} onRuntimeEvidence={onRuntimeEvidence} />
       <h4>Workflow mapped to your scripts</h4>
       <ol>{review.steps.map(s => <li key={s.code}><strong>{s.name}</strong><p>{s.scope}<br /><small>{s.script}</small></p></li>)}</ol>
       <h4>Execution blockers</h4><ul>{review.blockers.map(b => <li key={b}>{b}</li>)}</ul>
     </>}
     <button className="add-node-button" onClick={() => { setReview(null); setError(''); setExpired(false); setRevision(v => v + 1); }}>Refresh controller plan</button>
-    <button className="add-node-button primary" disabled>Controller execution unavailable</button>
+    {review && !expired && <QuorumExpansionExecution clusterId={clusterId} hostId={hostId} layout="CONTROLLER" commonPreview={commonPreview} runtimeTaskIds={Object.values(runtimeEvidence)} expectedParticipants={new Set(review.participants.map(p => p.serviceId).filter(Boolean)).size} maintenanceRequired={review.maintenanceRequired} />}
   </section>;
 }

@@ -422,6 +422,7 @@ public class DeploymentService {
             if (configPath != null && !configPath.isBlank()) {
                 params.put("config_path", configPath.trim());
             }
+            String recordedUnit=recordedServiceName(configJsonStr,normalizedRole);params.put("service_name",recordedUnit);params.put("systemd_service",recordedUnit);
             if (propertiesTemplate != null && !propertiesTemplate.isBlank()) {
                 if ("controller".equals(normalizedRole)) {
                     params.put("controller_properties_template", propertiesTemplate);
@@ -461,8 +462,7 @@ public class DeploymentService {
             params.put("role", normalizedRole);
             params.put("service_role", normalizedRole);
             params.put("node_id", nodeId);
-            params.put("service_name", systemdServiceName(normalizedRole));
-            params.put("systemd_service", systemdServiceName(normalizedRole));
+            String recordedUnit=recordedServiceName(configJsonStr,normalizedRole);params.put("service_name",recordedUnit);params.put("systemd_service",recordedUnit);
             params.put("config_path", configPath.trim());
             params.put("config_changes_json", objectMapper.writeValueAsString(changes));
             params.put("expected_values_json", objectMapper.writeValueAsString(expected));
@@ -854,6 +854,7 @@ public class DeploymentService {
         if ("broker_controller".equals(role) || "broker_zookeeper".equals(role)) return "kafka";
         return "broker";
     }
+    private String recordedServiceName(String raw,String role)throws JsonProcessingException{if(raw!=null&&!raw.isBlank()){var config=objectMapper.readTree(raw);String value=config.path("service_name").asText(config.path("systemd_service").asText(""));if(!value.isBlank())return RollingRestartPlan.recordedUnit(value);}return systemdServiceName(role);}
 
     private String configFileForRole(String role, String mode) {
         if ("zookeeper".equalsIgnoreCase(mode)) {
@@ -865,6 +866,8 @@ public class DeploymentService {
         return "broker.properties";
     }
     private void rejectBrokerAdditionTask(Task task) {
+        if(java.util.Set.of("INSPECT_QUORUM_RUNTIME","EXECUTE_QUORUM_CANDIDATE","EXECUTE_QUORUM_PARTICIPANT","VALIDATE_QUORUM_EXPANSION").contains(java.util.Objects.toString(task.getCommand(),"")))
+            throw new IllegalArgumentException("Use the same quorum expansion operation to reconcile/resume; generic task retry, rollback and cleanup are disabled.");
         if ("INSPECT_ADD_NODE_PROCESS".equals(task.getCommand()))
             throw new IllegalArgumentException("Request a fresh Add Node process inspection; generic retry, rollback and cleanup are disabled.");
         if(task.getCommand()!=null&&(task.getCommand().contains("_ADD_BROKER")||java.util.Set.of("INSPECT_ADD_NODE","PROBE_ADD_NODE").contains(task.getCommand())))

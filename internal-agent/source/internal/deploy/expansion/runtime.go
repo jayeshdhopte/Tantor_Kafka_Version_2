@@ -132,6 +132,7 @@ func (r *contextReader) Read(b []byte) (int, error) {
 // RuntimeFiles must reject symlinks, special files, changes while reading and
 // unbounded data. Keeping that I/O at the adapter boundary enables fault tests.
 type RuntimeFiles interface {
+	Canonical(context.Context, string) (string, error)
 	SHA256(context.Context, string) (string, error)
 	Libraries(context.Context, string) ([]string, error)
 }
@@ -168,15 +169,23 @@ func VerifyRuntime(ctx context.Context, m ArtifactManifest, home, config string,
 				return proof, fmt.Errorf("unexpected Kafka application argument")
 			}
 			agent := strings.SplitN(strings.TrimPrefix(arg, "-javaagent:"), "=", 2)[0]
-			expected := approvedAgents[agent]
-			if !safePath(agent) || !hash.MatchString(expected) || agentPaths[agent] {
+			resolved, err := files.Canonical(ctx, agent)
+			if err != nil {
+				return proof, fmt.Errorf("Java agent path is unavailable")
+			}
+			expected := approvedAgents[resolved]
+			if !safePath(resolved) || !hash.MatchString(expected) || agentPaths[resolved] {
 				return proof, fmt.Errorf("unapproved or duplicate Java agent")
 			}
-			actual, err := files.SHA256(ctx, agent)
+			actual, err := files.SHA256(ctx, resolved)
 			if err != nil || actual != expected {
 				return proof, fmt.Errorf("Java agent bytes differ from approved artifact")
 			}
-			agentPaths[agent] = true
+			again, err := files.Canonical(ctx, agent)
+			if err != nil || again != resolved {
+				return proof, fmt.Errorf("Java agent path changed while inspecting")
+			}
+			agentPaths[resolved] = true
 			continue
 		}
 		lower := strings.ToLower(arg)
@@ -209,17 +218,25 @@ func VerifyRuntime(ctx context.Context, m ArtifactManifest, home, config string,
 		}
 		paths := []string{entry}
 		if strings.HasSuffix(entry, "/*") {
-			dir := strings.TrimSuffix(entry, "/*")
+			dir, err := files.Canonical(ctx, strings.TrimSuffix(entry, "/*"))
+			if err != nil {
+				return proof, fmt.Errorf("classpath directory is unavailable")
+			}
 			if dir != path.Join(home, "libs") {
 				return proof, fmt.Errorf("unapproved wildcard classpath")
 			}
-			var err error
 			paths, err = files.Libraries(ctx, dir)
 			if err != nil || len(paths) == 0 || len(paths) > 4096 {
 				return proof, fmt.Errorf("classpath enumeration unavailable")
 			}
 		}
 		for _, file := range paths {
+			original := file
+			resolved, err := files.Canonical(ctx, file)
+			if err != nil {
+				return proof, fmt.Errorf("classpath library cannot be resolved")
+			}
+			file = resolved
 			if len(seen) >= 4096 || !safePath(file) || path.Dir(file) != path.Join(home, "libs") || !strings.HasSuffix(file, ".jar") || seen[file] {
 				return proof, fmt.Errorf("foreign or ambiguous classpath entry")
 			}
@@ -230,9 +247,19 @@ func VerifyRuntime(ctx context.Context, m ArtifactManifest, home, config string,
 			if expected == "" || err != nil || expected != actual {
 				return proof, fmt.Errorf("classpath library differs from approved distribution")
 			}
+			again, err := files.Canonical(ctx, original)
+			if err != nil || again != file {
+				return proof, fmt.Errorf("classpath path changed during inspection")
+			}
 			hasCore = hasCore || relative == "libs/kafka_2.13-"+m.KafkaVersion+".jar"
 			hasClient = hasClient || relative == "libs/kafka-clients-"+m.KafkaVersion+".jar"
 			rows = append(rows, relative+":"+actual)
+		}
+		if strings.HasSuffix(entry, "/*") {
+			again, err := files.Canonical(ctx, strings.TrimSuffix(entry, "/*"))
+			if err != nil || again != path.Join(home, "libs") {
+				return proof, fmt.Errorf("classpath directory changed during inspection")
+			}
 		}
 	}
 	if !hasCore || !hasClient {

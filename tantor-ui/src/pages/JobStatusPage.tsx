@@ -1,3 +1,4 @@
+import { QuorumExpansionOperationStatus } from '../components/QuorumExpansionOperationStatus';
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, RefreshCw, AlertTriangle, Undo2, Check, MoreVertical } from 'lucide-react';
@@ -170,10 +171,10 @@ export function JobStatusPage() {
     if (job?.configRecoveryBlockedReason) return;
     try {
       let endpoint = `/api/v1/ui/jobs/${id}/retry`;
-      if (job?.type === 'BROKER_ADDITION') {
+      if (job?.type === 'BROKER_ADDITION' || job?.type === 'QUORUM_EXPANSION') {
         const payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
-        if (!payload?.clusterId || !payload?.operationId) throw new Error('Broker operation identity is missing.');
-        endpoint = `/api/v1/ui/clusters/${encodeURIComponent(payload.clusterId)}/add-node/operations/${encodeURIComponent(payload.operationId)}/resume`;
+        if (!payload?.clusterId || !payload?.operationId) throw new Error('Add Node operation identity is missing.');
+        endpoint = `/api/v1/ui/clusters/${encodeURIComponent(payload.clusterId)}/add-node/${job.type === 'QUORUM_EXPANSION' ? 'expansions' : 'operations'}/${encodeURIComponent(payload.operationId)}/resume`;
       }
       const res = await fetch(endpoint, { method: 'POST' });
       if (res.ok) fetchJob();
@@ -367,6 +368,10 @@ export function JobStatusPage() {
     try { deletionDetails = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload || {}; }
     catch { deletionDetails = {}; }
   }
+  let expansionIdentity: { clusterId: string; operationId: string } | null = null;
+  if (job.type === 'QUORUM_EXPANSION') {
+    try { const payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload; if (payload?.clusterId && payload?.operationId) expansionIdentity = payload; } catch { /* Missing identity keeps operation controls unavailable. */ }
+  }
   const totalSteps = displaySteps.length;
   const completedStepsCount = displaySteps.filter(s => ['SUCCESS', 'ROLLED_BACK'].includes(s.status)).length;
 
@@ -384,7 +389,7 @@ export function JobStatusPage() {
         <div className="action-buttons">
           {canManage && ['FAILED', 'PARTIAL_SUCCESS', 'ROLLBACK_FAILED'].includes(job.status) && (
             <button className="btn btn-outline-primary" onClick={handleRetry} disabled={Boolean(job.configRecoveryBlockedReason)} title={job.configRecoveryBlockedReason || undefined}>
-              <RefreshCw size={14} style={{ marginRight: '6px' }} /> {job.status === 'ROLLBACK_FAILED' ? 'Retry rollback' : ['ROLLING_RESTART', 'TARGETED_CONFIG_CHANGE', 'CONFIG_CHANGE'].includes(job.type) ? 'Retry / Resume' : 'Retry Job'}
+              <RefreshCw size={14} style={{ marginRight: '6px' }} /> {job.status === 'ROLLBACK_FAILED' ? 'Retry rollback' : ['ROLLING_RESTART', 'TARGETED_CONFIG_CHANGE', 'CONFIG_CHANGE', 'QUORUM_EXPANSION', 'BROKER_ADDITION'].includes(job.type) ? 'Retry / Resume' : 'Retry Job'}
             </button>
           )}
           {canManage && job.type !== 'ROLLING_RESTART' && job.rollbackSupported && (['TARGETED_CONFIG_CHANGE', 'CONFIG_CHANGE'].includes(job.type) ? ['FAILED', 'PARTIAL_SUCCESS'] : ['SUCCESS', 'FAILED', 'PARTIAL_SUCCESS']).includes(job.status) && (
@@ -394,6 +399,8 @@ export function JobStatusPage() {
           )}
         </div>
       </div>
+
+      {expansionIdentity && <QuorumExpansionOperationStatus {...expansionIdentity} jobId={job.id} failed={job.status === 'FAILED'} canManage={canManage} onChanged={() => void fetchJob()} />}
 
       {job.configRecoveryBlockedReason && (
         <div className="overview-alert error" role="alert" style={{ marginBottom: '16px' }}>

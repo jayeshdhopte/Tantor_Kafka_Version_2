@@ -26,7 +26,13 @@ func RunParticipant(ctx context.Context, hostID, base string, params map[string]
 	if err != nil {
 		return "", err
 	}
-	if p.QuorumMode != "STATIC" {
+	bounded, deadlineCancel, err := dispatchContext(ctx, params)
+	if err != nil {
+		return "", err
+	}
+	defer deadlineCancel()
+	ctx = bounded
+	if p.QuorumMode != "STATIC" && params["action"] != "INSPECT" {
 		return "", fmt.Errorf("dynamic expansion cannot mutate existing participant units")
 	}
 	if !safePath(base) {
@@ -56,6 +62,23 @@ func RunParticipant(ctx context.Context, hostID, base string, params map[string]
 		return "", err
 	}
 	env := &nativeParticipantEnvironment{dir: dir, exec: e, manifest: manifest}
+	if p.QuorumMode == "DYNAMIC" && params["action"] == "INSPECT" {
+		for _, m := range p.Participants {
+			if m.HostID == hostID && m.Unit == params["participant_unit"] {
+				observation, err := env.ObserveParticipant(ctx, p, m)
+				if err != nil {
+					return "", err
+				}
+				if !observation.StorageVerified || !observation.Active || !observation.RuntimeVerified || observation.UnitSHA256 != m.UnitSHA256 || observation.ConfigSHA256 != m.ConfigSHA256 {
+					return "", fmt.Errorf("frozen dynamic participant identity changed")
+				}
+				report := ParticipantReport{Receipt: ParticipantReceipt{SchemaVersion: "add-quorum-participant/v1", OperationID: p.OperationID, PlanDigest: params["plan_digest"], HostID: hostID, Unit: m.Unit, NodeID: m.NodeID, OriginalSHA256: m.ConfigSHA256, Phase: "OBSERVED"}, Observation: observation, ObservedAt: time.Now().UTC()}
+				raw, err := json.Marshal(report)
+				return string(raw), err
+			}
+		}
+		return "", fmt.Errorf("participant is outside the frozen inspection scope")
+	}
 	report, err := executeParticipant(ctx, p, params["plan_digest"], hostID, params["participant_unit"], params["action"], env)
 	if err != nil {
 		return "", err
@@ -97,7 +120,7 @@ func (e *nativeParticipantEnvironment) SaveParticipantReceipt(r ParticipantRecei
 func (e *nativeParticipantEnvironment) ReadOriginal(ctx context.Context, m Participant) (string, error) {
 	raw, err := readBounded(ctx, e.file(m, "original.properties"), 262144)
 	if os.IsNotExist(err) {
-		return readBounded(ctx, m.ConfigPath, 262144)
+		return readParticipantFile(ctx, m, m.ConfigPath, 262144)
 	}
 	if err != nil {
 		return "", err
@@ -121,6 +144,9 @@ func (e *nativeParticipantEnvironment) StopParticipant(ctx context.Context, m Pa
 	return err
 }
 func (e *nativeParticipantEnvironment) StartParticipant(ctx context.Context, m Participant) error {
+	if err := verifyRuntimePayload(ctx, e.manifest, m.RuntimeHome); err != nil {
+		return err
+	}
 	_, _, err := e.exec.Run(ctx, "systemctl", "start", m.Unit)
 	return err
 }
@@ -130,19 +156,26 @@ func (e *nativeParticipantEnvironment) ApplyParticipant(ctx context.Context, m P
 	if err != nil || !stoppedUnit(state) {
 		return fmt.Errorf("participant is not stopped at configuration apply")
 	}
-	f, info, err := openRegular(m.ConfigPath, 262144)
+	target, err := participantPath(m, m.ConfigPath)
+	if err != nil {
+		return err
+	}
+	f, info, err := openRegular(target, 262144)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	raw, err := readBounded(ctx, m.ConfigPath, 262144)
+	raw, err := readParticipantFile(ctx, m, m.ConfigPath, 262144)
 	if err != nil || raw != original {
 		return fmt.Errorf("participant original changed before replacement")
 	}
-	if err = unchanged(m.ConfigPath, f, info); err != nil {
+	if err = unchanged(target, f, info); err != nil {
 		return err
 	}
-	return durableReplace(m.ConfigPath, expanded, info.Mode().Perm(), info)
+	if again, err := participantPath(m, m.ConfigPath); err != nil || again != target {
+		return fmt.Errorf("participant configuration alias changed before replacement")
+	}
+	return durableReplace(target, expanded, info.Mode().Perm(), info)
 }
 func (e *nativeParticipantEnvironment) show(ctx context.Context, unitName string) (map[string]string, error) {
 	out, _, err := e.exec.Run(ctx, "systemctl", "show", "--no-pager", "--property=Id,LoadState,ActiveState,SubState,MainPID,FragmentPath,ExecMainStartTimestampMonotonic,DropInPaths", unitName)
@@ -174,11 +207,13 @@ func (e *nativeParticipantEnvironment) ObserveParticipant(ctx context.Context, p
 	if filepath.Base(fragment) != m.Unit || !(strings.HasPrefix(fragment, "/etc/systemd/system/") || strings.HasPrefix(fragment, "/usr/lib/systemd/system/") || strings.HasPrefix(fragment, "/lib/systemd/system/")) {
 		return o, fmt.Errorf("unreviewed unit fragment")
 	}
-	o.UnitSHA256, err = fileSHA256(ctx, fragment, 262144)
+	unitRaw, err := readParticipantFile(ctx, m, fragment, 262144)
+	o.UnitSHA256 = Digest(unitRaw)
 	if err != nil {
 		return o, err
 	}
-	o.ConfigSHA256, err = fileSHA256(ctx, m.ConfigPath, 262144)
+	configRaw, err := readParticipantFile(ctx, m, m.ConfigPath, 262144)
+	o.ConfigSHA256 = Digest(configRaw)
 	if err != nil {
 		return o, err
 	}
@@ -191,7 +226,7 @@ func (e *nativeParticipantEnvironment) ObserveParticipant(ctx context.Context, p
 	identities := map[string]bool{}
 	o.StorageVerified = true
 	for _, s := range m.Storage {
-		raw, err := readBounded(ctx, filepath.Join(s.Path, "meta.properties"), 16384)
+		raw, err := readParticipantFile(ctx, m, filepath.Join(s.Path, "meta.properties"), 16384)
 		if err != nil {
 			return o, err
 		}
@@ -241,15 +276,51 @@ func (e *nativeParticipantEnvironment) ObserveParticipant(ctx context.Context, p
 	if err != nil || first["MainPID"] != second["MainPID"] || first["ExecMainStartTimestampMonotonic"] != second["ExecMainStartTimestampMonotonic"] || first["ActiveState"] != second["ActiveState"] || first["SubState"] != second["SubState"] || first["FragmentPath"] != second["FragmentPath"] {
 		return o, fmt.Errorf("participant service changed during observation")
 	}
-	configHash, err := fileSHA256(ctx, m.ConfigPath, 262144)
+	configAgain, err := readParticipantFile(ctx, m, m.ConfigPath, 262144)
+	configHash := Digest(configAgain)
 	if err != nil || configHash != o.ConfigSHA256 {
 		return o, fmt.Errorf("participant configuration changed during observation")
 	}
-	unitHash, err := fileSHA256(ctx, fragment, 262144)
+	unitAgain, err := readParticipantFile(ctx, m, fragment, 262144)
+	unitHash := Digest(unitAgain)
 	if err != nil || unitHash != o.UnitSHA256 {
 		return o, fmt.Errorf("participant unit changed during observation")
 	}
 	return o, nil
+}
+func participantPath(m Participant, logical string) (string, error) {
+	if bound, ok := m.ResolvedPaths[logical]; ok {
+		if !participantBinding(m, logical, bound) {
+			return "", fmt.Errorf("unreviewed participant path binding")
+		}
+		resolved, err := filepath.EvalSymlinks(logical)
+		if err != nil || resolved != bound {
+			return "", fmt.Errorf("participant installation alias differs from the frozen observation")
+		}
+		if err = noLinks(bound); err != nil {
+			return "", err
+		}
+		return bound, nil
+	}
+	if err := noLinks(logical); err != nil {
+		return "", err
+	}
+	return logical, nil
+}
+func readParticipantFile(ctx context.Context, m Participant, logical string, max int64) (string, error) {
+	resolved, err := participantPath(m, logical)
+	if err != nil {
+		return "", err
+	}
+	raw, err := readBounded(ctx, resolved, max)
+	if err != nil {
+		return "", err
+	}
+	again, err := participantPath(m, logical)
+	if err != nil || again != resolved {
+		return "", fmt.Errorf("participant path changed during observation")
+	}
+	return raw, nil
 }
 func processStartTicks(stat string) string {
 	split := strings.LastIndex(stat, ") ")
@@ -376,6 +447,10 @@ func durableReplace(name, content string, mode os.FileMode, expected os.FileInfo
 			f.Close()
 			return err
 		}
+		if err = copyConfigAttributes(name, tmp); err != nil {
+			f.Close()
+			return err
+		}
 	}
 	_, err = f.WriteString(content)
 	if err == nil {
@@ -390,7 +465,7 @@ func durableReplace(name, content string, mode os.FileMode, expected os.FileInfo
 	}
 	if expected != nil {
 		current, err := os.Lstat(name)
-		if err != nil || !os.SameFile(expected, current) || current.Size() != expected.Size() || current.ModTime() != expected.ModTime() {
+		if err != nil || !os.SameFile(expected, current) || current.Size() != expected.Size() || current.ModTime() != expected.ModTime() || current.Mode() != expected.Mode() {
 			return fmt.Errorf("replacement target changed before commit")
 		}
 	}
@@ -398,6 +473,50 @@ func durableReplace(name, content string, mode os.FileMode, expected os.FileInfo
 		return err
 	}
 	return syncDirectory(filepath.Dir(name))
+}
+func copyConfigAttributes(source, target string) error {
+	count, err := syscall.Listxattr(source, nil)
+	if err == syscall.ENOTSUP {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if count < 0 || count > 65536 {
+		return fmt.Errorf("configuration attributes exceed adapter bounds")
+	}
+	if count == 0 {
+		return nil
+	}
+	names := make([]byte, count)
+	n, err := syscall.Listxattr(source, names)
+	if err != nil || n > len(names) {
+		return fmt.Errorf("configuration attributes changed while reading")
+	}
+	total := 0
+	entries := strings.Split(strings.TrimSuffix(string(names[:n]), "\x00"), "\x00")
+	if len(entries) > 128 {
+		return fmt.Errorf("too many configuration attributes")
+	}
+	for _, name := range entries {
+		if name != "security.selinux" && name != "system.posix_acl_access" && !strings.HasPrefix(name, "user.") {
+			return fmt.Errorf("configuration attribute requires a supported replacement adapter")
+		}
+		size, err := syscall.Getxattr(source, name, nil)
+		if err != nil || size < 0 || size > 1024*1024 || total > 2*1024*1024-size {
+			return fmt.Errorf("configuration attribute observation is incomplete")
+		}
+		value := make([]byte, size)
+		actual, err := syscall.Getxattr(source, name, value)
+		if err != nil || actual != size {
+			return fmt.Errorf("configuration attribute changed while reading")
+		}
+		if err = syscall.Setxattr(target, name, value, 0); err != nil {
+			return fmt.Errorf("configuration security/ACL attributes could not be preserved")
+		}
+		total += size
+	}
+	return nil
 }
 func syncDirectory(dir string) error {
 	f, err := os.Open(dir)

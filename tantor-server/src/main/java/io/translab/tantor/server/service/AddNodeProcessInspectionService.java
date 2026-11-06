@@ -42,6 +42,11 @@ public class AddNodeProcessInspectionService {
     public record View(UUID taskId, UUID serviceId, String hostId, String status, Instant expiresAt,
                        Evidence evidence, boolean executionReady, String message) {}
     private record Scope(Cluster cluster, Host host, ClusterServiceAssignment service, String unit, String path, String role) {}
+    record RuntimeScope(Request identity,Cluster cluster,Host host,ClusterServiceAssignment service) {}
+    RuntimeScope runtimeScope(UUID clusterId,UUID serviceId) {
+        var s=scope(clusterId,serviceId);if(busy(clusterId))throw conflict("Resolve the active cluster operation before runtime inspection.");
+        Instant now=Instant.now();return new RuntimeScope(new Request("add-node-process/v1",UUID.randomUUID(),s.host().getId(),fingerprint(s),s.cluster().getKafkaClusterId(),s.cluster().getKafkaVersion(),s.service().getNodeId(),s.role(),s.unit(),s.path(),now,now.plusSeconds(120)),s.cluster(),s.host(),s.service());
+    }
 
     @org.springframework.transaction.annotation.Transactional
     public View start(UUID clusterId, UUID serviceId) {
@@ -90,10 +95,8 @@ public class AddNodeProcessInspectionService {
         if (!policy.allows(host.getId(), host.getHostIp())) throw conflict("This host is outside the explicitly permitted Add Node inspection scope.");
         if (Boolean.TRUE.equals(host.getRemoved()) || host.getClusterId() != null && !clusterId.equals(host.getClusterId())
                 || !connectivity.isInfrastructureHost(host) || !"ONLINE".equals(connectivity.agentConnectivityStatus(host))) throw conflict("Participant requires a fresh online enrolled agent assigned to this cluster.");
-        var config = configuration(service.getConfigJson());
-        String unit = Objects.toString(config.get("service_name"), "");
-        if (!unit.endsWith(".service")) unit += ".service";
-        String path = Objects.toString(config.get("config_path"), "");
+        var reference=KafkaProcessReference.resolve(cluster,service,mapper);
+        String unit=reference.unit();String path=reference.configPath();
         String role = canonicalRole(service.getRole());
         if (!unit.matches("[A-Za-z0-9][A-Za-z0-9_@.-]{0,180}\\.service") || unit.contains("..") || !validConfig(path) || role.isBlank()
                 || service.getNodeId() == null || service.getNodeId() < 0 || cluster.getKafkaClusterId() == null || !cluster.getKafkaClusterId().matches("[A-Za-z0-9_-]{22}")
@@ -101,7 +104,7 @@ public class AddNodeProcessInspectionService {
             throw conflict("Recorded service, configuration, role or Kafka identity is incomplete. Runtime paths are never guessed.");
         return new Scope(cluster, host, service, unit, path, role);
     }
-    private void validate(Evidence e, Request r) {
+    void validate(Evidence e, Request r) {
         if (!Objects.equals(e.schemaVersion(), r.schemaVersion()) || !Objects.equals(e.inspectionId(), r.inspectionId()) || !Objects.equals(e.hostId(), r.hostId())
                 || !Objects.equals(e.contextHash(), r.contextHash()) || !Objects.equals(e.kafkaClusterId(), r.kafkaClusterId()) || !Objects.equals(e.kafkaVersion(), r.kafkaVersion())
                 || e.nodeId() != r.nodeId() || !Objects.equals(e.role(), r.role()) || !Objects.equals(e.serviceName(), r.serviceName()) || !Objects.equals(e.configPath(), r.configPath())

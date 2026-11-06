@@ -13,6 +13,20 @@ import (
 
 type diskRuntimeFiles struct{}
 
+func (diskRuntimeFiles) Canonical(ctx context.Context, name string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	if !filepath.IsAbs(name) || !safePath(filepath.Clean(name)) {
+		return "", fmt.Errorf("approved absolute runtime path required")
+	}
+	resolved, err := filepath.EvalSymlinks(name)
+	if err != nil || !safePath(resolved) {
+		return "", fmt.Errorf("runtime path cannot be resolved within approved roots")
+	}
+	return resolved, nil
+}
+
 func (diskRuntimeFiles) SHA256(ctx context.Context, name string) (string, error) {
 	return fileSHA256(ctx, name, 256*1024*1024)
 }
@@ -141,7 +155,19 @@ func readBounded(ctx context.Context, name string, max int64) (string, error) {
 func loadManifest(ctx context.Context, p Plan) (ArtifactManifest, error) {
 	// Match the catalog-bound parcel cache only. Never search other installs for
 	// a same-version archive with potentially different vendor modifications.
-	archive := filepath.Join(p.ParcelDir, ".downloads", "parcel_kafka_"+p.KafkaVersion+".tgz")
+	archive := ""
+	for current, depth := p.ParcelDir, 0; depth < 5 && current != filepath.Dir(current); current, depth = filepath.Dir(current), depth+1 {
+		candidate := filepath.Join(current, ".downloads", "parcel_kafka_"+p.KafkaVersion+".tgz")
+		if info, err := os.Lstat(candidate); err == nil && info.Mode().IsRegular() {
+			archive = candidate
+			break
+		} else if err != nil && !os.IsNotExist(err) {
+			return ArtifactManifest{}, err
+		}
+	}
+	if archive == "" {
+		return ArtifactManifest{}, fmt.Errorf("approved parcel cache is unavailable")
+	}
 	checksum, err := fileSHA256(ctx, archive, 1024*1024*1024)
 	if err != nil || checksum != p.ArtifactSHA256 {
 		return ArtifactManifest{}, fmt.Errorf("approved catalog archive is unavailable or changed")
@@ -159,4 +185,22 @@ func loadManifest(ctx context.Context, p Plan) (ArtifactManifest, error) {
 		return m, err
 	}
 	return m, nil
+}
+func verifyRuntimePayload(ctx context.Context, m ArtifactManifest, home string) error {
+	for relative, expected := range m.Files {
+		actual, err := fileSHA256(ctx, filepath.Join(home, relative), 256*1024*1024)
+		if err != nil || actual != expected {
+			return fmt.Errorf("installed runtime payload differs from the approved distribution")
+		}
+	}
+	libraries, err := (diskRuntimeFiles{}).Libraries(ctx, filepath.Join(home, "libs"))
+	if err != nil {
+		return err
+	}
+	for _, library := range libraries {
+		if m.Files["libs/"+filepath.Base(library)] == "" {
+			return fmt.Errorf("installed runtime contains an unapproved classpath library")
+		}
+	}
+	return nil
 }

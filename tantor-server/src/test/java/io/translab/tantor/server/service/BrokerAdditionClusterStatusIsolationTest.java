@@ -8,7 +8,7 @@ import static org.mockito.Mockito.*;
 class BrokerAdditionClusterStatusIsolationTest {
  @Test void candidateTasksNeverRewriteHealthyExistingClusterLifecycle(){
   var service=mock(AgentService.class,CALLS_REAL_METHODS);
-  for(String command:List.of("INSPECT_ADD_NODE_PROCESS","INSPECT_ADD_NODE","PROBE_ADD_NODE","VALIDATE_ADD_BROKER_PLAN","INSPECT_ADD_BROKER","PREPARE_ADD_BROKER","FORMAT_ADD_BROKER","START_ADD_BROKER"))
+  for(String command:List.of("INSPECT_QUORUM_RUNTIME","EXECUTE_QUORUM_CANDIDATE","EXECUTE_QUORUM_PARTICIPANT","VALIDATE_QUORUM_EXPANSION","INSPECT_ADD_NODE_PROCESS","INSPECT_ADD_NODE","PROBE_ADD_NODE","VALIDATE_ADD_BROKER_PLAN","INSPECT_ADD_BROKER","PREPARE_ADD_BROKER","FORMAT_ADD_BROKER","START_ADD_BROKER"))
    for(String status:List.of("IN_PROGRESS","FAILED","SUCCESS")){
     var cluster=new Cluster();cluster.setStatus("SUCCESS");var task=new Task();task.setCommand(command);task.setStatus(status);
     ReflectionTestUtils.invokeMethod(service,"updateClusterStatus",cluster,task);

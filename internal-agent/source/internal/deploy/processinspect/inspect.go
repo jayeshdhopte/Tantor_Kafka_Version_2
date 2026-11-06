@@ -128,6 +128,19 @@ func Run(ctx context.Context, raw, hostID string, e executor.Executor) (Report, 
 
 type reader func(string, int64) ([]byte, error)
 
+// RunWithReader keeps all identity/nonce/race checks while a newer adapter
+// supplies bound logical-to-canonical observations. Legacy Run is unchanged.
+func RunWithReader(ctx context.Context, raw, hostID string, e executor.Executor, read func(string, int64) ([]byte, error)) (Report, error) {
+	r, err := Validate(raw, hostID)
+	if err != nil {
+		return Report{}, err
+	}
+	if read == nil {
+		return Report{}, fmt.Errorf("bounded observation reader required")
+	}
+	return inspect(ctx, r, e, reader(read)), nil
+}
+
 func inspect(ctx context.Context, r Request, e executor.Executor, read reader) Report {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
