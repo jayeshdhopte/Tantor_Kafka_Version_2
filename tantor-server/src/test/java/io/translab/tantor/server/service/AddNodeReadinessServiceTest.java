@@ -38,6 +38,8 @@ class AddNodeReadinessServiceTest {
     @BeforeEach void setup() {
         cluster.setId(id); cluster.setMode("kraft"); cluster.setStatus("SUCCESS"); cluster.setKafkaClusterId("live-kafka-id"); cluster.setKafkaVersion("4.1.2");
         cluster.setServices(new ArrayList<>()); cluster.setNodeIds(List.of(1, 101));
+        var existingBroker=new ClusterServiceAssignment();existingBroker.setRole("broker");existingBroker.setNodeId(1);existingBroker.setHostId("existing-broker");cluster.getServices().add(existingBroker);
+        var existingController=new ClusterServiceAssignment();existingController.setRole("controller");existingController.setNodeId(101);existingController.setHostId("existing-controller");cluster.getServices().add(existingController);
         cluster.setConfigJson("{\"listener_port\":9092,\"runtime_user\":\"kafka\"}");
         host.setId("candidate"); host.setHostIp("192.0.2.20"); host.setAgentVersion("test");
         deployment.setSecurityMode("PLAINTEXT");

@@ -64,13 +64,9 @@ public class AddNodeReadinessService {
         checks.add(new Check("B_RACK","Candidate rack configuration","BROKER",!observation.rackObserved()?"UNKNOWN":rackValid?"PASS":"FAIL",
                 rackAware?"Explicit actual rack/zone for this candidate":"No rack unless the existing cluster is rack-aware",Map.of("existingRacks",observation.brokerRacks(),"candidateRack",brokerRack),
                 rackValid?"":"Enter the actual candidate rack when the cluster uses racks; resolve mixed or unavailable existing rack observations, then rerun checks.",started,"KAFKA_API"));
-        var knownIds = new TreeSet<>(observation.nodeIds());
-        cluster.getNodeIds().stream().filter(Objects::nonNull).forEach(knownIds::add);
-        cluster.getServices().stream().map(ClusterServiceAssignment::getNodeId).filter(Objects::nonNull).forEach(knownIds::add);
-        int candidateId = knownIds.stream().mapToInt(Integer::intValue).max().orElse(0);
-        candidateId = candidateId == Integer.MAX_VALUE ? -1 : candidateId + 1;
-        checks.add(backendCheck("B01", "Broker role and proposed identity", candidateId > 0 && !observation.nodeIds().isEmpty(),
-                "broker; unused across observed brokers/controllers/observers", "Proposed ID " + candidateId + "; not reserved"));
+        var allocation=AddNodeIdentityAllocator.broker(cluster,observation.nodeIds());
+        checks.add(backendCheck("B01", "Broker role and proposed identity", allocation.available() && !observation.nodeIds().isEmpty(),
+                "broker; highest existing broker ID + 1; unused across brokers/controllers/observers", allocation.reason()+" Not reserved."));
 
         var request = new LinkedHashMap<String, Object>();
         request.put("schemaVersion", "add-node/v1");

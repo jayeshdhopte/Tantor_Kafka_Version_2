@@ -26,18 +26,15 @@ public class BrokerAdditionPlanningService {
         if(!"PASS".equals(preview.status()))
             throw new ResponseStatusException(HttpStatus.CONFLICT,"Run complete passing readiness checks before reviewing an execution plan.");
         var cluster=clusters.findWithServicesById(clusterId).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,"Cluster not found."));
-        var ids=new TreeSet<Integer>();
-        cluster.getNodeIds().stream().filter(Objects::nonNull).forEach(ids::add);
-        cluster.getServices().stream().map(s->s.getNodeId()).filter(Objects::nonNull).forEach(ids::add);
-        // C02 proved the stored identity set equals the live broker/controller/observer set.
-        int last=ids.stream().mapToInt(Integer::intValue).max().orElse(0);
-        if(last==Integer.MAX_VALUE) throw new ResponseStatusException(HttpStatus.CONFLICT,"No safe broker identity is available.");
+        // C02 proves the stored identity set equals the live broker/controller/observer set.
+        var allocation=AddNodeIdentityAllocator.broker(cluster,Set.of());
+        if(!allocation.available())throw new ResponseStatusException(HttpStatus.CONFLICT,allocation.reason());
         try {
             Map<String,Object> config=mapper.readValue(Objects.toString(cluster.getConfigJson(),"{}"),new TypeReference<>(){});
             String voters=Objects.toString(config.getOrDefault("controller_quorum_voters",config.getOrDefault("quorum_voters","")),"");
             // Operation identity is a proposal, never an accepted operation or idempotency receipt.
             UUID proposedId=UUID.nameUUIDFromBytes((clusterId+":"+previewId+":"+preview.contextHash()).getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            var plan=BrokerAdditionPlan.freeze(preview,proposedId,last+1,voters);
+            var plan=BrokerAdditionPlan.freeze(preview,proposedId,allocation.nodeId(),voters);
             return new Review(previewId,preview.contextHash(),preview.expiresAt(),plan,List.of(
                     "Repeat final readiness under the cluster/host reservation",
                     "Reserve the host and broker identity atomically",

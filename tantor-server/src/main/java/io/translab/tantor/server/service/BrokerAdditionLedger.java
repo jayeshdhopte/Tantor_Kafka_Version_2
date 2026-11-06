@@ -128,7 +128,7 @@ public class BrokerAdditionLedger {
         if(!Objects.equals(cluster.getKafkaClusterId(),plan.kafkaClusterId()))throw new IllegalStateException("Kafka cluster identity changed.");
         jdbc.queryForObject("SELECT set_config('tantor.broker_addition_id',?,true)",String.class,op.getId().toString());
         var assignment=new ClusterServiceAssignment();assignment.setCluster(cluster);assignment.setHostId(op.getHostId());assignment.setNodeId(op.getNodeId());assignment.setRole("broker");assignment.setStatus("SUCCESS");
-        String configPath="/etc/tantor-kafka/add-broker/"+op.getId()+"/server.properties";
+        String configPath="/etc/tantor-kafka/add-broker/"+op.getId()+"/"+plan.configFileName();
         var serviceConfig=new LinkedHashMap<String,Object>(Map.of("service_name","tantor-kafka-broker-"+op.getNodeId(),"config_path",configPath,"data_paths",String.join(",",plan.dataPaths()),"metadata_path",plan.metadataPath(),"log_path",plan.logPath(),"install_base_path",plan.installPath(),"java_home",plan.javaHome(),"runtime_user",plan.runtimeUser(),"listener_port",plan.brokerPort()));
         if(!plan.brokerRack().isBlank())serviceConfig.put("broker.rack",plan.brokerRack());
         assignment.setConfigJson(json(serviceConfig));

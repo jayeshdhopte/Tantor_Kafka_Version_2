@@ -23,7 +23,7 @@ public record BrokerAdditionPlan(String schemaVersion, UUID operationId, String 
             throw new IllegalArgumentException("Complete, unique passing check evidence is required.");
         var p = preview.brokerPlan();
         if(!"PLAINTEXT".equals(value(p,"securityMode"))) throw new IllegalArgumentException("This broker contract currently supports inherited PLAINTEXT only.");
-        var plan = new BrokerAdditionPlan("add-broker/v1", operationId, preview.hostId(), preview.contextHash(),
+        var plan = new BrokerAdditionPlan("add-broker/v2", operationId, preview.hostId(), preview.contextHash(),
                 value(p,"kafkaClusterId"), nodeId, value(p,"hostIp"), Integer.parseInt(value(p,"brokerPort")),
                 value(p,"kafkaVersion"), value(p,"runtimeUser"), value(p,"javaHome"), value(p,"parcelDir"),
                 value(p,"artifactChecksum"), strings(p,"dataPaths"), value(p,"metadataPath"), value(p,"logPath"),
@@ -32,7 +32,7 @@ public record BrokerAdditionPlan(String schemaVersion, UUID operationId, String 
     }
     public void validate() {
         if(brokerRack==null||!brokerRack.matches("[A-Za-z0-9_.-]{0,128}"))throw new IllegalArgumentException("Invalid candidate broker rack.");
-        if (!"add-broker/v1".equals(schemaVersion) || operationId == null || hostId == null || hostId.isBlank()
+        if (!("add-broker/v1".equals(schemaVersion)||"add-broker/v2".equals(schemaVersion)) || operationId == null || hostId == null || hostId.isBlank()
                 || contextHash == null || !contextHash.matches("[a-f0-9]{64}") || nodeId < 1 || brokerPort < 1 || brokerPort > 65535
                 || !kafkaClusterId.matches("[A-Za-z0-9_-]{22}") || !validIp(hostIp)
                 || !kafkaVersion.matches("[0-9]+\\.[0-9]+\\.[0-9]+") || !artifactChecksum.matches("(?i)[a-f0-9]{64}")
@@ -65,6 +65,7 @@ public record BrokerAdditionPlan(String schemaVersion, UUID operationId, String 
         for(int i=0;i<storage.size();i++) for(int j=i+1;j<storage.size();j++)
             if(overlaps(storage.get(i),storage.get(j))) throw new IllegalArgumentException("Nested storage paths are unsupported.");
     }
+    public String configFileName(){return "add-broker/v2".equals(schemaVersion)?"broker.properties":"server.properties";}
     private static boolean validIp(String ip) {
         if(ip==null || !ip.matches("[0-9a-fA-F:.]+")) return false;
         if(!ip.contains(":")) {

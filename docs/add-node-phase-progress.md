@@ -32,7 +32,7 @@ The acceptance runner and evidence are in the parent workspace's `ui-verificatio
 | 2 | Real common and broker readiness checks; expected/observed results, freshness and context invalidation | Deployed on 194; Linux tests and authenticated live 4.3.0 candidate readiness passed |
 | 3 | Broker job execution with final checks, host/ID reservations and safe candidate preparation | Deployed and exercised through the authenticated API; Kafka 4.3.0 candidate prepared, formatted and started as a non-root user |
 | 4 | Verified publication, durable evidence, reconciliation and broker resume | Broker-only 4.3.0 pilot passed: same-operation resume without reformat, stable unfenced registration, unchanged voters, atomic publication and candidate produce/consume |
-| 5 | Supported dynamic controller observer/catch-up/admission workflow | Not implemented |
+| 5 | Script-aligned static controller maintenance and dynamic observer/catch-up/admission | In progress: read-only backend/UI planning implemented; execution, durable recovery and controller pilots pending |
 | 6 | Separate controller and broker processes with controller-first verification | Deferred; resolve source-design difference before implementation |
 | 7 | Full release acceptance, compatibility certification and deployment documentation | Not implemented |
 
@@ -41,6 +41,12 @@ Phase 2 replaces the old check action with dedicated read-only agent commands an
 The Review page now supplies the broker plan and a release-gated submission path. Dedicated broker ownership, mutation, verification, publication and resume code is installed. Shared guards/callbacks were narrowly updated to retain unresolved reservations, preserve task references and isolate candidate results from the existing cluster lifecycle. The older [contract/design snapshot](add-node-broker-execution-contract.md) records the earlier planning boundary; the deployment report states the current implementation and remaining acceptance work.
 
 ## Reference alignment
+
+### 6 November follow-up
+
+The concurrent Phase 4 corrections introduce broker plan `add-broker/v2`: new brokers use `broker.properties`, and their ID is the highest existing **broker** ID plus one, with cluster-wide collision protection. Existing frozen v1 plans retain `server.properties` and their original receipts. Existing IDs, files and storage are not migrated. Cluster ID and exact Kafka version inheritance remain mandatory. The historical broker 102 pilot above predates this correction; it is not evidence of a new broker 3 deployment.
+
+Phase 5 now offers a read-only controller plan selected from the observed quorum mode. Static expansion lists all source maintenance phases, including stopping brokers; dynamic expansion lists observer catch-up and admission without existing-service restart. See [the controller contract and execution-state design](add-node-phase5-controller-contract.md). The preview never schedules controller mutations and does not represent completed controller execution.
 
 The HTML reference is `Tantor Add Node – Updated 3.html`. The additional Draw.io file is `Kafka_KRaft_Add_Host_Final_3_Sheets_All_in_one_final (1) (1).drawio`, containing ER, end-to-end and prerequisite sheets. Phase 1 check groups use its common check codes as labels for future observations, not claims of implemented check coverage.
 

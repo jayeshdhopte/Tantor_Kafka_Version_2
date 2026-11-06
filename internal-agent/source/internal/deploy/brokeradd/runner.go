@@ -85,7 +85,7 @@ func run(ctx context.Context, command, hostID, base string, params map[string]st
 			return "", err
 		}
 	}
-	configPath := filepath.Join(configRoot, p.OperationID, "server.properties")
+	configPath := filepath.Join(configRoot, p.OperationID, p.ConfigFileName())
 	unitName := "tantor-kafka-broker-" + strconv.Itoa(p.NodeID)
 	unitPath := filepath.Join(unitRoot, unitName+".service")
 	if command == "INSPECT_ADD_BROKER" {

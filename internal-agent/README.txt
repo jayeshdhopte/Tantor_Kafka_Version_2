@@ -1,6 +1,6 @@
 Tantor Internal Agent
 
-Add Node build: 1.0.0-prod.17-dataservices.4-configchange.10-rollingrestart.1-addnode.4
+Add Node build: 1.0.0-prod.17-dataservices.4-configchange.10-rollingrestart.1-addnode.5
 Existing enrolled nodes: drain tasks, then use
   sudo bash upgrade-add-node.sh --tasks-drained
 This preserves agent.yaml and the enrolled identity, backs up the old executable,
@@ -72,3 +72,7 @@ Configuration backups: visible config-backup/<config filename>/ next to the acti
 Backup filenames: broker.properties.bak.<UTC timestamp> (likewise controller.properties/server.properties). Dynamic snapshots add .dynamic.json to that same filename. Existing version/job-prefixed filenames remain eligible for seven-day cleanup.
 
 Configuration removal (configchange.7): reviewed deletions remove active property lines, back up file/dynamic state first, and use one health-checked restart per target. Updated property files end with a newline.
+
+Broker plan v2: new operations use broker.properties. Legacy v1 operations retain
+server.properties and their original receipts for safe resume; no live file is renamed.
+Controller plans in this increment are read-only; this agent does not execute controller addition.

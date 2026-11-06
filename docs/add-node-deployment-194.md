@@ -2,13 +2,15 @@
 
 Updated: 6 November 2026 (Asia/Calcutta). Branch: `version2_db_mapping`.
 
+Latest rollout: [broker v2 corrections and Phase 5 planning](add-node-phase4-v2-deployment-194.md). It supersedes the artifact versions below. The broker-102 pilot described here is historical; the team's cluster inventory has subsequently changed. New v2 broker live acceptance and controller execution remain separate pending work.
+
 ## Broker-only Phase 4 verdict
 
 The Kafka 4.3.0 broker pilot completed successfully through the authenticated Tantor APIs on 194. Broker 102 was added on 192.168.3.191 to the existing managed `test` cluster. A real recovery/resume completed the same operation without another prepare, format or start action. All six job steps succeeded and the reservation was released.
 
 This accepts the broker-only pilot on this lab configuration. It does not certify every production configuration, secured Kafka, dynamic controller addition or separate-process addition. Those remain separate release scopes.
 
-## Release artifacts and runtime
+## Earlier pilot release artifacts and runtime
 
 - Platform: `/opt/Tantor_kafka_VERSION-2_049b9d7` on 192.168.3.194.
 - Public UI: `https://192.168.3.194/`; served asset `/assets/index-Cn9DilmF.js` was verified against installed bytes.

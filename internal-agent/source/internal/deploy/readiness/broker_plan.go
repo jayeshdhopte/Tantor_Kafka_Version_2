@@ -47,7 +47,7 @@ func ValidateBrokerPlan(raw, hostID string) (BrokerPlan, error) {
 		return p, fmt.Errorf("invalid broker plan")
 	}
 	hex := regexp.MustCompile(`^[a-f0-9]{64}$`)
-	if p.SchemaVersion != "add-broker/v1" || p.HostID != hostID || !regexp.MustCompile(`^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$`).MatchString(p.OperationID) || !hex.MatchString(p.ContextHash) || !hex.MatchString(strings.ToLower(p.ArtifactChecksum)) || p.NodeID < 1 || p.BrokerPort < 1 || p.BrokerPort > 65535 || net.ParseIP(p.HostIP) == nil || !regexp.MustCompile(`^[A-Za-z0-9_-]{22}$`).MatchString(p.KafkaClusterID) {
+	if (p.SchemaVersion != "add-broker/v1" && p.SchemaVersion != "add-broker/v2") || p.HostID != hostID || !regexp.MustCompile(`^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$`).MatchString(p.OperationID) || !hex.MatchString(p.ContextHash) || !hex.MatchString(strings.ToLower(p.ArtifactChecksum)) || p.NodeID < 1 || p.BrokerPort < 1 || p.BrokerPort > 65535 || net.ParseIP(p.HostIP) == nil || !regexp.MustCompile(`^[A-Za-z0-9_-]{22}$`).MatchString(p.KafkaClusterID) {
 		return p, fmt.Errorf("broker identity, operation or artifact mismatch")
 	}
 	if !versionPattern.MatchString(p.KafkaVersion) || !userPattern.MatchString(p.RuntimeUser) || !regexp.MustCompile(`^[1-9][0-9]*[mMgG]$`).MatchString(p.HeapXmx) {
@@ -125,6 +125,12 @@ func ValidateBrokerPlan(raw, hostID string) (BrokerPlan, error) {
 
 // ValidateBrokerPayload re-verifies installed executable bytes before any future
 // execution command can use the frozen plan. This command itself never mutates.
+func (p BrokerPlan) ConfigFileName() string {
+	if p.SchemaVersion == "add-broker/v2" {
+		return "broker.properties"
+	}
+	return "server.properties"
+}
 func ValidateBrokerPayload(ctx context.Context, p BrokerPlan) error {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()

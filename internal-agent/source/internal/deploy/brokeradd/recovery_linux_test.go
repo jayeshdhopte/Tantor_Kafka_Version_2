@@ -136,6 +136,38 @@ func brokerTestFixture(t *testing.T, versions ...string) (readiness.BrokerPlan, 
 	os.MkdirAll(units, 0755)
 	return p, params, base, config, units
 }
+func TestNewBrokerUsesBrokerPropertiesAndKeepsFormatCheckpoint(t *testing.T) {
+	p, params, base, config, units := brokerTestFixture(t, "4.3.0")
+	p.SchemaVersion = "add-broker/v2"
+	raw, _ := json.Marshal(p)
+	params["broker_plan"] = string(raw)
+	params["plan_digest"] = Digest(string(raw), params["server_properties"])
+	e := &fakeBrokerExecutor{plan: p, loseResult: true}
+	ctx := context.Background()
+	if _, err := run(ctx, "PREPARE_ADD_BROKER", p.HostID, base, params, e, config, units); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(config, p.OperationID, "broker.properties")
+	if _, err := os.Stat(path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(config, p.OperationID, "server.properties")); !os.IsNotExist(err) {
+		t.Fatal("new plan used the legacy filename")
+	}
+	unit, err := os.ReadFile(filepath.Join(units, "tantor-kafka-broker-4.service"))
+	if err != nil || !strings.Contains(string(unit), path) {
+		t.Fatal("service does not use broker.properties")
+	}
+	if _, err := run(ctx, "FORMAT_ADD_BROKER", p.HostID, base, params, e, config, units); err == nil {
+		t.Fatal("callback loss not exercised")
+	}
+	if _, err := run(ctx, "FORMAT_ADD_BROKER", p.HostID, base, params, e, config, units); err != nil {
+		t.Fatal(err)
+	}
+	if e.formats != 1 || storageState(p) != "MATCHING" {
+		t.Fatal("resume changed broker storage identity")
+	}
+}
 func TestFourThreeLostFormatResultPreservesIdentityAndDoesNotReformat(t *testing.T) {
 	p, params, base, config, units := brokerTestFixture(t, "4.3.0")
 	exec := &fakeBrokerExecutor{plan: p, loseResult: true}

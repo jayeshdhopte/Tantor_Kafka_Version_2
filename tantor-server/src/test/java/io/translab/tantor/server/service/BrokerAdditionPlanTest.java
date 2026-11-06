@@ -26,7 +26,13 @@ class BrokerAdditionPlanTest {
     private BrokerAdditionPlan freeze(Map<String,Object> p) {return BrokerAdditionPlan.freeze(preview(p,"PASS",Instant.now().plusSeconds(60),true),operation,4,"1@192.168.3.194:9093");}
     @Test void staticBrokerKeepsExistingIdentityAndVoters() {
         var plan=freeze(inputs());assertEquals(4,plan.nodeId());assertEquals(operation,plan.operationId());
+        assertEquals("add-broker/v2",plan.schemaVersion());assertEquals("broker.properties",plan.configFileName());
         assertEquals("abcdefghijklmnopqrstuv",plan.kafkaClusterId());assertEquals("1@192.168.3.194:9093",plan.quorumVoters());
+    }
+    @Test void oldFrozenPlanRetainsItsOriginalConfigurationFile() throws Exception {
+        var mapper=new com.fasterxml.jackson.databind.ObjectMapper();
+        var old=mapper.readTree(mapper.writeValueAsString(freeze(inputs())));((com.fasterxml.jackson.databind.node.ObjectNode)old).put("schemaVersion","add-broker/v1");
+        var plan=mapper.treeToValue(old,BrokerAdditionPlan.class);plan.validate();assertEquals("server.properties",plan.configFileName());assertEquals("server.properties",plan.forOperation(operation).configFileName());
     }
     @Test void dynamicBrokerDoesNotNeedOrInventInitialControllers() {
         var p=inputs();p.put("quorumMode","DYNAMIC");
