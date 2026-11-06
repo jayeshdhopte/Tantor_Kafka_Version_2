@@ -32,7 +32,7 @@ The acceptance runner and evidence are in the parent workspace's `ui-verificatio
 | 2 | Real common and broker readiness checks; expected/observed results, freshness and context invalidation | Deployed on 194; Linux tests and authenticated live 4.3.0 candidate readiness passed |
 | 3 | Broker job execution with final checks, host/ID reservations and safe candidate preparation | Deployed and exercised through the authenticated API; Kafka 4.3.0 candidate prepared, formatted and started as a non-root user |
 | 4 | Verified publication, durable evidence, reconciliation and broker resume | Broker-only 4.3.0 pilot passed: same-operation resume without reformat, stable unfenced registration, unchanged voters, atomic publication and candidate produce/consume |
-| 5 | Script-aligned static controller maintenance and dynamic observer/catch-up/admission | In progress: read-only backend/UI planning implemented; execution, durable recovery and controller pilots pending |
+| 5 | Script-aligned static controller maintenance and dynamic observer/catch-up/admission | In progress: planning and local read-only participant inspection implemented; execution, durable recovery and controller pilots pending |
 | 6 | Separate controller and broker processes with controller-first verification | In progress: two-process planning API/UI implemented; depends on Phase 5 execution and needs parent reservations, native execution/recovery and atomic publication |
 | 7 | Full release acceptance, compatibility certification and deployment documentation | Not implemented |
 

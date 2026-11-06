@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ParticipantInspectionTable, type InspectionParticipant } from './ParticipantInspectionTable';
 
 type Process = {
   role: 'controller' | 'broker'; nodeId: number | null; processRoles: string; configurationFile: string;
@@ -11,6 +12,7 @@ type Review = {
   steps: { code: string; name: string; scope: string; script: string }[];
   checks: { code: string; name: string; phase: string; status: string; expected: string; observed: string }[];
   recoveryRules: { checkpoint: string; requirement: string }[]; blockers: string[];
+  contextHash: string; participants: InspectionParticipant[];
 };
 
 export function SeparateProcessAdditionPlanReview(props: { clusterId: string; hostId: string; brokerRack: string }) {
@@ -65,6 +67,7 @@ function SeparateReviewSession({ clusterId, hostId, brokerRack }: { clusterId: s
       <h4>Two-process readiness</h4>
       <p>A broker-only readiness pass does not validate this layout. Both JVMs need resource, port and storage checks.</p>
       <ul>{review.checks.filter(check => check.phase === 'SEPARATE').map(check => <li key={check.code}><strong>{check.name} · {check.status}</strong><p>{check.expected}<br />{check.observed}</p></li>)}</ul>
+      {review.participants?.length > 0 && <><h4>Existing participant observations</h4><ParticipantInspectionTable clusterId={clusterId} contextHash={review.contextHash} participants={review.participants} /></>}
       <h4>Controller-first workflow</h4>
       <ol>{review.steps.map(step => <li key={step.code}><strong>{step.name}</strong><p>{step.scope}<br /><small>{step.script}</small></p></li>)}</ol>
       <h4>Failure and resume behavior required before execution</h4>

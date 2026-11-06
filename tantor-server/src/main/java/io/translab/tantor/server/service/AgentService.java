@@ -433,7 +433,7 @@ public class AgentService {
 
     private void updateClusterStatus(io.translab.tantor.server.domain.Cluster cluster, Task currentTask) {
         String command = currentTask.getCommand();
-        if (java.util.Set.of("INSPECT_ADD_NODE","PROBE_ADD_NODE","VALIDATE_ADD_BROKER_PLAN",
+        if (java.util.Set.of("INSPECT_ADD_NODE_PROCESS","INSPECT_ADD_NODE","PROBE_ADD_NODE","VALIDATE_ADD_BROKER_PLAN",
                 "INSPECT_ADD_BROKER","PREPARE_ADD_BROKER","FORMAT_ADD_BROKER","START_ADD_BROKER").contains(command)) {
             // Candidate observations/actions never rewrite the existing cluster lifecycle.
             // BrokerAdditionLedger alone publishes verified membership.

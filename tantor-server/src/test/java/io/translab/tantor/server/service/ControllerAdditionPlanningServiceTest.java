@@ -13,7 +13,8 @@ import static org.mockito.Mockito.*;
 class ControllerAdditionPlanningServiceTest {
  final ClusterRepository clusters=mock(ClusterRepository.class);final HostRepository hosts=mock(HostRepository.class);final ClusterServiceAssignmentRepository assignments=mock(ClusterServiceAssignmentRepository.class);
  final HostStatusService connectivity=mock(HostStatusService.class);final JobService jobs=mock(JobService.class);final AddNodeKafkaReadiness kafka=mock(AddNodeKafkaReadiness.class);final AddNodeArtifactCatalog artifacts=mock(AddNodeArtifactCatalog.class);
- final ControllerAdditionPlanningService planning=new ControllerAdditionPlanningService(clusters,hosts,assignments,connectivity,jobs,kafka,artifacts,new AddNodeReadinessProperties(),new ObjectMapper().findAndRegisterModules());
+ final io.translab.tantor.server.config.AddNodeInspectionProperties inspectionPolicy=new io.translab.tantor.server.config.AddNodeInspectionProperties();
+ final ControllerAdditionPlanningService planning=new ControllerAdditionPlanningService(clusters,hosts,assignments,connectivity,jobs,kafka,artifacts,new AddNodeReadinessProperties(),new ObjectMapper().findAndRegisterModules(),inspectionPolicy);
  final Cluster cluster=new Cluster();final Host host=new Host();
  @BeforeEach void setup(){
   cluster.setId(UUID.randomUUID());cluster.setMode("kraft");cluster.setStatus("SUCCESS");cluster.setKafkaVersion("4.3.0");cluster.setKafkaClusterId("abcdefghijklmnopqrstuv");cluster.setConfigJson("{}");cluster.setNodeIds(List.of(1,101,102));
@@ -28,4 +29,9 @@ class ControllerAdditionPlanningServiceTest {
  @Test void occupiedHostAndUnresolvedOperationAreExplicitBlockers(){host.setClusterId(cluster.getId());when(jobs.getActiveClusterJobs()).thenReturn(List.of(Map.of("clusterId",cluster.getId().toString())));var r=planning.review(cluster.getId(),host.getId());assertTrue(r.blockers().stream().anyMatch(s->s.contains("fresh unassigned")));assertTrue(r.blockers().stream().anyMatch(s->s.contains("retained reservation")));assertFalse(r.executionEnabled());}
  @Test void contextBindsInventoryReferencesAndCandidateVersion(){var first=planning.review(cluster.getId(),host.getId());cluster.getServices().get(2).setConfigJson("{\"config_path\":\"/etc/new/broker.properties\"}");assertNotEquals(first.contextHash(),planning.review(cluster.getId(),host.getId()).contextHash());host.setAgentVersion("changed");assertNotEquals(first.contextHash(),planning.review(cluster.getId(),host.getId()).contextHash());}
  @Test void externalClusterIsRejectedBeforeKafkaObservation(){cluster.setOriginType("EXTERNAL");assertThrows(org.springframework.web.server.ResponseStatusException.class,()->planning.review(cluster.getId(),host.getId()));verifyNoInteractions(kafka);}
-}
+ @Test void inspectionAvailabilityRequiresExplicitScopeAndCompatibleAgent(){
+  var participant=cluster.getServices().get(2);participant.setId(UUID.randomUUID());var enrolled=new Host();enrolled.setId(participant.getHostId());enrolled.setHostIp("192.0.2.191");enrolled.setAgentVersion("1.0.0-addnode.6");when(hosts.findById(enrolled.getId())).thenReturn(Optional.of(enrolled));when(connectivity.agentConnectivityStatus(enrolled)).thenReturn("ONLINE");
+  inspectionPolicy.setAllowedHostIds(List.of(enrolled.getId()));assertTrue(planning.review(cluster.getId(),host.getId()).participants().stream().anyMatch(p->p.inspectionAllowed()));
+  inspectionPolicy.setExcludedHostIps(List.of(enrolled.getHostIp()));assertTrue(planning.review(cluster.getId(),host.getId()).participants().stream().noneMatch(p->p.inspectionAllowed()));
+  inspectionPolicy.setExcludedHostIps(List.of());enrolled.setAgentVersion("1.0.0-addnode.5");assertTrue(planning.review(cluster.getId(),host.getId()).participants().stream().noneMatch(p->p.inspectionAllowed()));
+ }}

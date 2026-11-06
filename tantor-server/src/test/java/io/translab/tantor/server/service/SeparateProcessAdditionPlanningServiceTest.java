@@ -20,7 +20,7 @@ class SeparateProcessAdditionPlanningServiceTest {
     final AddNodeKafkaReadiness kafka = mock(AddNodeKafkaReadiness.class);
     final AddNodeArtifactCatalog artifacts = mock(AddNodeArtifactCatalog.class);
     final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
-    final ControllerAdditionPlanningService controllers = new ControllerAdditionPlanningService(clusters, hosts, assignments, connectivity, jobs, kafka, artifacts, new AddNodeReadinessProperties(), mapper);
+    final ControllerAdditionPlanningService controllers = new ControllerAdditionPlanningService(clusters, hosts, assignments, connectivity, jobs, kafka, artifacts, new AddNodeReadinessProperties(), mapper, new io.translab.tantor.server.config.AddNodeInspectionProperties());
     final SeparateProcessAdditionPlanningService planning = new SeparateProcessAdditionPlanningService(controllers, clusters, mapper);
     final Cluster cluster = new Cluster();
     final Host host = new Host();

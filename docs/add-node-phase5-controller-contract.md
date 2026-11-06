@@ -4,7 +4,7 @@
 
 First implementation milestone: authenticated, read-only controller planning API and UI. Static maintenance and dynamic observer/admission are separate workflows selected from live finalized Kafka features. Controller execution is deliberately unavailable in this increment. It does not schedule agent tasks, reserve IDs, stop/restart services, format storage, change voters, migrate features or publish membership.
 
-This is progress into Phase 5, not completion of controller execution. The next required milestone is participant/candidate inspection followed by durable execution checkpoints and failure/resume tests. A static maintenance run also needs a fresh eligible controller host and review of its concrete downtime plan.
+This is progress into Phase 5, not completion of controller execution. The local follow-up implements [existing participant process inspection](add-node-process-inspection.md) through an explicit leased read-only agent task. Candidate readiness, runtime artifact proof, durable execution checkpoints and failure/resume tests remain required. A static maintenance run also needs a fresh eligible controller host and review of its concrete downtime plan. Deployment is on hold and 213 is excluded by user instruction.
 
 ## Source of truth
 

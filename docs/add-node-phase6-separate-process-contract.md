@@ -6,7 +6,7 @@ Phase 6 planning is implemented in the backend and Add Node role screen. It does
 
 Local validation on 6 November 2026: production UI build and changed-file lint passed; 306 selected backend tests completed with 270 passed, zero failures/errors and 36 opt-in database skips. Eleven separate-process browser fixture scenarios plus five existing broker-v2 and six controller-planning scenarios passed. Desktop/mobile layouts were inspected; the process table scrolls locally on narrow screens without page overflow. The fixtures do not execute Kafka commands.
 
-Deployment of this planning increment is pending: SSH connectivity to 194, 213, 229 and 191 timed out during rollout preflight. No Phase 6 artifacts have been uploaded or services restarted. Existing internal agents remain at the previously deployed `.5` release; this increment adds no agent command or executable.
+Deployment is now explicitly on hold by user instruction, and 213 is excluded from all connections/testing/rollouts. No Phase 6 artifacts have been uploaded or services restarted. Existing installed agents remain at the previously deployed `.5` release. The local follow-up prepares `.6` with [read-only participant process inspection](add-node-process-inspection.md); it does not implement controller or separate-process mutation commands.
 
 One **fresh unassigned host** receives a controller-only JVM and a broker-only JVM. This flow does not add a second process to an occupied host and does not create a combined `process.roles=broker,controller` JVM. The same Kafka cluster ID and exact existing Kafka version apply to both processes.
 

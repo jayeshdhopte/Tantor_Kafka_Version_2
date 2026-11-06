@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
+import { ParticipantInspectionTable, type InspectionParticipant } from './ParticipantInspectionTable';
 
 type Review = {
   schemaVersion: string; clusterId: string; hostId: string; kafkaClusterId: string; kafkaVersion: string;
   quorumMode: 'STATIC' | 'DYNAMIC' | 'UNKNOWN'; proposedControllerId: number | null; maintenanceRequired: boolean;
-  executionEnabled: false; status: string; expiresAt: string;
-  participants: { hostId: string; role: string; nodeId: number; serviceName: string; configurationPath: string; evidenceStatus: string }[];
+  executionEnabled: false; status: string; expiresAt: string; contextHash: string;
+  participants: InspectionParticipant[];
   steps: { code: string; name: string; scope: string; script: string }[]; blockers: string[];
 };
 
@@ -48,9 +49,7 @@ function ControllerReviewSession({ clusterId, hostId }: { clusterId: string; hos
       </dl>
       {expired && <p role="alert">This review expired. Refresh it before discussing the maintenance plan.</p>}
       <h4>Existing services in scope</h4>
-      <div className="add-node-table-wrap"><table><thead><tr><th>Host / role / ID</th><th>Inventory references</th><th>Evidence</th></tr></thead><tbody>
-        {review.participants.map((p, i) => <tr key={`${p.hostId}:${p.role}:${p.nodeId}:${i}`}><td>{p.hostId} · {p.role} · {p.nodeId}</td><td>{p.serviceName || 'Service discovery required'}<br />{p.configurationPath || 'Configuration discovery required'}</td><td>{p.evidenceStatus}</td></tr>)}
-      </tbody></table></div>
+      <ParticipantInspectionTable clusterId={clusterId} contextHash={review.contextHash} participants={review.participants} />
       <h4>Workflow mapped to your scripts</h4>
       <ol>{review.steps.map(s => <li key={s.code}><strong>{s.name}</strong><p>{s.scope}<br /><small>{s.script}</small></p></li>)}</ol>
       <h4>Execution blockers</h4><ul>{review.blockers.map(b => <li key={b}>{b}</li>)}</ul>

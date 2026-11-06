@@ -22,6 +22,7 @@ import (
 	"io.translab/tantor-agent/internal/deploy/ksqldb"
 	"io.translab/tantor-agent/internal/deploy/monitoring"
 	"io.translab/tantor-agent/internal/deploy/parcel"
+	"io.translab/tantor-agent/internal/deploy/processinspect"
 	"io.translab/tantor-agent/internal/deploy/readiness"
 	"io.translab/tantor-agent/internal/deploy/schema"
 	"io.translab/tantor-agent/internal/executor"
@@ -49,6 +50,19 @@ func (e *Engine) Execute(ctx context.Context, t *api.Task) (*api.TaskResult, err
 	slog.Info("Executing deployment task", "taskId", t.TaskID, "command", t.Command)
 
 	switch t.Command {
+	case "INSPECT_ADD_NODE_PROCESS":
+		if runtime.GOOS != "linux" {
+			return e.fail(t, "Kafka process inspection requires a Linux agent"), nil
+		}
+		report, err := processinspect.Run(ctx, t.Parameters["process_inspection_request"], e.cfg.Agent.HostID, e.exec)
+		if err != nil {
+			return e.fail(t, err.Error()), nil
+		}
+		encoded, err := json.Marshal(report)
+		if err != nil {
+			return e.fail(t, "Cannot encode process inspection evidence"), nil
+		}
+		return &api.TaskResult{TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS", LogOutput: string(encoded)}, nil
 	case "PREPARE_ADD_BROKER", "FORMAT_ADD_BROKER", "START_ADD_BROKER", "INSPECT_ADD_BROKER":
 		output, err := brokeradd.Run(ctx, t.Command, e.cfg.Agent.HostID, e.cfg.Paths.DataDir, t.Parameters, e.exec, e.client)
 		if err != nil {

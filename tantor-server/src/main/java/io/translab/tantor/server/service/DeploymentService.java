@@ -865,6 +865,8 @@ public class DeploymentService {
         return "broker.properties";
     }
     private void rejectBrokerAdditionTask(Task task) {
+        if ("INSPECT_ADD_NODE_PROCESS".equals(task.getCommand()))
+            throw new IllegalArgumentException("Request a fresh Add Node process inspection; generic retry, rollback and cleanup are disabled.");
         if(task.getCommand()!=null&&(task.getCommand().contains("_ADD_BROKER")||java.util.Set.of("INSPECT_ADD_NODE","PROBE_ADD_NODE").contains(task.getCommand())))
             throw new IllegalArgumentException("Use the broker addition operation resume/cancel API; generic task retry, rollback and cleanup are disabled.");
     }
