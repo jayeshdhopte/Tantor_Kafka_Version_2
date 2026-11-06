@@ -65,7 +65,7 @@ for architecture, machine in [('amd64', 62), ('arm64', 183)]:
     if content[:4] != b'\x7fELF' or content[5] != 1 or struct.unpack_from('<H', content, 18)[0] != machine:
         raise SystemExit('Binary format/architecture mismatch: ' + architecture)
     metadata = subprocess.check_output([args.go, 'version', '-m', str(binary)], text=True)
-    if commit not in metadata or 'GOOS=linux' not in metadata or 'GOARCH=' + architecture not in metadata:
+    if commit.encode() not in content or version.encode() not in content or stamp.encode() not in content or 'GOOS=linux' not in metadata or 'GOARCH=' + architecture not in metadata:
         raise SystemExit('Binary source/build identity mismatch.')
     checksums[str(binary.relative_to(kit)).replace('\\', '/')] = hashlib.sha256(content).hexdigest()
 archive_path = kit / ('source-' + suffix + '.tar.gz')

@@ -82,6 +82,8 @@ server.properties and their original receipts for safe resume; no live file is r
 Controller plans in this increment are read-only; this agent does not execute controller addition.
 
 Local development candidate addnode.6 includes read-only existing-process inspection.
+Both Linux binaries are checksum-bound to the exact Go source commit recorded in BUILD-ADD-NODE.json.
+The matching source snapshot is source-addnode.6.tar.gz; rebuild instructions are in build-release.py --help.
 No controller or separate-process mutation executor is enabled. Deployment is ON HOLD.
 For this lab, 192.168.3.213 / broker6 is excluded from connections, probes, tests and upgrades.
 See docs/add-node-process-inspection.md and the explicit host-scope configuration before any future rollout.

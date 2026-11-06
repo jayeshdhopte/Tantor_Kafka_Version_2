@@ -1,0 +1,15 @@
+{
+  "version": "1.0.0-prod.17-dataservices.4-configchange.10-rollingrestart.1-addnode.6",
+  "source_commit": "ff6b711f67ae320158d19c3f960040937d23105b",
+  "build_date_utc": "2026-11-06T08:29:32Z",
+  "go_version": "go version go1.24.2 windows/amd64",
+  "checksums": {
+    "bin/tantor-agent-linux-amd64": "80176aec399bbdc4103737c7fec9363286fbe6cb53f54479f514d6ca3bcf8a7a",
+    "bin/tantor-agent-linux-arm64": "511dca87a7d0df112d43411296728de171f2e9c254370ae3f714d69ac5577d96",
+    "source-addnode.6.tar.gz": "4222d8d375b371757b779208de899cecfaf153861e3471dc4584c67837a56ed6"
+  },
+  "deployment_status": "HELD_NOT_INSTALLED",
+  "new_command": "INSPECT_ADD_NODE_PROCESS",
+  "controller_execution_enabled": false,
+  "separate_process_execution_enabled": false
+}
