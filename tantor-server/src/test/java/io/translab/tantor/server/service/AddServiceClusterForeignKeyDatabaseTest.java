@@ -96,14 +96,16 @@ class AddServiceClusterForeignKeyDatabaseTest {
     @Test void purgeRetainsParentAndOriginalMappingButClearsLiveAssignments() {
         rollback(()->{
             UUID id=cluster(),serviceId=mapping(id,"kafka_connect");
-            String before=jdbc.queryForObject("SELECT to_jsonb(s)::text FROM kf_add_service s WHERE add_service_id=?",String.class,serviceId);
+            String before=jdbc.queryForObject("SELECT (to_jsonb(s)-'status'-'updated_by')::text FROM kf_add_service s WHERE add_service_id=?",String.class,serviceId);
             String host=jdbc.queryForObject("SELECT id FROM kf_hosts LIMIT 1",String.class);
             jdbc.update("UPDATE kf_hosts SET cluster_id=? WHERE id=?",id,host);
             jdbc.update("INSERT INTO kf_cluster_services(id,cluster_id,host_id,role,status,config_json) VALUES (?,?,?,'kafka_connect','ONLINE','{}')",
                     serviceId,id,host);
+            // V103 retires lifecycle fields; the original identity/security mapping remains.
             assertThat(purge(id)).isZero();
             assertThat(jdbc.queryForObject("SELECT status FROM kf_clusters WHERE id=?",String.class,id)).isEqualTo("DELETED");
-            assertThat(jdbc.queryForObject("SELECT to_jsonb(s)::text FROM kf_add_service s WHERE add_service_id=?",String.class,serviceId)).isEqualTo(before);
+            assertThat(jdbc.queryForObject("SELECT (to_jsonb(s)-'status'-'updated_by')::text FROM kf_add_service s WHERE add_service_id=?",String.class,serviceId)).isEqualTo(before);
+            assertThat(jdbc.queryForObject("SELECT status FROM kf_add_service WHERE add_service_id=?",String.class,serviceId)).isEqualTo("DELETED");
             assertThat(jdbc.queryForObject("SELECT count(*) FROM kf_cluster_services WHERE cluster_id=?",Long.class,id)).isZero();
             assertThat(jdbc.queryForObject("SELECT count(*) FROM kf_nodes WHERE cluster_id=?",Long.class,id)).isZero();
             assertThat(jdbc.queryForObject("SELECT cluster_id FROM kf_hosts WHERE id=?",UUID.class,host)).isNull();

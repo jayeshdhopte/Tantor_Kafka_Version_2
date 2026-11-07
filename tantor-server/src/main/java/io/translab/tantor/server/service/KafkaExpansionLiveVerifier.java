@@ -24,7 +24,7 @@ public class KafkaExpansionLiveVerifier {
     private final AddNodeInspectionProperties scopePolicy;
     private final ObjectMapper mapper;
     public record ControllerProof(UUID observationId,UUID operationId,String planDigest,int nodeId,String directoryId,
-                                  String baselineDigest,Instant observedAt,boolean observerCaughtUp,boolean voterVerified) {}
+                                  String baselineDigest,@com.fasterxml.jackson.annotation.JsonFormat(shape=com.fasterxml.jackson.annotation.JsonFormat.Shape.STRING) Instant observedAt,boolean observerCaughtUp,boolean voterVerified) {}
     public void baseline(KafkaExpansionPlan plan){allowed(plan);quorum.healthyBaseline(baselineOf(plan),quorum.observe(endpoints(plan,false)),policy.getMaxQuorumLag(),Instant.now());brokerSet(plan,false);partitionHealth(plan);}
     public ControllerProof controller(KafkaExpansionPlan.Frozen frozen,String directoryId,boolean membership,boolean staticConfigsVerified,boolean brokerExpected){
         var plan=frozen.plan();allowed(plan);var live=quorum.observe(endpoints(plan,true));var process=plan.process("controller");var candidate=new KafkaExpansionQuorum.Candidate(process.nodeId(),directoryId,endpoint(plan.candidateIp(),process.port()));

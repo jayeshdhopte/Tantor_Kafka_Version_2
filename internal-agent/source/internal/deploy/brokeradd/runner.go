@@ -244,7 +244,9 @@ func run(ctx context.Context, command, hostID, base string, params map[string]st
 			return "", err
 		}
 		args := []string{"-u", p.RuntimeUser, "--", "env", "JAVA_HOME=" + p.JavaHome, "KAFKA_HEAP_OPTS=-Xmx" + p.HeapXmx, "LOG_DIR=" + p.LogPath, "KAFKA_LOG4J_OPTS=-Dlog4j2.configurationFile=" + filepath.Join(filepath.Dir(configPath), "log4j2.xml") + " -Dkafka.logs.dir=" + p.LogPath, "bash", filepath.Join(p.ParcelDir, "kafka", p.KafkaVersion, "bin", "kafka-storage.sh"), "format", "--cluster-id", p.KafkaClusterID, "--config", configPath}
-		if p.QuorumMode == "DYNAMIC" {
+		// Preserve the old frozen v1 adapter; v2 follows storage_format.yml,
+		// where --no-initial-controllers is reserved for a controller role.
+		if p.QuorumMode == "DYNAMIC" && p.SchemaVersion == "add-broker/v1" {
 			args = append(args, "--no-initial-controllers")
 		}
 		if _, _, err = exec.RunSudo(ctx, "runuser", args...); err != nil {

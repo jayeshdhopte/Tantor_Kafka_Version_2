@@ -7,6 +7,7 @@ import jakarta.persistence.LockModeType;
 import java.util.*;
 
 public interface KafkaExpansionOperationRepository extends JpaRepository<KafkaExpansionOperation,UUID> {
+    List<KafkaExpansionOperation> findByClusterIdAndHostIdAndState(UUID clusterId,String hostId,io.translab.tantor.server.service.KafkaExpansionState state);
     Optional<KafkaExpansionOperation> findByJobId(UUID jobId);
     Optional<KafkaExpansionOperation> findByClusterIdAndRequestKey(UUID clusterId,String requestKey);
     @Lock(LockModeType.PESSIMISTIC_WRITE) @Query("select o from KafkaExpansionOperation o where o.id=:id")

@@ -5,6 +5,7 @@ import org.springframework.data.repository.query.Param;
 import jakarta.persistence.LockModeType;
 import java.util.*;
 public interface BrokerAdditionOperationRepository extends JpaRepository<BrokerAdditionOperation,UUID> {
+    List<BrokerAdditionOperation> findByClusterIdAndHostIdAndState(UUID clusterId,String hostId,io.translab.tantor.server.service.BrokerAdditionState state);
     Optional<BrokerAdditionOperation> findByClusterIdAndRequestKey(UUID clusterId,String key);
     Optional<BrokerAdditionOperation> findByJobId(UUID jobId);
     @Lock(LockModeType.PESSIMISTIC_WRITE)

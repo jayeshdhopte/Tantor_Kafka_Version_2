@@ -148,7 +148,10 @@ func (e *nativeParticipantEnvironment) StartParticipant(ctx context.Context, m P
 		return err
 	}
 	_, _, err := e.exec.Run(ctx, "systemctl", "start", m.Unit)
-	return err
+	if err != nil {
+		return err
+	}
+	return waitReviewedJava(ctx, e.exec, m.Unit, m.ConfigPath)
 }
 func (e *nativeParticipantEnvironment) ApplyParticipant(ctx context.Context, m Participant, original, expanded string) error {
 	// Recheck the exact stopped unit and config immediately before replacement.

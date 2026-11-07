@@ -2407,6 +2407,9 @@ func (d *Deployer) Rollback(ctx context.Context, t *api.Task) (string, error) {
 }
 
 func (d *Deployer) Clean(ctx context.Context, t *api.Task) (string, error) {
+	if t.Parameters["add_node_cleanup"] != "" {
+		return d.cleanAddedNodes(ctx, t)
+	}
 	var logs strings.Builder
 	log := func(msg string, args ...interface{}) {
 		formatted := fmt.Sprintf(msg, args...)

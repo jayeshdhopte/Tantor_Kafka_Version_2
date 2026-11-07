@@ -392,7 +392,13 @@ func (e *nativeCandidateEnvironment) Prepare(ctx context.Context, p Plan, c Proc
 	if err = writeExclusive(p.ConfigPath(c.Role), properties, 0644); err != nil {
 		return err
 	}
-	return writeExclusive(filepath.Join("/etc/systemd/system", p.Unit(c.Role)), candidateUnit(p, c), 0644)
+	if err = writeExclusive(filepath.Join("/etc/systemd/system", p.Unit(c.Role)), candidateUnit(p, c), 0644); err != nil {
+		return err
+	}
+	// Clear systemd's cached not-found state before the ownership observation.
+	// Reloading the definition does not start the candidate or any existing unit.
+	_, _, err = e.exec.Run(ctx, "systemctl", "daemon-reload")
+	return err
 }
 func (e *nativeCandidateEnvironment) Format(ctx context.Context, p Plan, c Process) error {
 	for _, d := range storagePaths(c) {
@@ -414,7 +420,10 @@ func (e *nativeCandidateEnvironment) Start(ctx context.Context, p Plan, c Proces
 		return err
 	}
 	_, _, err := e.exec.Run(ctx, "systemctl", "enable", "--now", p.Unit(c.Role))
-	return err
+	if err != nil {
+		return err
+	}
+	return waitReviewedJava(ctx, e.exec, p.Unit(c.Role), p.ConfigPath(c.Role))
 }
 func (e *nativeCandidateEnvironment) Admit(ctx context.Context, p Plan, c Process) error {
 	return runKafkaCLI(ctx, p, c, "kafka-metadata-quorum.sh", "--bootstrap-controller", strings.Join(p.ExistingControllers(), ","), "--command-config", p.ConfigPath(c.Role), "add-controller")

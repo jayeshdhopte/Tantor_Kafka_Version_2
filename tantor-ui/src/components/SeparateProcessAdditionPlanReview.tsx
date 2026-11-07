@@ -58,7 +58,7 @@ function SeparateReviewSession({ clusterId, hostId, brokerRack, commonPreview }:
       <dl className="add-node-review">
         <dt>Quorum</dt><dd>{review.quorumMode}</dd><dt>Kafka version</dt><dd>{review.kafkaVersion} · inherited by both processes</dd>
         <dt>Kafka cluster ID</dt><dd><code>{review.kafkaClusterId}</code></dd><dt>Broker rack</dt><dd>{review.brokerRack || 'Not specified'} · still requires live validation</dd>
-        <dt>Impact</dt><dd>{review.maintenanceRequired ? 'Static script plan: planned broker/controller downtime. Execution unavailable.' : review.quorumMode === 'DYNAMIC' ? 'Observer admission, then broker start. Existing services remain running.' : 'Quorum mode unknown; no workflow selected.'}</dd>
+        <dt>Impact</dt><dd>{review.maintenanceRequired ? 'Static script plan: planned broker/controller downtime; maintenance acknowledgement required.' : review.quorumMode === 'DYNAMIC' ? 'Observer admission, then broker start. Existing services remain running.' : 'Quorum mode unknown; no workflow selected.'}</dd>
       </dl>
       {expired && <p role="alert">This separate-process review expired. Refresh it for current observations.</p>}
       <h4>Two proposed processes · IDs are not reserved</h4>
@@ -76,9 +76,9 @@ function SeparateReviewSession({ clusterId, hostId, brokerRack, commonPreview }:
       {review.participants?.length > 0 && <><h4>Existing participant observations</h4><ParticipantInspectionTable clusterId={clusterId} contextHash={review.contextHash} participants={review.participants} onRuntimeEvidence={onRuntimeEvidence} /></>}
       <h4>Controller-first workflow</h4>
       <ol>{review.steps.map(step => <li key={step.code}><strong>{step.name}</strong><p>{step.scope}<br /><small>{step.script}</small></p></li>)}</ol>
-      <h4>Failure and resume behavior required before execution</h4>
+      <h4>Failure and resume behavior</h4>
       <ul>{review.recoveryRules.map(rule => <li key={rule.checkpoint}><strong>{rule.checkpoint}</strong><p>{rule.requirement}</p></li>)}</ul>
-      <h4>Execution blockers</h4><ul>{review.blockers.map(blocker => <li key={blocker}>{blocker}</li>)}</ul>
+      <h4>Requirements before submission</h4><ul>{review.blockers.map(blocker => <li key={blocker}>{blocker}</li>)}</ul>
       <p>No host/ID reservation, job, agent command or membership publication is created by this review.</p>
     </>}
     <button className="add-node-button" onClick={() => { setReview(null); setError(''); setExpired(false); setRevision(value => value + 1); }}>Refresh separate-process plan</button>

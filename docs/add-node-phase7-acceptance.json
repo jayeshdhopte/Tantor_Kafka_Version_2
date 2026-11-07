@@ -1,0 +1,89 @@
+{
+  "schemaVersion": "tantor-add-node-acceptance/v1",
+  "testedKafkaVersion": "4.3.0",
+  "testHosts": [
+    "192.168.3.191",
+    "192.168.3.229"
+  ],
+  "excludedHosts": [
+    "192.168.3.213"
+  ],
+  "scope": "Isolated real Kafka/native-adapter runs with backend typed verification; browser and database tests are separate checks.",
+  "productionDeploymentPerformed": false,
+  "productionAgentsReplaced": false,
+  "nativeTestSourceSha256": "c2a5435da81017dec3ef0e84eaf8e7cc74a3dafaad01760491e564e59f839856",
+  "scenarios": [
+    {
+      "mode": "DYNAMIC",
+      "layout": "CONTROLLER",
+      "operationId": "9ed1e98c-bbbf-4379-af64-f525bf97259f",
+      "clusterId": "cm168hJQRHWO10i-trWf8w",
+      "formatReplayPreservedIds": true,
+      "controllerVoterVerified": true,
+      "brokerActive": false,
+      "topicListSmoke": true,
+      "cleanupAndReplay": true
+    },
+    {
+      "mode": "DYNAMIC",
+      "layout": "SEPARATE",
+      "operationId": "69aee171-adf0-4feb-9527-468d6cc12378",
+      "clusterId": "Ltn5POV4Rt-tvziTDtyXQA",
+      "formatReplayPreservedIds": true,
+      "controllerVoterVerified": true,
+      "brokerActive": true,
+      "topicListSmoke": true,
+      "cleanupAndReplay": true
+    },
+    {
+      "mode": "STATIC",
+      "layout": "CONTROLLER",
+      "operationId": "ddaa0ebc-6bfa-4b80-b4d5-20f279ff8f5c",
+      "clusterId": "ePVgtXwTSpayRiP4AKgDvw",
+      "formatReplayPreservedIds": true,
+      "controllerVoterVerified": true,
+      "brokerActive": false,
+      "topicListSmoke": true,
+      "cleanupAndReplay": true
+    },
+    {
+      "mode": "STATIC",
+      "layout": "SEPARATE",
+      "operationId": "dedff571-f424-40bb-8cad-0e3c6ebee84b",
+      "clusterId": "tUI8z_eISFuMtY2akO96rg",
+      "formatReplayPreservedIds": true,
+      "controllerVoterVerified": true,
+      "brokerActive": true,
+      "topicListSmoke": true,
+      "cleanupAndReplay": true
+    },
+    {
+      "mode": "DYNAMIC",
+      "layout": "BROKER",
+      "operationId": "17d602ff-3e91-4d22-a39b-9f6fd875e40a",
+      "clusterId": "KGG0lI_rQlyL94s47mNHCQ",
+      "nodeId": 7002,
+      "brokerProperties": true,
+      "sameVersionAndClusterId": true,
+      "formatReplayPreservedIds": true,
+      "brokerRegisteredUnfenced": true,
+      "rackVerified": true,
+      "configPatchAndRestart": true,
+      "cleanupAndReplay": true
+    },
+    {
+      "mode": "STATIC",
+      "layout": "BROKER",
+      "operationId": "36eab720-7a84-412f-8b89-ba447cb29af7",
+      "clusterId": "KzVWXf_VRXm_RXeRe2x5Fg",
+      "nodeId": 7002,
+      "brokerProperties": true,
+      "sameVersionAndClusterId": true,
+      "formatReplayPreservedIds": true,
+      "brokerRegisteredUnfenced": true,
+      "rackVerified": true,
+      "configPatchAndRestart": true,
+      "cleanupAndReplay": true
+    }
+  ]
+}

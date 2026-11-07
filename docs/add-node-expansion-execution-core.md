@@ -1,8 +1,6 @@
 # Controller and separate-process execution core
 
-6 November 2026. **Development in progress; not release acceptance.** This source is not installed on 194, 191 or 229. Node 213 is excluded from all task connections and future rollout.
-
-Controller and separate-process execution are now wired in development source, behind `tantor.add-node-expansion.execution-enabled=false`. No collective release has been deployed. Agent `.6` binaries and their pinned source manifest still represent their earlier committed source; the new runtime-inspection contract requires a matching `.7` or later build.
+7 November 2026. Implementation and isolated acceptance are complete for the supported first-release scope. Deployment to 194 and replacement of agents on 191/229 remain held. Node 213 is excluded. The matching release agent is `.7`; existing installed agents are unchanged. Expansion execution defaults to `tantor.add-node-expansion.execution-enabled=false` until rollout prerequisites are satisfied.
 
 ## Implemented source
 
@@ -29,7 +27,7 @@ The broker-only `add-broker/v1` and `v2` payloads, digests, receipts and mutatio
 
 `KafkaExpansionRuntimeInspection` accepts existing service IDs and resolves the approved artifact and recorded service paths. The native inspector proves actual classpath/startup files, approved Java agents and canonical configuration/unit/metadata bindings. Legitimate installation aliases are pinned and rechecked. Effective inherited settings stay server-side.
 
-`KafkaExpansionPlanCollector` requires fresh C01–C21 checks, the complete participant evidence set, a typed live voter baseline and approved candidate profiles. Separate-process addition also requires broker checks. Static maintenance acknowledgement is part of the frozen context. `KafkaExpansionPreviewService` queues read-only candidate validation before an execution request can reserve anything.
+`KafkaExpansionPlanCollector` requires fresh C01-C21 checks, the complete participant evidence set, a typed live voter baseline and approved candidate profiles. Separate-process addition also requires broker checks. Static maintenance acknowledgement is part of the frozen context. `KafkaExpansionPreviewService` queues read-only candidate validation before an execution request can reserve anything.
 
 The submitting API accepts a server-owned preview ID/context and an idempotency key. A lost submission response can recover the previously accepted operation even after its preview expires. `KafkaExpansionJobHandler` dispatches ordered actions through short ledger transactions, drains earlier tasks, inspects uncertain effects before replay, obtains independent voter/health evidence and publishes the candidate roles, host ownership and cluster routes atomically. A crash after publication repairs the job without repeating native actions.
 
@@ -37,22 +35,19 @@ The four-step UI now places controller and separate-process observations, final 
 
 Compatibility updates honor recorded custom systemd units in Rolling Restart and Config Change. The native config reader/patcher/backup path accepts the exact added-node configuration only with a matching root-owned completed addition receipt, host/node/role identity and owned unit. Existing installation path rules are unchanged.
 
-## Evidence collected on 6 November
+## Final acceptance evidence
 
-- Full backend suite: **739 tests, 641 passed, 98 skipped, zero failures/errors**. The four subsequently added preview service tests also passed. Skips remain outside acceptance evidence.
-- The expansion/controller/ledger/database focused run passed 56 tests; the handler subsequently passed all seven cases, including static/dynamic controller-only and separate-process ordering.
-- Real temporary loopback PostgreSQL tests passed ownership migration/backfill, cross-family conflicts, retained recovery reservations, callback guards and cancellation rules.
-- The complete agent suite passed natively on 191 from checksummed source archive `fcf3abd05a1dea7a0a0c1264a6277d4d3a9565f40e453a2c53be7fc9ba499513`. This includes existing agent package regressions and Linux filesystem/process-group tests. A later isolated CLI probe is tracked separately.
-- Read-only verification of the running 4.3.0 controller passed: full approved runtime payload, 107 actual classpath libraries and four canonical file bindings.
-- The production typed controller Admin adapter successfully queried the existing 4.3.0 controller: leader 101, voter 101, observer broker 1, metadata feature level 30. This observation alone does not certify expansion.
-- The real Kafka 4.3.0 storage CLI accepted the adapter formatter arguments for STATIC/broker, STATIC/controller, DYNAMIC/broker and DYNAMIC/controller. Eight new directory identities were verified in fresh test-only temporary storage, with no service started. Test executable SHA-256: `dd44b775a807680ac4281e173f030d9e058f4e53dd853b1b24ce13df89411fd0`.
-- UI production builds passed. Browser fixtures passed complete-evidence gating, no automatic participant commands, static acknowledgement, release gating, stable submission keys after a lost response and navigation to the accepted job.
+- Full backend regression: **784 tests, 783 passed, one skipped, zero failures/errors**. The skipped test requires an explicitly configured production controller endpoint; it is not counted as passing. PostgreSQL opt-in tests, full migration through V106, atomic publication rollback/success, reservation arbitration and legacy connection-default tests passed.
+- Full native Go suite passed on Linux 191 from source archive SHA-256 `c2a5435da81017dec3ef0e84eaf8e7cc74a3dafaad01760491e564e59f839856`. The release source differs only in the agent version label. Linux ARM64 cross-build and Go vet passed.
+- All six isolated **real Kafka 4.3.0** cases passed: static/dynamic broker-only, controller-only and separate-process additions. Evidence includes original cluster identity/version, role-specific configuration, sequential broker ID, voter identities, storage-format replay, broker registration/rack where applicable, topic-list smoke checks, and receipt-backed cleanup plus replay. See `add-node-phase7-acceptance.json`.
+- Native failure/recovery tests cover interrupted mutation and cleanup; an actual controller startup failure resumed without changing formatted directory identities. A controller proof serialization issue and systemd startup/cache races found during acceptance were fixed.
+- A broker added through the real v2 adapter accepted a native configuration patch and verified custom-unit restart. Existing rolling restart, configuration recovery, multi-instance Schema/Connect and deployment paths passed automated regressions. No live Schema/Connect reinstall was performed.
+- UI production build and browser fixture checks passed evidence gating, static acknowledgement, release gating, submission retry idempotency and navigation. Final edits clarify preview requirements without changing the contract.
 
-## Still required before collective deployment
+## Scope and rollout
 
-1. Finish targeted collector/native evidence/publication failure coverage and run isolated real static/dynamic controller and separate-process add/recovery acceptance. Ordered mocked handler tests are not a real quorum mutation.
-2. Verify added-node cluster deletion uses exact receipt-backed custom units and storage. A historical deleted-cluster broker had remained enabled; its ownership and zero live assignment references were verified before stopping/disabling it. The current broker recovered and its controller stayed running. No files were deleted.
-3. Exercise live rolling restart/configuration change and existing multi-instance service regression in a controlled scope. Agent and backend regression suites pass, but this does not guarantee every existing live flow.
-4. Build a matching new agent release from committed source, prepare rollback/backup and deployment metadata, then deploy collectively on 194 and update internal agents on 191 and 229. Never connect to or update 213. Keep expansion execution held until acceptance passes.
+Live tests use isolated QA identities, units, ports and storage on 191/229, with explicit small test heap/disk settings. Production capacity defaults are unchanged. The live matrix certifies the tested Kafka 4.3.0 managed KRaft PLAINTEXT/internal-root-agent scope. Existing 4.1.x automated coverage is retained; no live 4.1.x matrix is claimed. Controller and separate-process candidates require fresh unassigned hosts. A second process on an occupied host is outside this flow.
 
-SSH connectivity has been restored. No application deployment or internal-agent replacement occurred during this development checkpoint.
+This evidence combines real native execution and independent typed backend verification with separate database/API/browser tests. It is not a production UI end-to-end deployment. No regression was detected in the covered existing features; this does not guarantee every live environment.
+
+See `add-node-phase7-release-checklist.md` for rollout checks and rollback boundaries. Keep database ledgers, native receipts and formatted identities during recovery. Never blindly undo an admitted controller or downgrade to a build that cannot deserialize newly created expansion jobs.

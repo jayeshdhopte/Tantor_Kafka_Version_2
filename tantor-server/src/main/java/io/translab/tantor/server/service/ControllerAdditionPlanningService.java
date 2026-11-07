@@ -76,7 +76,7 @@ public class ControllerAdditionPlanningService {
         String artifactId="",checksum="";
         try{var artifact=artifacts.resolve(cluster.getKafkaVersion(),text(config,"artifact_id"));artifactId=artifact.id();checksum=artifact.checksum();}
         catch(RuntimeException e){blockers.add("A unique approved artifact with the existing Kafka version and SHA-256 is required.");}
-        blockers.add("Phase 5 execution is not enabled: obtain fresh candidate/controller readiness and exact runtime service/configuration/metadata observations before accepting an operation.");
+        blockers.add("Final execution validation requires fresh candidate/controller readiness and exact runtime service/configuration/metadata observations before accepting an operation.");
         if("STATIC".equals(mode))blockers.add("Static expansion requires a reviewed maintenance window, verified backups and an explicit downtime acknowledgement; it is not the existing rolling-restart operation.");
         else if("DYNAMIC".equals(mode))blockers.add("Dynamic admission requires proven observer catch-up, live directory identity and reconciliation of add-controller outcomes.");
         Instant now=Instant.now();

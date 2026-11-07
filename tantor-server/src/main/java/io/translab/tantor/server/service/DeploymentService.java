@@ -29,6 +29,7 @@ import java.util.regex.Pattern;
 @Slf4j
 public class DeploymentService {
     @org.springframework.beans.factory.annotation.Autowired private ExternalKafkaManagement externalKafka;
+    @org.springframework.beans.factory.annotation.Autowired private AddNodeCleanupPlanService addNodeCleanup;
 
     private final TaskRepository taskRepository;
     private final HostParcelRepository hostParcelRepository;
@@ -622,6 +623,10 @@ public class DeploymentService {
             if (clusterId != null) params.put("db_cluster_id",clusterId.toString());
             params.put("data_services", objectMapper.writeValueAsString(dataServices));
             params.put("cleanup_kafka", Boolean.toString(cleanupKafka));
+            if(cleanupKafka && addNodeCleanup!=null) {
+                var owned=addNodeCleanup.resolve(clusterId,hostId);
+                if(owned.isPresent())params.put("add_node_cleanup",objectMapper.writeValueAsString(owned.get()));
+            }
             if (cleanupKafka) {
                 params.put("cleanup_artifact_downloads", objectMapper.writeValueAsString(legacyArtifactDownloads(
                         taskRepository.findByClusterIdAndHostIdAndCommandOrderByCreatedAtDesc(clusterId,hostId,"INSTALL_KAFKA"),objectMapper)));

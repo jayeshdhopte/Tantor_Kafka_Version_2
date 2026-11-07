@@ -82,10 +82,10 @@ public class SeparateProcessAdditionPlanningService {
                 "Two JVM heaps plus OS reserve; filesystem capacity counted per mount; distinct listener/JMX/exporter ports", "Not inspected"));
         checks.add(check("S05", "Broker rack and controller-first dependency", "UNKNOWN",
                 "Candidate's actual rack verified against live rack policy; controller membership verified before broker start",
-                "Requested rack " + (rack.isBlank() ? "not specified" : rack) + "; execution not implemented"));
-        blockers.add("Phase 6 requires one fresh host for two new processes. Adding a second process to an occupied host is not supported by this flow.");
+                "Requested rack " + (rack.isBlank() ? "not specified" : rack) + "; final layout validation pending"));
+        blockers.add("This layout requires one fresh host for two new processes. Adding a second process to an occupied host is not supported by this flow.");
         blockers.add("Two-process readiness is incomplete: inspect both storage trees, units, listener/JMX/exporter ports, rack and combined memory/disk requirements. A broker-only PASS is insufficient.");
-        blockers.add("Execution remains unavailable until the Phase 5 controller executor/recovery and the Phase 6 parent operation, atomic two-ID reservation and two-process publication are implemented and tested.");
+        blockers.add("Use final layout validation below to obtain a server-owned execution preview. Submission also requires the release gate, fresh evidence and atomic host/identity reservations.");
         boolean knownMode = Set.of("STATIC", "DYNAMIC").contains(base.quorumMode());
         var steps = knownMode ? workflow(base.quorumMode()) : List.<ControllerAdditionPlanningService.Step>of();
         var fingerprint = new TreeMap<String, Object>();

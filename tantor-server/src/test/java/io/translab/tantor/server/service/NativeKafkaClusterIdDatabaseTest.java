@@ -16,8 +16,12 @@ import static org.assertj.core.api.Assertions.*;
 /** Existing local DB only. All business fixtures and audit events roll back. */
 @EnabledIfEnvironmentVariable(named="TANTOR_LOCAL_CLUSTER_ID_DB_TEST", matches="true")
 class NativeKafkaClusterIdDatabaseTest {
-    private final DriverManagerDataSource source=new DriverManagerDataSource(
-            "jdbc:postgresql://127.0.0.1:5433/tantor", "tantor_dev",System.getenv("TANTOR_LOCAL_DB_PASSWORD"));
+    private final DriverManagerDataSource source=testSource();
+    private static DriverManagerDataSource testSource(){
+        String override=System.getenv("TANTOR_STATUS_AUDIT_TEST_URL");
+        if(override!=null){assertThat(override).contains("_check_");return new DriverManagerDataSource(override,System.getenv("TANTOR_STATUS_AUDIT_TEST_USER"),System.getenv("TANTOR_STATUS_AUDIT_TEST_PASSWORD"));}
+        return new DriverManagerDataSource("jdbc:postgresql://127.0.0.1:5433/tantor","tantor_dev",System.getenv("TANTOR_LOCAL_DB_PASSWORD"));
+    }
     private final JdbcTemplate jdbc=new JdbcTemplate(source);
     private final TransactionTemplate transaction=new TransactionTemplate(new DataSourceTransactionManager(source));
     private static final List<String> TABLES=List.of("kf_activity_logs","kf_add_service","kf_alerts","kf_audit_logs",
