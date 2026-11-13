@@ -104,6 +104,7 @@ const assert = require('node:assert/strict');
     await page.getByRole('checkbox').check();
     await page.getByRole('button', { name: 'Validate selected layout', exact: true }).click();
     await page.getByText('BLOCKED · shared filesystem cannot cover all process reservations', { exact: false }).waitFor();
+    assert.equal(await page.getByText('Execution remains held until release acceptance is complete.', { exact: true }).count(), 0);
     assert.equal(await page.getByRole('button', { name: 'Deploy broker and controller', exact: true }).isEnabled(), false);
     validationStatus = 'PASS';
     await page.getByRole('button', { name: 'Validate selected layout', exact: true }).click();

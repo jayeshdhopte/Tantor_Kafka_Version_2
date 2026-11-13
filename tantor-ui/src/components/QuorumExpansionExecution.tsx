@@ -100,7 +100,7 @@ function ExecutionSession({ clusterId, hostId, layout, brokerRack = '', commonPr
     {review && <><p role="status">{fresh ? review.status : 'EXPIRED'} · {review.message}</p>
       <p>Kafka {review.proposedPlan.kafkaVersion} · cluster <code>{review.proposedPlan.kafkaClusterId}</code> · {review.proposedPlan.quorumMode}</p>
       <ul>{review.proposedPlan.processes.map(process => <li key={process.role}>{process.role} · node ID {process.nodeId} · heap {process.heapXmx}<br />{process.dataPaths.join(', ')}{process.metadataPath && ` · metadata ${process.metadataPath}`}<br />Logs: {process.logPath}</li>)}</ul>
-      {!review.executionEnabled && <p>Execution remains held until release acceptance is complete.</p>}
+      {review.status === 'PASS' && !review.executionEnabled && <p>Execution remains held until release acceptance is complete.</p>}
     </>}
     {error && <><p role="alert" className="add-node-remedy">{error}</p>{polling && <button className="add-node-button" onClick={() => setRevision(value => value + 1)}>Refresh check status</button>}</>}
     <button className="add-node-button primary" disabled={busy || !readyToCheck || !fresh || review?.status !== 'PASS' || !review.executionEnabled} onClick={() => void deploy()}>Deploy {layout === 'SEPARATE' ? 'broker and controller' : 'controller'}</button>

@@ -1,6 +1,9 @@
 package expansion
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func capacityFixture(p Plan, bytes, inodes uint64) map[string]MountCapacity {
 	out := map[string]MountCapacity{}
@@ -54,5 +57,13 @@ func TestDistinctMountsAreReservedIndependentlyAndMissingPathsFail(t *testing.T)
 	delete(mounts, p.Processes[0].DataPaths[0])
 	if err := ResourceBudget(p, 8*1024*1024*1024, mounts); err == nil {
 		t.Fatal("missing filesystem proof accepted")
+	}
+}
+
+func TestCapacityFailureReportsTheActualCombinedReservation(t *testing.T) {
+	p := fixture()
+	err := ResourceBudget(p, 8*1024*1024*1024, capacityFixture(p, 35*1024*1024*1024, 30000))
+	if err == nil || !strings.Contains(err.Error(), "required 40960 MiB") || !strings.Contains(err.Error(), "for 2 processes") {
+		t.Fatalf("missing actionable capacity detail: %v", err)
 	}
 }

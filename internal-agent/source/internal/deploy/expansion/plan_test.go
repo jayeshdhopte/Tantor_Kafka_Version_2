@@ -140,3 +140,43 @@ func TestControllerOnlyRetainsTheSameIdentityAndScopeRules(t *testing.T) {
 		t.Fatal("broker process invented")
 	}
 }
+
+func TestSystemJDKHomeDoesNotAuthorizeStorageOrParcelPaths(t *testing.T) {
+	for _, mode := range []string{"STATIC", "DYNAMIC"} {
+		p := fixture()
+		p.JavaHome = "/usr/lib/jvm/jdk-17"
+		p.QuorumMode = mode
+		if mode == "STATIC" {
+			p.Features["kraft.version"] = 0
+			p.MaintenanceAcknowledged = true
+		}
+		if err := p.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := json.Marshal(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Decode(string(raw), Digest(string(raw)), p.CandidateHostID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, home := range []string{"/usr/lib/jvm", "/usr/bin", "/usr/lib/jvm/../bin", "/usr/lib/jvm/jdk-17/", "/usr/lib/jvm/jdk 17", "/usr/lib/jvm/jdk-17/bin"} {
+		p := fixture()
+		p.JavaHome = home
+		if p.Validate() == nil {
+			t.Fatalf("unsafe JDK home accepted: %s", home)
+		}
+	}
+	p := fixture()
+	p.JavaHome = "/usr/lib/jvm/jdk-17"
+	p.ParcelDir = p.JavaHome
+	if p.Validate() == nil {
+		t.Fatal("system JDK became an approved parcel root")
+	}
+	p = fixture()
+	p.Processes[0].DataPaths = []string{"/usr/lib/jvm/jdk-17/kafka-data"}
+	if p.Validate() == nil {
+		t.Fatal("system JDK became an approved storage root")
+	}
+}

@@ -57,7 +57,8 @@ public class KafkaExpansionRuntimeInspection {
         for(var entry:report.inherited().entrySet())if(entry.getKey()==null||!entry.getKey().matches("[A-Za-z][A-Za-z0-9._-]{0,127}")||entry.getValue()==null||entry.getValue().length()>16384||entry.getValue().contains("\n")||entry.getValue().contains("\r")||entry.getValue().contains("\0"))throw conflict("Unsupported inherited runtime property.");
     }
     private View view(Task task,UUID service,Request r,String status,Report report,String message){return new View(task.getId(),service,task.getHostId(),status,r.identity().expiresAt(),report,false,message);}
-    static boolean supported(String version){if(version==null)return false;var match=java.util.regex.Pattern.compile(".*-addnode\\.([0-9]+)$").matcher(version);try{return match.matches()&&Integer.parseInt(match.group(1))>=7;}catch(Exception e){return false;}}
+    static boolean supported(String version){return supported(version,7);}
+    static boolean supported(String version,int minimum){if(version==null)return false;var match=java.util.regex.Pattern.compile(".*-addnode\\.([0-9]+)$").matcher(version);try{return match.matches()&&Integer.parseInt(match.group(1))>=minimum;}catch(Exception e){return false;}}
     private Map<String,Object> configuration(String raw){try{return mapper.readValue(Objects.toString(raw,"{}"),new TypeReference<>(){});}catch(Exception e){throw conflict("Stored cluster configuration is unreadable.");}}
     private String json(Object value){try{return mapper.writeValueAsString(value);}catch(Exception e){throw new IllegalStateException("Cannot encode approved runtime inspection.",e);}}
     private static boolean hash(String value){return value!=null&&value.matches("[a-f0-9]{64}");}

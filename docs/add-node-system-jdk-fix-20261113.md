@@ -1,0 +1,11 @@
+# System JDK admission for Add Node - 13 November 2026
+
+Live 194 profile: candidate JAVA_HOME=/usr/lib/jvm/jdk-17, parcel root=/srv/apps/tantor/parcels. Broker readiness accepted the installed Java 17, but the backend quorum-expansion plan validator treated the JDK like a Kafka mutable-storage path and rejected it before creating VALIDATE_QUORUM_EXPANSION. The combined error incorrectly suggested quorum mode or maintenance acknowledgement had changed.
+
+Backend and internal agent .8 now distinguish a physical, canonical JDK home directly under /usr/lib/jvm from mutable Kafka storage. Storage, logs and parcels remain restricted to the existing approved roots. The expansion adapter's native mutable-path check now explicitly matches that backend policy rather than inheriting the generic task helper's broader Java roots. Traversal, symlink, version, mode, acknowledgement, identity and storage ownership checks are preserved. New system-JDK plans require .8 on the candidate and all existing participants; existing approved /opt-based .7 plans retain compatibility.
+
+Validation errors now identify JAVA_HOME, excluded host, finalized metadata, quorum mode and maintenance acknowledgement separately. Failed native previews expose a bounded one-line reason. The UI shows a release-hold message only when validation has passed but the release gate is actually disabled; a resource failure is not presented as a release hold.
+
+Validation: 88 focused backend tests, 82 passed, six explicit opt-in database/live-endpoint skips, zero failures/errors. Complete native Linux suite and Go vet passed on 191. The opt-in read-only system-JDK probe executed the installed Java and reached unchanged capacity admission: available 35767 MiB, required 40960 MiB and 20000 inodes for two processes. Test source archive SHA-256: 05526b8ea78bde7187c624e715b0cdc3f88f350e7794cb3d25d71664354a5bc0. Browser regression, TypeScript and changed-component ESLint passed. No Kafka process was stopped or new cluster membership created during these checks.
+
+191 currently remains about 5193 MiB short of the two-process disk reservation. This rollout fixes JDK admission and the diagnostic path; it does not waive capacity checks or provision additional disk. Node 213 remains excluded.

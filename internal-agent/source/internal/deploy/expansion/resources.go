@@ -27,7 +27,7 @@ func ResourceBudget(p Plan, availableMemory uint64, mounts map[string]MountCapac
 		requiredMemory = minimum
 	}
 	if availableMemory < requiredMemory {
-		return fmt.Errorf("available memory cannot cover all planned heaps and the reviewed OS reserve")
+		return fmt.Errorf("available memory cannot cover all planned heaps and the reviewed OS reserve: available %d MiB, required %d MiB", availableMemory/(1024*1024), requiredMemory/(1024*1024))
 	}
 	type budget struct {
 		capacity  MountCapacity
@@ -61,7 +61,7 @@ func ResourceBudget(p Plan, availableMemory uint64, mounts map[string]MountCapac
 	for _, entry := range byDevice {
 		count := uint64(len(entry.processes))
 		if entry.capacity.AvailableBytes < p.ResourcePolicy.MinDiskGB*1024*1024*1024*count || entry.capacity.AvailableInodes < p.ResourcePolicy.MinInodes*count {
-			return fmt.Errorf("shared filesystem cannot cover all process reservations")
+			return fmt.Errorf("shared filesystem cannot cover all process reservations: available %d MiB and %d inodes; required %d MiB and %d inodes for %d processes", entry.capacity.AvailableBytes/(1024*1024), entry.capacity.AvailableInodes, p.ResourcePolicy.MinDiskGB*1024*count, p.ResourcePolicy.MinInodes*count, count)
 		}
 	}
 	return nil

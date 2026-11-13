@@ -1,10 +1,10 @@
 Tantor Internal Agent
 
-LOCAL DEVELOPMENT CANDIDATE - DEPLOYMENT IS ON HOLD.
-Do not install or restart agents until the user lifts that hold.
+SOURCE-PINNED RELEASE CANDIDATE.
+Drain host tasks before upgrading an enrolled agent.
 192.168.3.213 / broker6 is excluded from all Add Node work, including probes and upgrades.
 
-Add Node build: 1.0.0-prod.17-dataservices.4-configchange.10-rollingrestart.1-addnode.7
+Add Node build: 1.0.0-prod.17-dataservices.4-configchange.10-rollingrestart.1-addnode.8
 Existing enrolled nodes: drain tasks, then use
   sudo bash upgrade-add-node.sh --tasks-drained
 This preserves agent.yaml and the enrolled identity, backs up the old executable,
@@ -81,9 +81,13 @@ Broker plan v2: new operations use broker.properties. Legacy v1 operations retai
 server.properties and their original receipts for safe resume; no live file is renamed.
 Controller and separate-process executors require the matching backend, fresh approved evidence and its execution release gate.
 
-Release candidate addnode.7 includes runtime inspection, static/dynamic controller and separate-process execution, recovery and receipt-backed added-node cleanup.
+Release candidate addnode.8 includes runtime inspection, static/dynamic controller and separate-process execution, recovery and receipt-backed added-node cleanup.
 Both Linux binaries are checksum-bound to the exact Go source commit recorded in BUILD-ADD-NODE.json.
-The matching source snapshot is source-addnode.7.tar.gz; rebuild instructions are in build-release.py --help.
+The matching source snapshot is source-addnode.8.tar.gz; rebuild instructions are in build-release.py --help.
 The backend execution gate defaults to disabled. Deployment is ON HOLD; see docs/add-node-phase7-release-checklist.md before rollout.
 For this lab, 192.168.3.213 / broker6 is excluded from connections, probes, tests and upgrades.
 See docs/add-node-process-inspection.md and the explicit host-scope configuration before any future rollout.
+
+Agent .8 supports physical JDK homes under /usr/lib/jvm for quorum expansion.
+This is a read-only Java runtime allowance, not a Kafka storage/mutation root.
+Backend and all expansion participants must use the matching system-JDK-capable release.

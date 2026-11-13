@@ -117,6 +117,7 @@ var unit = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_@.-]{0,180}\.service$`)
 var user = regexp.MustCompile(`^[a-z_][a-z0-9_-]*[$]?$`)
 var heap = regexp.MustCompile(`^[1-9][0-9]*[mMgG]$`)
 var javaMajor = regexp.MustCompile(`(?:version\s+"?|openjdk\s+)([0-9]+)`)
+var systemJavaHome = regexp.MustCompile(`^/usr/lib/jvm/[A-Za-z0-9_.-]+$`)
 var propertyKey = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9._-]{0,127}$`)
 var protectedProperties = map[string]bool{"process.roles": true, "node.id": true, "broker.id": true, "listeners": true, "advertised.listeners": true, "log.dir": true, "log.dirs": true, "metadata.log.dir": true, "controller.quorum.voters": true, "controller.quorum.bootstrap.servers": true, "controller.quorum.auto.join.enable": true, "controller.listener.names": true, "listener.security.protocol.map": true, "inter.broker.listener.name": true, "broker.rack": true, "zookeeper.connect": true}
 
@@ -170,8 +171,11 @@ func (p Plan) Validate() error {
 	if p.QuorumMode == "STATIC" && !p.MaintenanceAcknowledged {
 		return fmt.Errorf("static expansion requires explicit reviewed maintenance acknowledgement")
 	}
-	if !safePath(p.ParcelDir) || !safePath(p.JavaHome) || p.excluded(p.CandidateHostID, p.CandidateIP) {
+	if !safePath(p.ParcelDir) || p.excluded(p.CandidateHostID, p.CandidateIP) {
 		return fmt.Errorf("invalid or excluded candidate runtime")
+	}
+	if !safeJavaHome(p.JavaHome) {
+		return fmt.Errorf("candidate JAVA_HOME must be an approved runtime path or a JDK directory under /usr/lib/jvm")
 	}
 	if len(p.Participants) == 0 || len(p.Participants) > 128 || len(p.Voters) == 0 || len(p.Voters) > 128 {
 		return fmt.Errorf("bounded reviewed participant/voter scope required")
@@ -389,7 +393,16 @@ func (p Plan) excluded(host, ip string) bool {
 }
 func safePath(p string) bool {
 	v, err := taskvalidate.ApprovedPath(p)
-	return err == nil && v == p && strings.HasPrefix(p, "/") && path.Clean(p) == p && !strings.ContainsAny(p, " \t\r\n\x00\\") && !strings.HasSuffix(p, "/")
+	mutableRoot := false
+	for _, root := range []string{"/opt/", "/var/", "/data/", "/srv/", "/app/"} {
+		mutableRoot = mutableRoot || strings.HasPrefix(p, root)
+	}
+	return mutableRoot && err == nil && v == p && path.Clean(p) == p && !strings.ContainsAny(p, " \t\r\n\x00\\") && !strings.HasSuffix(p, "/")
+}
+
+// A system JDK is read-only runtime input, never an approved mutation/storage root.
+func safeJavaHome(p string) bool {
+	return safePath(p) || path.Clean(p) == p && systemJavaHome.MatchString(p)
 }
 func safeConfig(p string) bool {
 	if path.Clean(p) != p || !strings.HasPrefix(p, "/") || strings.ContainsAny(p, " \t\r\n\x00\\") {
