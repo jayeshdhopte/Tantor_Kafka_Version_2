@@ -12,7 +12,16 @@ public record KafkaExpansionPlan(
         Map<String,Short> features, UUID artifactId, String artifactSha256,
         String parcelDir, String javaHome, String runtimeUser, List<Process> processes,
         List<Participant> participants, List<Voter> voters, List<String> excludedHostIds,
-        List<String> excludedHostIps, boolean maintenanceAcknowledged, ResourcePolicy resourcePolicy) {
+        List<String> excludedHostIps, boolean maintenanceAcknowledged, ResourcePolicy resourcePolicy, @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL) AddNodeDeploymentSettings deploymentSettings) {
+    public KafkaExpansionPlan(
+        String schemaVersion, UUID operationId, UUID clusterId, String contextHash,
+        String candidateHostId, String candidateIp, String kafkaClusterId, String kafkaVersion,
+        KafkaExpansionWorkflow.Mode quorumMode, KafkaExpansionWorkflow.Layout layout,
+        Map<String,Short> features, UUID artifactId, String artifactSha256,
+        String parcelDir, String javaHome, String runtimeUser, List<Process> processes,
+        List<Participant> participants, List<Voter> voters, List<String> excludedHostIds,
+        List<String> excludedHostIps, boolean maintenanceAcknowledged, ResourcePolicy resourcePolicy){this(schemaVersion,operationId,clusterId,contextHash,candidateHostId,candidateIp,kafkaClusterId,kafkaVersion,quorumMode,layout,features,artifactId,artifactSha256,parcelDir,javaHome,runtimeUser,processes,participants,voters,excludedHostIds,excludedHostIps,maintenanceAcknowledged,resourcePolicy,null);}
+
     public record Runtime(UUID jmxArtifactId,String jmxChecksum,int jmxPort,int limitNofile) {}
     public record Process(String role,int nodeId,int port,List<String> dataPaths,String metadataPath,
                           String logPath,String heapXmx,String brokerRack,Map<String,String> inherited,Runtime runtime) {
@@ -36,8 +45,8 @@ public record KafkaExpansionPlan(
         voters=List.copyOf(voters);excludedHostIds=List.copyOf(excludedHostIds);excludedHostIps=List.copyOf(excludedHostIps);
     }
     public Process process(String role){return processes.stream().filter(p->p.role().equals(role)).findFirst().orElseThrow(()->invalid("Missing candidate role."));}
-    public String configPath(String role){process(role);return "/etc/tantor-kafka/add-expansion/"+operationId+"/"+role+".properties";}
-    public String unit(String role){return "tantor-kafka-"+role+"-"+process(role).nodeId()+".service";}
+    public String configPath(String role){process(role);return deploymentSettings!=null?deploymentSettings.configDirectory()+"/"+role+".properties":"/etc/tantor-kafka/add-expansion/"+operationId+"/"+role+".properties";}
+    public String unit(String role){return deploymentSettings!=null?role+".service":"tantor-kafka-"+role+"-"+process(role).nodeId()+".service";}
     public List<String> reservedHosts(){var hosts=new TreeSet<String>();hosts.add(candidateHostId);participants.forEach(p->hosts.add(p.hostId()));return List.copyOf(hosts);}
     public List<KafkaExpansionWorkflow.Step> steps(){return KafkaExpansionWorkflow.compile(quorumMode,layout,participants.stream().map(p->new KafkaExpansionWorkflow.Participant(p.hostId(),p.unit(),p.nodeId(),p.role())).toList());}
     public String voterDigest(){return BrokerAdditionLedger.hash(voters.stream().map(v->v.nodeId()+":"+v.directoryId()+"@"+endpoint(v.hostIp(),v.port())).sorted().collect(java.util.stream.Collectors.joining(",")));}
@@ -47,7 +56,9 @@ public record KafkaExpansionPlan(
         try{var plan=mapper.readValue(raw,KafkaExpansionPlan.class);plan.validate();return new Frozen(plan,raw,digest,plan.steps());}catch(com.fasterxml.jackson.core.JsonProcessingException e){throw invalid("Invalid frozen expansion plan.");}
     }
     public void validate(){
-        if(!"add-quorum-expansion/v1".equals(schemaVersion)||operationId==null||clusterId==null||artifactId==null||!hash(contextHash)||!hash(artifactSha256)||candidateHostId==null||candidateHostId.isBlank()||!ip(candidateIp)||!kafkaId(kafkaClusterId)||!Set.of("4.1.0","4.1.1","4.1.2","4.3.0").contains(kafkaVersion)||quorumMode==null||layout==null||runtimeUser==null||!runtimeUser.matches("[a-z_][a-z0-9_-]*[$]?"))throw invalid("Incomplete expansion identity, version or catalog artifact.");
+        if("add-quorum-expansion/v2".equals(schemaVersion)){if(deploymentSettings==null)throw invalid("Explicit deployment settings required.");deploymentSettings.validate();}else if(deploymentSettings!=null)throw invalid("Legacy expansion cannot carry deployment settings.");
+        if(!("add-quorum-expansion/v1".equals(schemaVersion)||"add-quorum-expansion/v2".equals(schemaVersion))||operationId==null||clusterId==null||artifactId==null||!hash(contextHash)||!hash(artifactSha256)||candidateHostId==null||candidateHostId.isBlank()||!ip(candidateIp)||!kafkaId(kafkaClusterId)||!Set.of("4.1.0","4.1.1","4.1.2","4.3.0").contains(kafkaVersion)||quorumMode==null||layout==null||runtimeUser==null||!runtimeUser.matches("[a-z_][a-z0-9_-]*[$]?"))throw invalid("Incomplete expansion identity, version or catalog artifact.");
+        if(deploymentSettings!=null&&(overlap(deploymentSettings.configDirectory(),parcelDir)||overlap(deploymentSettings.installPath(),parcelDir)))throw invalid("Candidate configuration/installation overlaps cached Kafka parcels.");
         if(!path(parcelDir))throw invalid("Candidate Kafka parcel directory is outside the approved runtime roots.");
         if(!javaHomePath(javaHome))throw invalid("Candidate JAVA_HOME must be an approved runtime path or a JDK directory under /usr/lib/jvm.");
         if(excluded(candidateHostId,candidateIp))throw invalid("Candidate host is excluded from Add Node execution.");
@@ -73,6 +84,7 @@ public record KafkaExpansionPlan(
         var ports=new HashSet<Integer>();var mutablePaths=new ArrayList<String>();var logs=new ArrayList<String>();
         for(int i=0;i<processes.size();i++){var p=processes.get(i);String role=i==0?"controller":"broker";long next=(long)(i==0?maximum:maximumBroker)+1;
             if(!role.equals(p.role())||p.nodeId()!=next||next>Integer.MAX_VALUE||!ids.add(p.nodeId())||!port(p.port())||!ports.add(p.port())||p.runtime()==null||p.runtime().limitNofile()<1024||p.dataPaths().isEmpty()||p.dataPaths().size()>16||!path(p.logPath())||role.equals("controller")&&(p.metadataPath()==null||p.metadataPath().isEmpty()))throw invalid("Invalid candidate role, sequential ID or isolated runtime.");
+            if(deploymentSettings!=null){var s=deploymentSettings;boolean controller=role.equals("controller");if(!p.dataPaths().equals(controller?s.controllerDataPaths():s.brokerDataPaths())||!Objects.equals(p.metadataPath(),controller?s.controllerMetadataPath():s.brokerMetadataPath())||!p.logPath().equals(controller?s.controllerLogPath():s.brokerLogPath())||!p.heapXmx().equals(controller?s.controllerHeapXmx():s.brokerHeapXmx())||!javaHome.equals(s.javaHome())||!runtimeUser.equals(s.runtimeUser()))throw invalid("Process differs from frozen candidate deployment settings.");}
             heapBytes(p.heapXmx());var own=new HashSet<String>();for(String value:p.dataPaths())if(!path(value)||!own.add(value))throw invalid("Duplicate candidate storage.");if(p.metadataPath()!=null&&!p.metadataPath().isEmpty()){if(!path(p.metadataPath()))throw invalid("Invalid metadata path.");own.add(p.metadataPath());}mutablePaths.addAll(own);logs.add(p.logPath());
             if(p.brokerRack()==null||!p.brokerRack().matches("[A-Za-z0-9_.-]{0,128}")||role.equals("controller")&&!p.brokerRack().isEmpty())throw invalid("Invalid candidate rack.");
             var runtime=p.runtime();if(runtime.jmxPort()!=0&&(!port(runtime.jmxPort())||!ports.add(runtime.jmxPort())||runtime.jmxArtifactId()==null||!hash(runtime.jmxChecksum()))||runtime.jmxPort()==0&&(runtime.jmxArtifactId()!=null||runtime.jmxChecksum()!=null&&!runtime.jmxChecksum().isEmpty()))throw invalid("Candidate JMX ports/artifacts are ambiguous.");
@@ -92,7 +104,7 @@ public record KafkaExpansionPlan(
     private static boolean binding(Participant p,String logical,String target){if(logical.equals(p.configPath()))return config(target)&&Path.of(logical).getFileName().equals(Path.of(target).getFileName());if(unitFile(logical,p.unit()))return unitFile(target,p.unit());return p.storage().stream().anyMatch(s->logical.equals(s.path()+"/meta.properties"))&&canonicalPath(target)&&target.endsWith("/meta.properties")&&path(target.substring(0,target.lastIndexOf('/')));}
     private static boolean canonicalPath(String value){return value!=null&&value.matches("/[A-Za-z0-9_./-]+")&&!value.endsWith("/")&&Path.of(value).normalize().toString().replace('\\','/').equals(value);}
     private static boolean path(String value){return canonicalPath(value)&&List.of("/opt/","/var/","/data/","/srv/","/app/").stream().anyMatch(value::startsWith);}
-    private static boolean javaHomePath(String value){return path(value)||canonicalPath(value)&&value.matches("/usr/lib/jvm/[A-Za-z0-9_.-]+");}
+    public static boolean javaHomePath(String value){return path(value)||canonicalPath(value)&&value.matches("/usr/lib/jvm/[A-Za-z0-9_.-]+");}
     private static boolean config(String value){return canonicalPath(value)&&(path(value)||List.of("/etc/kafka/","/etc/tantor-kafka/","/etc/confluent/").stream().anyMatch(value::startsWith))&&Set.of("broker.properties","controller.properties","server.properties").contains(Path.of(value).getFileName().toString());}
     private static boolean overlap(String a,String b){return a.equals(b)||a.startsWith(b+"/")||b.startsWith(a+"/");}
     private static boolean port(int value){return value>0&&value<=65535;}

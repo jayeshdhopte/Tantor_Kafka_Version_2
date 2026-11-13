@@ -18,6 +18,7 @@ const assert = require('node:assert/strict');
     const participantIds = ['00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000002'];
     const expires = () => new Date(Date.now() + 600000).toISOString();
     let rack = '', inspections = 0, mutations = 0, previews = 0, commonTtl = 600000, commonExpires = expires(), validationStatus = 'BLOCKED', validationRequests = 0;
+    const settings = { installPath: '/opt/tantor/kafka', configDirectory: '/opt/tantor/kafka/config', javaHome: '/opt/java-17', runtimeUser: 'kafka', brokerDataPaths: ['/data/broker'], brokerMetadataPath: '', brokerLogPath: '/var/log/broker', brokerHeapXmx: '1G', controllerDataPaths: ['/data/controller'], controllerMetadataPath: '/data/controller-metadata', controllerLogPath: '/var/log/controller', controllerHeapXmx: '1G' };
     const runtimeTasks = new Map();
     const checks = () => [
       ...['COMMON', 'BROKER'].flatMap(phase => Array.from({ length: phase === 'COMMON' ? 21 : 11 }, (_, i) => ({ code: `${phase[0]}${String(i + 1).padStart(2, '0')}`, phase, name: `${phase} check ${i + 1}`, status: 'PASS', expected: 'Required evidence', observed: 'Verified', remedy: '', observedAt: new Date().toISOString(), source: 'FIXTURE' }))),
@@ -28,9 +29,10 @@ const assert = require('node:assert/strict');
     await context.route('**/api/**', async route => {
       const request = route.request(), path = new URL(request.url()).pathname;
       if (path === '/api/v1/ui/clusters/cluster') return route.fulfill({ json: { id: 'cluster', name: 'Separate layout test fixture', mode: 'KRAFT', status: 'SUCCESS', kafkaVersion: '4.3.0', kafkaClusterId: 'abcdefghijklmnopqrstuv', hosts: [] } });
+      if (path.endsWith('/add-node/previews/deployment-settings')) return route.fulfill({ json: settings });
       if (path === '/api/v1/ui/hosts') return route.fulfill({ json: [{ id: 'candidate', hostname: 'candidate-fixture', ipAddress: '192.0.2.10', status: 'ONLINE', available: true, deployable: true }] });
       if (path.endsWith('/jobs/active-clusters')) return route.fulfill({ json: [] });
-      if (path.endsWith('/add-node/previews') && request.method() === 'POST') { rack = request.postDataJSON().brokerRack; previews++; commonExpires = new Date(Date.now() + commonTtl).toISOString(); return route.fulfill({ json: common() }); }
+      if (path.endsWith('/add-node/previews') && request.method() === 'POST') { rack = request.postDataJSON().brokerRack; assert.equal(request.postDataJSON().deploymentSettings.brokerHeapXmx, '512M'); assert.equal(request.postDataJSON().deploymentSettings.configDirectory, '/srv/tantor-test/config'); previews++; commonExpires = new Date(Date.now() + commonTtl).toISOString(); return route.fulfill({ json: common() }); }
       if (/\/add-node\/previews\/[^/]+$/.test(path)) return route.fulfill({ json: common() });
       if (path.endsWith('/add-node/separate-plan')) return route.fulfill({ json: { schemaVersion: 'add-separate-review/v1', clusterId: 'cluster', hostId: 'candidate', kafkaClusterId: 'abcdefghijklmnopqrstuv', kafkaVersion: '4.3.0', quorumMode: 'STATIC', brokerRack: rack, expiresAt: expires(), executionEnabled: false, status: 'PLANNING_ONLY', maintenanceRequired: true, contextHash: 'c'.repeat(64), processes: ['controller', 'broker'].map((role, i) => ({ role, nodeId: i ? 2 : 102, processRoles: role, configurationFile: `${role}.properties`, serviceName: `${role}.service`, listenerPort: i ? 9092 : 9093, requiredDirectories: [`${role}/data`], evidenceStatus: 'NOT_INSPECTED' })), steps: [], checks: [], recoveryRules: [], blockers: [], participants: participantIds.map((serviceId, i) => ({ serviceId, hostId: 'existing', role: i ? 'controller' : 'broker', nodeId: i ? 101 : 1, serviceName: i ? 'controller' : 'broker', configurationPath: `/opt/kafka/${i ? 'controller' : 'broker'}.properties`, evidenceStatus: 'REQUIRED', inspectionAllowed: true, runtimeInspectionAllowed: true })) } });
       if (path.endsWith('/runtime-inspections') && request.method() === 'POST') {
@@ -56,6 +58,8 @@ const assert = require('node:assert/strict');
     await page.clock.install({ time: new Date() });
     await page.goto(origin + '/clusters/cluster/add-node');
     await page.getByLabel('Target host', { exact: true }).selectOption('candidate');
+    await page.getByLabel('Broker maximum heap', { exact: true }).fill('512M');
+    await page.getByLabel('Configuration directory', { exact: true }).fill('/srv/tantor-test/config');
     await page.getByRole('button', { name: 'Continue to checks', exact: true }).click();
     await page.getByRole('button', { name: 'Run readiness checks', exact: true }).click();
     await page.getByRole('button', { name: 'Continue to role', exact: true }).click();

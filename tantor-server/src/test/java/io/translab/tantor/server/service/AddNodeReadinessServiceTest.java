@@ -147,4 +147,16 @@ class AddNodeReadinessServiceTest {
         inspectionPolicy.setExcludedHostIds(List.of("protected-client"));policy.setClientProbeHostIds(List.of("protected-client"));
         assertThatThrownBy(() -> service.start(id,host.getId())).isInstanceOf(ResponseStatusException.class);
         verifyNoInteractions(kafka,tasks);
-    }}
+    }
+    @Test void editableProfileIsBoundToObservationAndRequiresNewAgent()throws Exception{
+        var settings=new AddNodeDeploymentSettingsTest().settings();
+        org.junit.jupiter.api.Assertions.assertThrows(org.springframework.web.server.ResponseStatusException.class,()->service.start(id,"candidate","",settings));
+        verify(tasks,never()).saveAndFlush(any());
+        host.setAgentVersion("1.0.0-addnode.9");
+        var result=service.start(id,"candidate","",settings);
+        assertThat(result.brokerPlan().get("configDirectory")).isEqualTo(settings.configDirectory());
+        assertThat(result.brokerPlan().get("heapXmx")).isEqualTo(settings.brokerHeapXmx());
+        assertThat(result.brokerPlan().get("dataPaths")).isEqualTo(settings.brokerDataPaths());
+        assertThat(result.brokerPlan().get("deploymentSettings")).isNotNull();
+    }
+}

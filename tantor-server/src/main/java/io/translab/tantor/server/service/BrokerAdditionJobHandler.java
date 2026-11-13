@@ -35,7 +35,7 @@ public class BrokerAdditionJobHandler implements JobHandler {
             if(validation.getStatus()!=JobStepStatus.SUCCESS) {
                 jobs.startStep(validation.getId());ledger.validating(op.getId());
                 var proposal=ledger.proposed(op);
-                var preview=readiness.startForOperation(op.getClusterId(),op.getHostId(),job.getId(),proposal.brokerRack());
+                var preview=readiness.startForOperation(op.getClusterId(),op.getHostId(),job.getId(),proposal.brokerRack(),proposal.deploymentSettings());
                 jobs.attachAgentTask(validation.getId(),preview.previewId());awaiter.await(preview.previewId(),90);
                 preview=readiness.getForOperation(op.getClusterId(),preview.previewId(),job.getId());
                 var cluster=cluster(op);var config=config(cluster);

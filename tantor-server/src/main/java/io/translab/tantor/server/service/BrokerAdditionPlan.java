@@ -9,9 +9,15 @@ public record BrokerAdditionPlan(String schemaVersion, UUID operationId, String 
         String kafkaClusterId, int nodeId, String hostIp, int brokerPort, String kafkaVersion,
         String runtimeUser, String javaHome, String parcelDir, String artifactChecksum,
         List<String> dataPaths, String metadataPath, String logPath, String installPath,
-        String heapXmx, String quorumMode, List<String> controllerEndpoints, String quorumVoters,String brokerRack) {
+        String heapXmx, String quorumMode, List<String> controllerEndpoints, String quorumVoters,String brokerRack, @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL) AddNodeDeploymentSettings deploymentSettings) {
+    public BrokerAdditionPlan(String schemaVersion, UUID operationId, String hostId, String contextHash,
+        String kafkaClusterId, int nodeId, String hostIp, int brokerPort, String kafkaVersion,
+        String runtimeUser, String javaHome, String parcelDir, String artifactChecksum,
+        List<String> dataPaths, String metadataPath, String logPath, String installPath,
+        String heapXmx, String quorumMode, List<String> controllerEndpoints, String quorumVoters,String brokerRack) { this(schemaVersion,operationId,hostId,contextHash,kafkaClusterId,nodeId,hostIp,brokerPort,kafkaVersion,runtimeUser,javaHome,parcelDir,artifactChecksum,dataPaths,metadataPath,logPath,installPath,heapXmx,quorumMode,controllerEndpoints,quorumVoters,brokerRack,null); }
+
     private static final Pattern PATH = Pattern.compile("/(?:opt|var|data|srv|app|usr/lib/jvm|usr/java)/[A-Za-z0-9_./-]+");
-    public BrokerAdditionPlan forOperation(UUID id) {return new BrokerAdditionPlan(schemaVersion,id,hostId,contextHash,kafkaClusterId,nodeId,hostIp,brokerPort,kafkaVersion,runtimeUser,javaHome,parcelDir,artifactChecksum,dataPaths,metadataPath,logPath,installPath,heapXmx,quorumMode,controllerEndpoints,quorumVoters,brokerRack);}
+    public BrokerAdditionPlan forOperation(UUID id) {return new BrokerAdditionPlan(schemaVersion,id,hostId,contextHash,kafkaClusterId,nodeId,hostIp,brokerPort,kafkaVersion,runtimeUser,javaHome,parcelDir,artifactChecksum,dataPaths,metadataPath,logPath,installPath,heapXmx,quorumMode,controllerEndpoints,quorumVoters,brokerRack,deploymentSettings);}
     public static BrokerAdditionPlan freeze(Preview preview, UUID operationId, int nodeId, String voters) {
         if (!"PASS".equals(preview.status()) || !preview.expiresAt().isAfter(java.time.Instant.now()))
             throw new IllegalArgumentException("A fresh, complete passing readiness preview is required.");
@@ -23,16 +29,17 @@ public record BrokerAdditionPlan(String schemaVersion, UUID operationId, String 
             throw new IllegalArgumentException("Complete, unique passing check evidence is required.");
         var p = preview.brokerPlan();
         if(!"PLAINTEXT".equals(value(p,"securityMode"))) throw new IllegalArgumentException("This broker contract currently supports inherited PLAINTEXT only.");
-        var plan = new BrokerAdditionPlan("add-broker/v2", operationId, preview.hostId(), preview.contextHash(),
+        var plan = new BrokerAdditionPlan(p.get("deploymentSettings")==null?"add-broker/v2":"add-broker/v3", operationId, preview.hostId(), preview.contextHash(),
                 value(p,"kafkaClusterId"), nodeId, value(p,"hostIp"), Integer.parseInt(value(p,"brokerPort")),
                 value(p,"kafkaVersion"), value(p,"runtimeUser"), value(p,"javaHome"), value(p,"parcelDir"),
                 value(p,"artifactChecksum"), strings(p,"dataPaths"), value(p,"metadataPath"), value(p,"logPath"),
-                value(p,"installPath"), value(p,"heapXmx"), value(p,"quorumMode"), strings(p,"controllerEndpoints"), voters,value(p,"brokerRack"));
+                value(p,"installPath"), value(p,"heapXmx"), value(p,"quorumMode"), strings(p,"controllerEndpoints"), voters,value(p,"brokerRack"),p.get("deploymentSettings")==null?null:new com.fasterxml.jackson.databind.ObjectMapper().convertValue(p.get("deploymentSettings"),AddNodeDeploymentSettings.class));
         plan.validate(); return plan;
     }
     public void validate() {
+        if("add-broker/v3".equals(schemaVersion)){if(deploymentSettings==null)throw new IllegalArgumentException("Explicit deployment settings required.");deploymentSettings.validate();if(!installPath.equals(deploymentSettings.installPath())||!heapXmx.equals(deploymentSettings.brokerHeapXmx())||!dataPaths.equals(deploymentSettings.brokerDataPaths())||!metadataPath.equals(deploymentSettings.brokerMetadataPath())||!logPath.equals(deploymentSettings.brokerLogPath())||!javaHome.equals(deploymentSettings.javaHome())||!runtimeUser.equals(deploymentSettings.runtimeUser()))throw new IllegalArgumentException("Broker profile differs from frozen deployment settings.");}else if(deploymentSettings!=null)throw new IllegalArgumentException("Legacy plans cannot carry deployment settings.");
         if(brokerRack==null||!brokerRack.matches("[A-Za-z0-9_.-]{0,128}"))throw new IllegalArgumentException("Invalid candidate broker rack.");
-        if (!("add-broker/v1".equals(schemaVersion)||"add-broker/v2".equals(schemaVersion)) || operationId == null || hostId == null || hostId.isBlank()
+        if (!("add-broker/v1".equals(schemaVersion)||"add-broker/v2".equals(schemaVersion)||"add-broker/v3".equals(schemaVersion)) || operationId == null || hostId == null || hostId.isBlank()
                 || contextHash == null || !contextHash.matches("[a-f0-9]{64}") || nodeId < 1 || brokerPort < 1 || brokerPort > 65535
                 || !kafkaClusterId.matches("[A-Za-z0-9_-]{22}") || !validIp(hostIp)
                 || !kafkaVersion.matches("[0-9]+\\.[0-9]+\\.[0-9]+") || !artifactChecksum.matches("(?i)[a-f0-9]{64}")
@@ -57,6 +64,7 @@ public record BrokerAdditionPlan(String schemaVersion, UUID operationId, String 
         var paths = new ArrayList<>(dataPaths); paths.addAll(List.of(logPath, installPath, parcelDir, javaHome));
         if (!metadataPath.isBlank()) paths.add(metadataPath);
         paths.forEach(BrokerAdditionPlan::path);
+        if(deploymentSettings!=null&&(overlaps(deploymentSettings.configDirectory(),parcelDir)||overlaps(installPath,parcelDir)))throw new IllegalArgumentException("Candidate configuration/installation overlaps cached Kafka parcels.");
         var storage = new ArrayList<>(dataPaths); if(!metadataPath.isBlank() && !storage.contains(metadataPath)) storage.add(metadataPath);
         if(new HashSet<>(dataPaths).size()!=dataPaths.size()) throw new IllegalArgumentException("Duplicate storage paths.");
         // Never allow config, service logs or binaries to overlap a storage tree.
@@ -65,7 +73,9 @@ public record BrokerAdditionPlan(String schemaVersion, UUID operationId, String 
         for(int i=0;i<storage.size();i++) for(int j=i+1;j<storage.size();j++)
             if(overlaps(storage.get(i),storage.get(j))) throw new IllegalArgumentException("Nested storage paths are unsupported.");
     }
-    public String configFileName(){return "add-broker/v2".equals(schemaVersion)?"broker.properties":"server.properties";}
+    public String configFileName(){return !"add-broker/v1".equals(schemaVersion)?"broker.properties":"server.properties";}
+    public String serviceName(){return deploymentSettings==null?"tantor-kafka-broker-"+nodeId:"broker";}
+    public String configPath(){return deploymentSettings==null?"/etc/tantor-kafka/add-broker/"+operationId+"/"+configFileName():deploymentSettings.configDirectory()+"/broker.properties";}
     private static boolean validIp(String ip) {
         if(ip==null || !ip.matches("[0-9a-fA-F:.]+")) return false;
         if(!ip.contains(":")) {

@@ -43,7 +43,10 @@ public class AddNodeReadinessService {
     public Preview startForOperation(UUID clusterId, String hostId, UUID ownerJob) {
         return startForOperation(clusterId,hostId,ownerJob,"");
     }
-    public Preview startForOperation(UUID clusterId,String hostId,UUID ownerJob,String requestedRack) {
+    public Preview start(UUID clusterId,String hostId,String rack,AddNodeDeploymentSettings settings){return startForOperation(clusterId,hostId,null,rack,settings==null?deploymentSettings(clusterId):settings);}
+    public Preview startForOperation(UUID clusterId,String hostId,UUID ownerJob,String requestedRack) {return startForOperation(clusterId,hostId,ownerJob,requestedRack,null);}
+    public Preview startForOperation(UUID clusterId,String hostId,UUID ownerJob,String requestedRack,AddNodeDeploymentSettings settings) {
+        if(settings!=null)try{settings.validate();}catch(IllegalArgumentException|NullPointerException e){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Invalid candidate deployment settings: "+e.getMessage());}
         String brokerRack=Objects.toString(requestedRack,"").strip();
         if(!brokerRack.matches("[A-Za-z0-9_.-]{0,128}"))throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Broker rack must use up to 128 letters, numbers, dots, underscores or hyphens.");
         Cluster cluster = requireCluster(clusterId);
@@ -53,6 +56,7 @@ public class AddNodeReadinessService {
         policy.getClientProbeHostIds().forEach(peer -> AddNodeProtectedHostGuard.hostId(peer, hosts, inspectionPolicy));
         if (!hostStatus.isInfrastructureHost(host) || !hostStatus.isOnline(host))
             throw new ResponseStatusException(HttpStatus.CONFLICT, "An online enrolled deployment agent is required.");
+        if(settings!=null&&!KafkaExpansionRuntimeInspection.supported(host.getAgentVersion(),9))throw new ResponseStatusException(HttpStatus.CONFLICT,"Custom deployment layouts require internal agent addnode.9 or newer.");
         Instant started = Instant.now();
         Map<String, Object> config = config(cluster);
         var checks = new ArrayList<Check>();
@@ -98,6 +102,11 @@ public class AddNodeReadinessService {
         request.put("minDiskGb", policy.getMinDiskGb());
         request.put("minInodes", policy.getMinInodes());
         request.put("allowedJavaMajors", policy.getAllowedJavaMajors());
+        if(settings!=null){
+            request.put("deploymentSettings",settings);request.put("configDirectory",settings.configDirectory());
+            request.put("installPath",settings.installPath());request.put("javaHome",settings.javaHome());request.put("runtimeUser",settings.runtimeUser());
+            request.put("dataPaths",settings.brokerDataPaths());request.put("metadataPath",settings.brokerMetadataPath());request.put("logPath",settings.brokerLogPath());request.put("heapXmx",settings.brokerHeapXmx());
+        }
         String artifactId = text(config, "artifact_id");
         String artifactHash = "";
         try {
@@ -112,7 +121,7 @@ public class AddNodeReadinessService {
             checks.add(new Check("ARTIFACT_CATALOG", "Approved artifact catalog", "COMMON", "UNKNOWN", "One approved matching artifact and SHA-256", "Unavailable or ambiguous",
                     "Make a matching Kafka artifact AVAILABLE with SHA-256; pin artifact_id if several match.", started, "ARTIFACT_API"));
         }
-        String fingerprint = rackFingerprint(fingerprint(cluster, host, artifactId, artifactHash),brokerRack);
+        String fingerprint = settingsFingerprint(rackFingerprint(fingerprint(cluster, host, artifactId, artifactHash),brokerRack),settings);
         request.put("contextHash", fingerprint);
         request.put("expiresAt", started.plusSeconds(policy.getTtlSeconds()).toString());
         request.put("contextStartedAt", started.toString());
@@ -202,7 +211,7 @@ public class AddNodeReadinessService {
             boolean stale = false;
             if (validateCurrent) {
                 var originalRequest=mapper.readTree(parameters.get("readiness_request"));
-                stale = !parameters.get("readiness_context").equals(rackFingerprint(fingerprint(cluster, host, parameters.get("readiness_artifact_id"), parameters.get("readiness_artifact_checksum")),originalRequest.path("brokerRack").asText("")))
+                stale = !parameters.get("readiness_context").equals(settingsFingerprint(rackFingerprint(fingerprint(cluster, host, parameters.get("readiness_artifact_id"), parameters.get("readiness_artifact_checksum")),originalRequest.path("brokerRack").asText("")),originalRequest.hasNonNull("deploymentSettings")?mapper.treeToValue(originalRequest.get("deploymentSettings"),AddNodeDeploymentSettings.class):null))
                         || !unassigned(host) || !mutable(cluster.getId(),ownerJob) || !hostStatus.isOnline(host);
                 if (!pending && !parameters.get("readiness_artifact_id").isBlank()) {
                     try {
@@ -261,6 +270,13 @@ public class AddNodeReadinessService {
         values.put("protectedHosts", List.of(inspectionPolicy.getExcludedHostIds(), inspectionPolicy.getExcludedHostIps()));
         try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(json(values).getBytes(StandardCharsets.UTF_8))); }
         catch (Exception e) { throw new IllegalStateException("Cannot fingerprint readiness context.", e); }
+    }
+    private String settingsFingerprint(String base,AddNodeDeploymentSettings settings){return settings==null?base:BrokerAdditionLedger.hash(base+":"+json(settings));}
+    public AddNodeDeploymentSettings deploymentSettings(UUID clusterId){
+        var cluster=requireCluster(clusterId);var config=config(cluster);
+        String base=first(text(config,"install_base_path","kafka_install_base_dir","kafka_install_dir"),cluster.getInstallDirectory(),"/opt/tantor");
+        String install=base.endsWith("/kafka")?base:base+"/kafka";
+        return new AddNodeDeploymentSettings(install,install+"/config",first(policy.getCandidateJavaHome(),text(config,"java_home","javaHome"),deployment.getJavaHome()),first(policy.getCandidateRuntimeUser(),text(config,"runtime_user"),deployment.getRuntimeUser()),List.of("/opt/tantor-broker-storage/data"),"","/opt/tantor-broker-storage/logs",first(brokerHeap(cluster,config),"1G"),List.of("/opt/tantor-controller-storage/data"),"/opt/tantor-controller-storage/metadata","/opt/tantor-controller-storage/logs","1G");
     }
     private String rackFingerprint(String base,String rack) {
         if(rack.isEmpty())return base;

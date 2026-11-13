@@ -1,3 +1,4 @@
+import type { DeploymentSettings } from './AddNodeDeploymentSettings';
 import { useCallback, useEffect, useState } from 'react';
 import { QuorumExpansionExecution, type CommonReadinessRefreshProps } from './QuorumExpansionExecution';
 import type { ReadinessPreview } from '../hooks/useAddNodeReadiness';
@@ -22,6 +23,7 @@ export function SeparateProcessAdditionPlanReview(props: { clusterId: string; ho
 }
 
 function SeparateReviewSession({ clusterId, hostId, brokerRack, commonPreview, onRefreshCommon, commonRunning, commonError }: { clusterId: string; hostId: string; brokerRack: string; commonPreview: ReadinessPreview | null } & CommonReadinessRefreshProps) {
+  const settings = commonPreview?.brokerPlan.deploymentSettings as DeploymentSettings | undefined;
   const [review, setReview] = useState<Review | null>(null);
   const [runtimeEvidence, setRuntimeEvidence] = useState<Record<string, string>>({});
   const onRuntimeEvidence = useCallback((serviceId: string, taskId: string | null) => {
@@ -67,7 +69,7 @@ function SeparateReviewSession({ clusterId, hostId, brokerRack, commonPreview, o
       <div className="add-node-table-wrap"><table className="add-node-table"><thead><tr><th>Process / proposed ID</th><th>Configuration / proposed unit</th><th>Listener</th><th>Required directory separation</th></tr></thead><tbody>
         {review.processes.map(process => <tr key={process.role}>
           <th scope="row">{process.role} · {process.nodeId ?? 'Unavailable'}<small>process.roles={process.processRoles}</small></th>
-          <td><code>{process.configurationFile}</code><br />{process.serviceName || 'Unresolved'}</td>
+          <td><code>{settings ? `${settings.configDirectory}/${process.configurationFile}` : process.configurationFile}</code><br />{settings ? `${process.role}.service` : process.serviceName || 'Unresolved'}</td>
           <td>{process.listenerPort ?? 'Not observed'}<br /><small>Port binding not inspected</small></td>
           <td>{process.requiredDirectories.join(' · ')}<br /><small>Relative layout only; absolute paths, mounts and ownership are not inspected.</small></td>
         </tr>)}

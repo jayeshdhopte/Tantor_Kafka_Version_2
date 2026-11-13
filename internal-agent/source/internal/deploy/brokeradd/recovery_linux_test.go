@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io.translab/tantor-agent/internal/deploy/layout"
 	"io.translab/tantor-agent/internal/deploy/readiness"
 	"io.translab/tantor-agent/internal/executor"
 	"os"
@@ -229,5 +230,35 @@ func TestLostFormatResultReconcilesWithoutReformatting(t *testing.T) {
 	}
 	if exec.formats != 1 || !exec.active {
 		t.Fatal("start replay reformatted storage or failed service")
+	}
+}
+
+func TestStandardBrokerLayoutResumesWithoutReformatting(t *testing.T) {
+	p, params, base, config, units := brokerTestFixture(t, "4.3.0")
+	root := filepath.Dir(base)
+	os.MkdirAll(filepath.Join(p.ParcelDir, "kafka", p.KafkaVersion, "libs"), 0755)
+	p.SchemaVersion = "add-broker/v3"
+	p.DeploymentSettings = &layout.Settings{InstallPath: p.InstallPath, ConfigDirectory: filepath.Join(p.InstallPath, "config"), JavaHome: p.JavaHome, RuntimeUser: p.RuntimeUser, BrokerDataPaths: p.DataPaths, BrokerLogPath: p.LogPath, BrokerHeapXmx: p.HeapXmx, ControllerDataPaths: []string{filepath.Join(root, "controller-data")}, ControllerMetadataPath: filepath.Join(root, "controller-metadata"), ControllerLogPath: filepath.Join(root, "controller-log"), ControllerHeapXmx: "512M"}
+	raw, _ := json.Marshal(p)
+	params["broker_plan"] = string(raw)
+	params["plan_digest"] = Digest(string(raw), params["server_properties"])
+	e := &fakeBrokerExecutor{plan: p, loseResult: true}
+	ctx := context.Background()
+	if _, err := run(ctx, "PREPARE_ADD_BROKER", p.HostID, base, params, e, config, units); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(p.InstallPath, "config", "broker.properties")
+	unit, err := os.ReadFile(filepath.Join(units, "broker.service"))
+	if err != nil || !strings.Contains(string(unit), path) || !strings.Contains(string(unit), p.InstallPath+"/bin/kafka-server-start.sh") {
+		t.Fatal("nonstandard service", err)
+	}
+	if _, err := run(ctx, "FORMAT_ADD_BROKER", p.HostID, base, params, e, config, units); err == nil {
+		t.Fatal("callback loss not exercised")
+	}
+	if _, err := run(ctx, "FORMAT_ADD_BROKER", p.HostID, base, params, e, config, units); err != nil {
+		t.Fatal(err)
+	}
+	if e.formats != 1 || storageState(p) != "MATCHING" {
+		t.Fatal("standard-layout resume repeated formatting")
 	}
 }

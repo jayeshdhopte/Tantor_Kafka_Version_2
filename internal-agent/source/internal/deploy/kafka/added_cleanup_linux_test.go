@@ -39,8 +39,10 @@ func TestAddedCleanupOwnsBothRolesAndRecoversAfterPartialCompletion(t *testing.T
 		t.Skip("root receipt ownership required")
 	}
 	t.Setenv("TMPDIR", "/var/tmp")
-	for _, family := range []string{"add-broker", "add-expansion"} {
-		t.Run(family, func(t *testing.T) {
+	for _, variant := range []string{"add-broker", "add-expansion", "standard-broker", "standard-expansion"} {
+		family := strings.Replace(variant, "standard-", "add-", 1)
+		standard := strings.HasPrefix(variant, "standard-")
+		t.Run(variant, func(t *testing.T) {
 			root := t.TempDir()
 			configs := filepath.Join(root, "config")
 			units := filepath.Join(root, "units")
@@ -67,9 +69,15 @@ func TestAddedCleanupOwnsBothRolesAndRecoversAfterPartialCompletion(t *testing.T
 			for index, role := range roles {
 				nodeID := 3 + index
 				unit := "tantor-kafka-" + role + "-" + strconv.Itoa(nodeID) + ".service"
+				if standard {
+					unit = role + ".service"
+				}
 				data := filepath.Join(root, role, "data")
 				logs := filepath.Join(root, role, "logs")
 				cfg := filepath.Join(configs, family, op, role+".properties")
+				if standard {
+					cfg = filepath.Join(configs, "custom", role+".properties")
+				}
 				directory := strings.Repeat("a", 21) + strconv.Itoa(index+1)
 				write(filepath.Join(data, "meta.properties"), "cluster.id="+kafkaID+"\nnode.id="+strconv.Itoa(nodeID)+"\ndirectory.id="+directory+"\n")
 				write(filepath.Join(data, "000000.log"), "owned data")

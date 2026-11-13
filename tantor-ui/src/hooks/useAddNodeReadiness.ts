@@ -1,3 +1,4 @@
+import type { DeploymentSettings } from '../components/AddNodeDeploymentSettings';
 import { useEffect, useRef, useState } from 'react';
 
 export type ReadinessCheck = {
@@ -10,13 +11,13 @@ export type ReadinessPreview = {
   checks: ReadinessCheck[]; brokerPlan: Record<string, unknown>; deploymentEnabled: false;
 };
 
-export function useAddNodeReadiness(clusterId: string, hostId: string, inventoryRevision: number, brokerRack = '') {
+export function useAddNodeReadiness(clusterId: string, hostId: string, inventoryRevision: number, brokerRack = '', deploymentSettings?: DeploymentSettings | null) {
   const [preview, setPreview] = useState<ReadinessPreview | null>(null);
   const [error, setError] = useState('');
   const [running, setRunning] = useState(false);
   const [now, setNow] = useState(Date.now);
   const request = useRef<AbortController | null>(null);
-  const context = `${clusterId}:${hostId}:${inventoryRevision}:${brokerRack}`;
+  const context = `${clusterId}:${hostId}:${inventoryRevision}:${brokerRack}:${JSON.stringify(deploymentSettings)}`;
   const currentContext = useRef(context);
   useEffect(() => {
     currentContext.current = context;
@@ -54,7 +55,7 @@ export function useAddNodeReadiness(clusterId: string, hostId: string, inventory
     };
     try {
       const base = `/api/v1/ui/clusters/${encodeURIComponent(clusterId)}/add-node/previews`;
-      let data = await accept(await fetch(base, { method: 'POST', signal: abort.signal, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hostId, brokerRack }) }));
+      let data = await accept(await fetch(base, { method: 'POST', signal: abort.signal, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hostId, brokerRack, deploymentSettings }) }));
       while (!abort.signal.aborted && currentContext.current === startedContext) {
         setPreview(data); setNow(Date.now());
         if (Date.parse(data.expiresAt) <= Date.now() || ['EXPIRED', 'STALE'].includes(data.status)) break;

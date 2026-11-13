@@ -8,7 +8,7 @@ import java.util.UUID;
 /** Observation-only contract. A PASS never authorizes deployment. */
 public final class AddNodeReadiness {
     private AddNodeReadiness() {}
-    public record Request(String hostId,String brokerRack) {}
+    public record Request(String hostId,String brokerRack,io.translab.tantor.server.service.AddNodeDeploymentSettings deploymentSettings) { public Request(String hostId,String brokerRack){this(hostId,brokerRack,null);} }
     public record Check(String code, String name, String phase, String status, Object expected,
                         Object observed, String remedy, Instant observedAt, String source) {}
     public record Preview(UUID previewId, UUID clusterId, String hostId, String contextHash,

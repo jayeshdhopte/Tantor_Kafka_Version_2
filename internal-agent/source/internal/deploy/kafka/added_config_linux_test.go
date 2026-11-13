@@ -15,14 +15,20 @@ func TestAddedConfigRequiresOwnedCompletedIdentity(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("root-owned addition receipt test")
 	}
-	for _, family := range []string{"add-broker", "add-expansion"} {
-		t.Run(family, func(t *testing.T) {
+	t.Setenv("TMPDIR", "/var/tmp")
+	for _, variant := range []string{"add-broker", "add-expansion", "standard-broker", "standard-expansion"} {
+		family := strings.Replace(variant, "standard-", "add-", 1)
+		standard := strings.HasPrefix(variant, "standard-")
+		t.Run(variant, func(t *testing.T) {
 			root := t.TempDir()
 			configs := filepath.Join(root, "config")
 			units := filepath.Join(root, "units")
 			data := filepath.Join(root, "state")
 			op := "12345678-1234-1234-1234-123456789abc"
 			file := filepath.Join(configs, family, op, "broker.properties")
+			if standard {
+				file = filepath.Join(configs, "custom", "broker.properties")
+			}
 			receiptPath := filepath.Join(data, "broker-addition", op, "receipt.json")
 			schema := "add-broker/v1"
 			header := "# Tantor Add Broker operation " + op
@@ -32,6 +38,9 @@ func TestAddedConfigRequiresOwnedCompletedIdentity(t *testing.T) {
 				header = "# Tantor quorum expansion " + op
 			}
 			unit := "tantor-kafka-broker-3.service"
+			if standard {
+				unit = "broker.service"
+			}
 			write := func(path, content string) {
 				t.Helper()
 				if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
@@ -41,14 +50,14 @@ func TestAddedConfigRequiresOwnedCompletedIdentity(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			receipt := map[string]interface{}{"schemaVersion": schema, "operationId": op, "hostId": "host-a", "planDigest": strings.Repeat("a", 64), "phase": "STARTED", "kafkaClusterId": "abcdefghijklmnopqrstuv", "nodeId": 3, "role": "broker", "serviceName": "tantor-kafka-broker-3", "unit": unit, "configPath": file}
+			receipt := map[string]interface{}{"schemaVersion": schema, "operationId": op, "hostId": "host-a", "planDigest": strings.Repeat("a", 64), "phase": "STARTED", "kafkaClusterId": "abcdefghijklmnopqrstuv", "nodeId": 3, "role": "broker", "serviceName": strings.TrimSuffix(unit, ".service"), "unit": unit, "configPath": file}
 			save := func() { raw, _ := json.Marshal(receipt); write(receiptPath, string(raw)) }
 			save()
 			write(file, "node.id=3\nprocess.roles=broker\nnum.network.threads=4\n")
 			unitPath := filepath.Join(units, unit)
 			unitBody := header + "\n[Service]\nExecStart=/opt/kafka/bin/kafka-server-start.sh " + file + "\n"
 			write(unitPath, unitBody)
-			task := &api.Task{Parameters: map[string]string{"config_path": file, "role": "broker", "node_id": "3", "service_name": "tantor-kafka-broker-3"}}
+			task := &api.Task{Parameters: map[string]string{"config_path": file, "role": "broker", "node_id": "3", "service_name": strings.TrimSuffix(unit, ".service")}}
 			check := func(want bool) {
 				t.Helper()
 				_, err := validateAddedConfigAt(task, data, "host-a", configs, units)
@@ -70,9 +79,9 @@ func TestAddedConfigRequiresOwnedCompletedIdentity(t *testing.T) {
 			task.Parameters["node_id"] = "4"
 			check(false)
 			task.Parameters["node_id"] = "3"
-			task.Parameters["service_name"] = "broker"
+			task.Parameters["service_name"] = "foreign"
 			check(false)
-			task.Parameters["service_name"] = "tantor-kafka-broker-3.service"
+			task.Parameters["service_name"] = unit
 			write(file, "node.id=3\nnode.id=3\nprocess.roles=broker\n")
 			check(false)
 			write(file, "node.id=3\nprocess.roles=broker\nnum.network.threads=8\n")

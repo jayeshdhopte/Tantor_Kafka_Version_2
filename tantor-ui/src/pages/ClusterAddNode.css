@@ -88,3 +88,6 @@
   .add-node-review dd { padding-top: 5px; }
   .add-node-footer .add-node-button { flex: 1; }
 }
+
+.add-node-deployment-settings { min-width: 0; margin: 24px 0; padding: 20px; border: 1px solid #d0d5dd; border-radius: 12px; }
+.add-node-deployment-settings legend { padding: 0 8px; font-weight: 600; color: #40156b; }

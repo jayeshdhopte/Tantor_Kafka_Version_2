@@ -9,7 +9,7 @@ type Props = { clusterId: string; hostId: string; layout: 'CONTROLLER' | 'SEPARA
 type Review = { schemaVersion: string; previewId: string; clusterId: string; hostId: string; contextHash: string;
   status: 'RUNNING' | 'PASS' | 'BLOCKED' | 'EXPIRED' | 'STALE'; expiresAt: string; executionEnabled: boolean; message: string;
   proposedPlan: { layout: string; quorumMode: string; kafkaVersion: string; kafkaClusterId: string;
-    processes: { role: string; nodeId: number; dataPaths: string[]; metadataPath: string; logPath: string; port: number; heapXmx: string }[] } };
+    deploymentSettings?: { configDirectory: string; installPath: string }; processes: { role: string; nodeId: number; dataPaths: string[]; metadataPath: string; logPath: string; port: number; heapXmx: string }[] } };
 
 export function QuorumExpansionExecution(props: Props) {
   const context = JSON.stringify([props.clusterId, props.hostId, props.layout, props.brokerRack, props.commonPreview?.previewId,
@@ -99,6 +99,7 @@ function ExecutionSession({ clusterId, hostId, layout, brokerRack = '', commonPr
     <button className="add-node-button" disabled={!readyToCheck || busy || polling && fresh} onClick={() => void check()}>{busy || polling && fresh ? 'Checking…' : 'Validate selected layout'}</button>
     {review && <><p role="status">{fresh ? review.status : 'EXPIRED'} · {review.message}</p>
       <p>Kafka {review.proposedPlan.kafkaVersion} · cluster <code>{review.proposedPlan.kafkaClusterId}</code> · {review.proposedPlan.quorumMode}</p>
+      {review.proposedPlan.deploymentSettings && <p>Installation: <code>{review.proposedPlan.deploymentSettings.installPath}</code> · Configuration: <code>{review.proposedPlan.deploymentSettings.configDirectory}</code> · services: {layout === 'SEPARATE' ? 'broker.service, controller.service' : 'controller.service'}</p>}
       <ul>{review.proposedPlan.processes.map(process => <li key={process.role}>{process.role} · node ID {process.nodeId} · heap {process.heapXmx}<br />{process.dataPaths.join(', ')}{process.metadataPath && ` · metadata ${process.metadataPath}`}<br />Logs: {process.logPath}</li>)}</ul>
       {review.status === 'PASS' && !review.executionEnabled && <p>Execution remains held until release acceptance is complete.</p>}
     </>}

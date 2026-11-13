@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io.translab/tantor-agent/internal/deploy/layout"
 	"net"
 	"os"
 	"path/filepath"
@@ -86,7 +87,10 @@ func run(ctx context.Context, command, hostID, base string, params map[string]st
 		}
 	}
 	configPath := filepath.Join(configRoot, p.OperationID, p.ConfigFileName())
-	unitName := "tantor-kafka-broker-" + strconv.Itoa(p.NodeID)
+	if p.DeploymentSettings != nil {
+		configPath = filepath.Join(p.DeploymentSettings.ConfigDirectory, p.ConfigFileName())
+	}
+	unitName := p.ServiceName()
 	unitPath := filepath.Join(unitRoot, unitName+".service")
 	if command == "INSPECT_ADD_BROKER" {
 		if _, err = os.Stat(dir); os.IsNotExist(err) {
@@ -141,6 +145,7 @@ func run(ctx context.Context, command, hostID, base string, params map[string]st
 	if err = readiness.ValidateBrokerPayload(ctx, p); err != nil {
 		return "", err
 	}
+
 	if os.IsNotExist(readErr) {
 		if command != "PREPARE_ADD_BROKER" {
 			return "", fmt.Errorf("operation has no preparation receipt")
@@ -154,6 +159,11 @@ func run(ctx context.Context, command, hostID, base string, params map[string]st
 			}
 		}
 		if err = save(receiptPath, receipt); err != nil {
+			return "", err
+		}
+	}
+	if p.DeploymentSettings != nil {
+		if err = layout.PrepareRuntime(ctx, filepath.Join(p.ParcelDir, "kafka", p.KafkaVersion), p.InstallPath); err != nil {
 			return "", err
 		}
 	}
@@ -243,7 +253,7 @@ func run(ctx context.Context, command, hostID, base string, params map[string]st
 		if err = save(receiptPath, receipt); err != nil {
 			return "", err
 		}
-		args := []string{"-u", p.RuntimeUser, "--", "env", "JAVA_HOME=" + p.JavaHome, "KAFKA_HEAP_OPTS=-Xmx" + p.HeapXmx, "LOG_DIR=" + p.LogPath, "KAFKA_LOG4J_OPTS=-Dlog4j2.configurationFile=" + filepath.Join(filepath.Dir(configPath), "log4j2.xml") + " -Dkafka.logs.dir=" + p.LogPath, "bash", filepath.Join(p.ParcelDir, "kafka", p.KafkaVersion, "bin", "kafka-storage.sh"), "format", "--cluster-id", p.KafkaClusterID, "--config", configPath}
+		args := []string{"-u", p.RuntimeUser, "--", "env", "JAVA_HOME=" + p.JavaHome, "KAFKA_HEAP_OPTS=-Xmx" + p.HeapXmx, "LOG_DIR=" + p.LogPath, "KAFKA_LOG4J_OPTS=-Dlog4j2.configurationFile=" + filepath.Join(filepath.Dir(configPath), "log4j2.xml") + " -Dkafka.logs.dir=" + p.LogPath, "bash", filepath.Join(p.RuntimeHome(), "bin", "kafka-storage.sh"), "format", "--cluster-id", p.KafkaClusterID, "--config", configPath}
 		// Preserve the old frozen v1 adapter; v2 follows storage_format.yml,
 		// where --no-initial-controllers is reserved for a controller role.
 		if p.QuorumMode == "DYNAMIC" && p.SchemaVersion == "add-broker/v1" {
@@ -500,7 +510,7 @@ func unitContent(p readiness.BrokerPlan, config, dir string, options ...RuntimeO
 	if opts.JmxPort > 0 {
 		jmx = fmt.Sprintf("Environment=KAFKA_OPTS=-javaagent:%s=%d:%s\n", filepath.Join(filepath.Dir(config), "jmx.jar"), opts.JmxPort, filepath.Join(filepath.Dir(config), "jmx.yml"))
 	}
-	return fmt.Sprintf("# Tantor Add Broker operation %s\n[Unit]\nDescription=Tantor Kafka broker %d\nAfter=network-online.target\n[Service]\nType=simple\nUser=%s\nEnvironment=JAVA_HOME=%s\nEnvironment=KAFKA_HEAP_OPTS=-Xmx%s\nEnvironment=LOG_DIR=%s\nEnvironment=\"KAFKA_LOG4J_OPTS=-Dlog4j2.configurationFile=%s/log4j2.xml -Dkafka.logs.dir=%s\"\n%sExecStart=%s/bin/kafka-server-start.sh %s\nRestart=no\nLimitNOFILE=%d\n[Install]\nWantedBy=multi-user.target\n", p.OperationID, p.NodeID, p.RuntimeUser, p.JavaHome, p.HeapXmx, p.LogPath, filepath.Dir(config), p.LogPath, jmx, filepath.Join(p.ParcelDir, "kafka", p.KafkaVersion), config, opts.LimitNofile)
+	return fmt.Sprintf("# Tantor Add Broker operation %s\n[Unit]\nDescription=Tantor Kafka broker %d\nAfter=network-online.target\n[Service]\nType=simple\nUser=%s\nEnvironment=JAVA_HOME=%s\nEnvironment=KAFKA_HEAP_OPTS=-Xmx%s\nEnvironment=LOG_DIR=%s\nEnvironment=\"KAFKA_LOG4J_OPTS=-Dlog4j2.configurationFile=%s/log4j2.xml -Dkafka.logs.dir=%s\"\n%sExecStart=%s/bin/kafka-server-start.sh %s\nRestart=no\nLimitNOFILE=%d\n[Install]\nWantedBy=multi-user.target\n", p.OperationID, p.NodeID, p.RuntimeUser, p.JavaHome, p.HeapXmx, p.LogPath, filepath.Dir(config), p.LogPath, jmx, p.RuntimeHome(), config, opts.LimitNofile)
 }
 
 type RuntimeOptions struct {

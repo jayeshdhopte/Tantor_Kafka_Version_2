@@ -5,7 +5,7 @@ import type { ReadinessPreview } from '../hooks/useAddNodeReadiness';
 type Review = {
   previewId: string; contextHash: string; expiresAt: string; executionEnabled: boolean; blocker: string;
   proposedPlan: { schemaVersion: string; hostId: string; contextHash: string; nodeId: number; kafkaClusterId: string;
-    brokerPort: number; quorumMode: string; dataPaths: string[]; controllerEndpoints: string[]; artifactChecksum: string; brokerRack?: string };
+    brokerPort: number; quorumMode: string; dataPaths: string[]; controllerEndpoints: string[]; artifactChecksum: string; brokerRack?: string; deploymentSettings?: { configDirectory: string; installPath: string; brokerHeapXmx: string } };
   executionSteps: string[];
 };
 
@@ -25,7 +25,7 @@ export function BrokerAdditionPlanReview({ clusterId, preview }: { clusterId: st
         if (!response.ok) throw new Error(body?.message || `Could not prepare broker plan (${response.status}).`);
         const plan = body?.proposedPlan;
         if (body.previewId !== preview.previewId || body.contextHash !== preview.contextHash || body.expiresAt !== preview.expiresAt
-          || typeof body.executionEnabled !== 'boolean' || !['add-broker/v1', 'add-broker/v2'].includes(plan?.schemaVersion) || plan.hostId !== preview.hostId
+          || typeof body.executionEnabled !== 'boolean' || !['add-broker/v1', 'add-broker/v2', 'add-broker/v3'].includes(plan?.schemaVersion) || plan.hostId !== preview.hostId
           || plan.contextHash !== preview.contextHash || !Number.isInteger(plan.nodeId) || plan.nodeId < 1
           || (plan.brokerRack || '') !== String(preview.brokerPlan.brokerRack || '')
           || Date.parse(body.expiresAt) <= Date.now()
@@ -63,7 +63,8 @@ export function BrokerAdditionPlanReview({ clusterId, preview }: { clusterId: st
   return <div>
     <dl className="add-node-review">
       <dt>Proposed broker ID</dt><dd>{review.proposedPlan.nodeId} · not reserved</dd>
-      <dt>Broker configuration</dt><dd>{review.proposedPlan.schemaVersion === 'add-broker/v2' ? 'broker.properties' : 'server.properties (existing contract)'}</dd>
+      <dt>Broker configuration</dt><dd>{review.proposedPlan.schemaVersion !== 'add-broker/v1' ? 'broker.properties' : 'server.properties (existing contract)'}</dd>
+      {review.proposedPlan.deploymentSettings && <><dt>Service</dt><dd>broker.service</dd><dt>Configuration path</dt><dd>{review.proposedPlan.deploymentSettings.configDirectory}/broker.properties</dd><dt>Installation / heap</dt><dd>{review.proposedPlan.deploymentSettings.installPath} · {review.proposedPlan.deploymentSettings.brokerHeapXmx}</dd></>}
       <dt>Controller discovery</dt><dd>{review.proposedPlan.quorumMode} · existing controllers only</dd>
       <dt>Approved package SHA-256</dt><dd><code style={{ overflowWrap: 'anywhere' }}>{review.proposedPlan.artifactChecksum}</code></dd>
     </dl>

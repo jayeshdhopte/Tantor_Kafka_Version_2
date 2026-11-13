@@ -57,4 +57,12 @@ class BrokerAdditionPlanTest {
             var p=inputs();p.put(invalid.getKey(),invalid.getValue());assertThrows(IllegalArgumentException.class,()->freeze(p),invalid.getKey());
         }
     }
+
+    @Test void standardProfileIsFrozenWithRoleServiceAndPreservedOnResume()throws Exception{
+        var settings=new AddNodeDeploymentSettingsTest().settings();var p=inputs();
+        p.put("deploymentSettings",settings);p.put("installPath",settings.installPath());p.put("javaHome",settings.javaHome());p.put("runtimeUser",settings.runtimeUser());p.put("dataPaths",settings.brokerDataPaths());p.put("metadataPath",settings.brokerMetadataPath());p.put("logPath",settings.brokerLogPath());p.put("heapXmx",settings.brokerHeapXmx());
+        var plan=freeze(p);assertEquals("add-broker/v3",plan.schemaVersion());assertEquals("broker",plan.serviceName());assertEquals("/opt/tantor/kafka/config/broker.properties",plan.configPath());assertEquals(settings,plan.forOperation(UUID.randomUUID()).deploymentSettings());
+        p.put("heapXmx","2G");assertThrows(IllegalArgumentException.class,()->freeze(p));
+        assertFalse(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(freeze(inputs())).contains("deploymentSettings"));
+    }
 }

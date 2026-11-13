@@ -20,11 +20,16 @@ public class AddNodeReadinessController {
     public ResponseEntity<?> readinessError(ResponseStatusException error) {
         return ResponseEntity.status(error.getStatusCode()).body(Map.of("message", error.getReason() == null ? "Readiness request could not be completed." : error.getReason()));
     }
+    @GetMapping("/deployment-settings")
+    public ResponseEntity<?> settings(@RequestHeader(value="Authorization",required=false) String auth,@PathVariable UUID clusterId){
+        if(!permissions.canAccess(auth,RoleAuthenticationUtil.ADD_NODE))return ResponseEntity.status(403).build();
+        return ResponseEntity.ok(service.deploymentSettings(clusterId));
+    }
     @PostMapping
     public ResponseEntity<?> start(@RequestHeader(value="Authorization", required=false) String auth,
                                   @PathVariable UUID clusterId, @RequestBody Request request) {
         if (!permissions.canAccess(auth, RoleAuthenticationUtil.ADD_NODE)) return ResponseEntity.status(403).build();
-        return ResponseEntity.status(HttpStatus.ACCEPTED).body(service.start(clusterId, request.hostId(),request.brokerRack()));
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(service.start(clusterId, request.hostId(),request.brokerRack(),request.deploymentSettings()));
     }
     @GetMapping("/{previewId}")
     public ResponseEntity<?> get(@RequestHeader(value="Authorization", required=false) String auth,

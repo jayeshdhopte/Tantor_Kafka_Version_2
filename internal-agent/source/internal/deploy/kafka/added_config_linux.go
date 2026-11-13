@@ -13,6 +13,7 @@ import (
 	"strings"
 	"syscall"
 
+	"io.translab/tantor-agent/internal/deploy/layout"
 	"io.translab/tantor-agent/pkg/api"
 )
 
@@ -34,11 +35,33 @@ func validateAddedConfigAt(task *api.Task, dataDir, hostID, configRoot, unitRoot
 		return reject()
 	}
 	parts := strings.Split(relative, string(os.PathSeparator))
-	if len(parts) != 3 || !addedOperation.MatchString(parts[1]) {
-		return reject()
-	}
-	family, op, file := parts[0], parts[1], parts[2]
 	role := task.Parameters["role"]
+	family, op, file := "", "", filepath.Base(requested)
+	standard := strings.TrimSuffix(task.Parameters["service_name"], ".service") == role && (role == "broker" || role == "controller")
+	if standard {
+		if !layout.Approved(requested) || file != role+".properties" {
+			return reject()
+		}
+		raw, e := readAddedOwned(filepath.Join(unitRoot, role+".service"), 131072)
+		if e != nil {
+			return reject()
+		}
+		header := strings.SplitN(string(raw), "\n", 2)[0]
+		for _, candidate := range []struct{ prefix, family string }{{"# Tantor Add Broker operation ", "add-broker"}, {"# Tantor quorum expansion ", "add-expansion"}} {
+			if strings.HasPrefix(header, candidate.prefix) {
+				family = candidate.family
+				op = strings.TrimPrefix(header, candidate.prefix)
+			}
+		}
+		if !addedOperation.MatchString(op) {
+			return reject()
+		}
+	} else {
+		if len(parts) != 3 || !addedOperation.MatchString(parts[1]) {
+			return reject()
+		}
+		family, op, file = parts[0], parts[1], parts[2]
+	}
 	if role != "broker" && role != "controller" {
 		return reject()
 	}
@@ -83,6 +106,9 @@ func validateAddedConfigAt(task *api.Task, dataDir, hostID, configRoot, unitRoot
 		return reject()
 	}
 	unit := "tantor-kafka-" + role + "-" + strconv.Itoa(id) + ".service"
+	if standard {
+		unit = role + ".service"
+	}
 	recorded := receipt.Unit
 	if family == "add-broker" {
 		recorded = receipt.ServiceName + ".service"

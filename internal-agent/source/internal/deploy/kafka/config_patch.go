@@ -206,7 +206,14 @@ func validatePatchKey(key string) error {
 
 func (d *Deployer) validatedPatchPath(task *api.Task) (string, error) {
 	requested := strings.TrimSpace(task.Parameters["config_path"])
-	if strings.HasPrefix(requested, "/etc/tantor-kafka/add-") {
+	ownedStandard := false
+	role := task.Parameters["role"]
+	if d.cfg != nil && (role == "broker" || role == "controller") && strings.TrimSuffix(task.Parameters["service_name"], ".service") == role {
+		if raw, e := readAddedOwned("/etc/systemd/system/"+role+".service", 131072); e == nil {
+			ownedStandard = strings.HasPrefix(string(raw), "# Tantor Add Broker operation ") || strings.HasPrefix(string(raw), "# Tantor quorum expansion ")
+		}
+	}
+	if ownedStandard || strings.HasPrefix(requested, "/etc/tantor-kafka/add-") {
 		if d.cfg == nil {
 			return "", fmt.Errorf("agent identity is required for added-node configuration")
 		}

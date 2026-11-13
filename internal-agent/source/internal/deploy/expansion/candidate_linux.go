@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io.translab/tantor-agent/internal/deploy/layout"
 	"net"
 	"os"
 	"os/exec"
@@ -320,7 +321,7 @@ func (e *nativeCandidateEnvironment) Observe(ctx context.Context, p Plan, c Proc
 	if c.Runtime.JmxPort > 0 {
 		agents[filepath.Join(configDir, c.Role+"-jmx.jar")] = c.Runtime.JmxChecksum
 	}
-	_, err = VerifyRuntime(ctx, *e.manifest, filepath.Join(p.ParcelDir, "kafka", p.KafkaVersion), p.ConfigPath(c.Role), strings.Split(strings.TrimSuffix(cmd, "\x00"), "\x00"), agents, diskRuntimeFiles{})
+	_, err = VerifyRuntime(ctx, *e.manifest, p.RuntimeHome(), p.ConfigPath(c.Role), strings.Split(strings.TrimSuffix(cmd, "\x00"), "\x00"), agents, diskRuntimeFiles{})
 	if err != nil {
 		return o, err
 	}
@@ -354,6 +355,11 @@ func (e *nativeCandidateEnvironment) Prepare(ctx context.Context, p Plan, c Proc
 	}
 	for _, d := range append(storagePaths(c), c.LogPath) {
 		if err := ownedEmptyDirectory(d, uid, gid); err != nil {
+			return err
+		}
+	}
+	if p.DeploymentSettings != nil {
+		if err := layout.PrepareRuntime(ctx, filepath.Join(p.ParcelDir, "kafka", p.KafkaVersion), p.RuntimeHome()); err != nil {
 			return err
 		}
 	}
@@ -416,6 +422,15 @@ func formatArguments(p Plan, c Process, config string) []string {
 	return args
 }
 func (e *nativeCandidateEnvironment) Start(ctx context.Context, p Plan, c Process) error {
+	if p.DeploymentSettings != nil {
+		m, err := loadManifest(ctx, p)
+		if err != nil {
+			return err
+		}
+		if err = verifyRuntimePayload(ctx, m, p.RuntimeHome()); err != nil {
+			return err
+		}
+	}
 	if _, _, err := e.exec.Run(ctx, "systemctl", "daemon-reload"); err != nil {
 		return err
 	}
@@ -524,14 +539,23 @@ func candidateUnit(p Plan, c Process) string {
 	if c.Runtime.JmxPort > 0 {
 		jmx = fmt.Sprintf("Environment=KAFKA_OPTS=-javaagent:%s/%s-jmx.jar=%d:%s/%s-jmx.yml\n", configDir, c.Role, c.Runtime.JmxPort, configDir, c.Role)
 	}
-	return fmt.Sprintf("# Tantor quorum expansion %s\n[Unit]\nDescription=Tantor Kafka %s %d\nAfter=network-online.target\n[Service]\nType=simple\nUser=%s\nEnvironment=JAVA_HOME=%s\nEnvironment=KAFKA_HEAP_OPTS=-Xmx%s\nEnvironment=LOG_DIR=%s\nEnvironment=CLASSPATH=\nEnvironment=JAVA_TOOL_OPTIONS=\nEnvironment=JDK_JAVA_OPTIONS=\nEnvironment=KAFKA_OPTS=\nEnvironment=\"KAFKA_LOG4J_OPTS=-Dlog4j2.configurationFile=%s/%s-log4j2.xml -Dkafka.logs.dir=%s\"\n%sExecStart=%s/bin/kafka-server-start.sh %s\nRestart=no\nLimitNOFILE=%d\n[Install]\nWantedBy=multi-user.target\n", p.OperationID, c.Role, c.NodeID, p.RuntimeUser, p.JavaHome, c.HeapXmx, c.LogPath, configDir, c.Role, c.LogPath, jmx, filepath.Join(p.ParcelDir, "kafka", p.KafkaVersion), config, c.Runtime.LimitNofile)
+	return fmt.Sprintf("# Tantor quorum expansion %s\n[Unit]\nDescription=Tantor Kafka %s %d\nAfter=network-online.target\n[Service]\nType=simple\nUser=%s\nEnvironment=JAVA_HOME=%s\nEnvironment=KAFKA_HEAP_OPTS=-Xmx%s\nEnvironment=LOG_DIR=%s\nEnvironment=CLASSPATH=\nEnvironment=JAVA_TOOL_OPTIONS=\nEnvironment=JDK_JAVA_OPTIONS=\nEnvironment=KAFKA_OPTS=\nEnvironment=\"KAFKA_LOG4J_OPTS=-Dlog4j2.configurationFile=%s/%s-log4j2.xml -Dkafka.logs.dir=%s\"\n%sExecStart=%s/bin/kafka-server-start.sh %s\nRestart=no\nLimitNOFILE=%d\n[Install]\nWantedBy=multi-user.target\n", p.OperationID, c.Role, c.NodeID, p.RuntimeUser, p.JavaHome, c.HeapXmx, c.LogPath, configDir, c.Role, c.LogPath, jmx, p.RuntimeHome(), config, c.Runtime.LimitNofile)
 }
 
 // Killing the full runuser/bash/Java process group prevents a timed-out CLI
 // from mutating storage or quorum membership after its task has completed.
 func runKafkaCLI(ctx context.Context, p Plan, c Process, script string, args ...string) error {
+	if p.DeploymentSettings != nil {
+		m, err := loadManifest(ctx, p)
+		if err != nil {
+			return err
+		}
+		if err = verifyRuntimePayload(ctx, m, p.RuntimeHome()); err != nil {
+			return err
+		}
+	}
 	configDir := filepath.Dir(p.ConfigPath(c.Role))
-	commandArgs := []string{"-u", p.RuntimeUser, "--", "env", "-i", "PATH=/usr/bin:/bin", "JAVA_HOME=" + p.JavaHome, "KAFKA_HEAP_OPTS=-Xmx" + c.HeapXmx, "LOG_DIR=" + c.LogPath, "KAFKA_LOG4J_OPTS=-Dlog4j2.configurationFile=" + filepath.Join(configDir, c.Role+"-log4j2.xml") + " -Dkafka.logs.dir=" + c.LogPath, "/bin/bash", filepath.Join(p.ParcelDir, "kafka", p.KafkaVersion, "bin", script)}
+	commandArgs := []string{"-u", p.RuntimeUser, "--", "env", "-i", "PATH=/usr/bin:/bin", "JAVA_HOME=" + p.JavaHome, "KAFKA_HEAP_OPTS=-Xmx" + c.HeapXmx, "LOG_DIR=" + c.LogPath, "KAFKA_LOG4J_OPTS=-Dlog4j2.configurationFile=" + filepath.Join(configDir, c.Role+"-log4j2.xml") + " -Dkafka.logs.dir=" + c.LogPath, "/bin/bash", filepath.Join(p.RuntimeHome(), "bin", script)}
 	commandArgs = append(commandArgs, args...)
 	return runProcessGroup(ctx, "/usr/sbin/runuser", commandArgs...)
 }

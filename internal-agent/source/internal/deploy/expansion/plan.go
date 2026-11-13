@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io.translab/tantor-agent/internal/deploy/layout"
 	"math"
 	"net"
 	"path"
@@ -85,6 +86,7 @@ type Voter struct {
 	Port        int    `json:"port"`
 }
 type Plan struct {
+	DeploymentSettings      *layout.Settings `json:"deploymentSettings,omitempty"`
 	SchemaVersion           string           `json:"schemaVersion"`
 	OperationID             string           `json:"operationId"`
 	ClusterID               string           `json:"clusterId"`
@@ -153,7 +155,20 @@ func (p Plan) Validate() error {
 			return fmt.Errorf("unsupported Java admission policy")
 		}
 	}
-	if p.SchemaVersion != "add-quorum-expansion/v1" || !uuid.MatchString(p.OperationID) || !uuid.MatchString(p.ClusterID) || !hash.MatchString(p.ContextHash) || p.CandidateHostID == "" || net.ParseIP(p.CandidateIP) == nil || !kafkaID.MatchString(p.KafkaClusterID) || !uuid.MatchString(p.ArtifactID) || !hash.MatchString(p.ArtifactSHA256) || !user.MatchString(p.RuntimeUser) {
+	if p.SchemaVersion == "add-quorum-expansion/v2" {
+		if p.DeploymentSettings == nil {
+			return fmt.Errorf("explicit deployment settings required")
+		}
+		if err := p.DeploymentSettings.Validate(); err != nil {
+			return err
+		}
+		if p.JavaHome != p.DeploymentSettings.JavaHome || p.RuntimeUser != p.DeploymentSettings.RuntimeUser {
+			return fmt.Errorf("runtime differs from candidate settings")
+		}
+	} else if p.DeploymentSettings != nil {
+		return fmt.Errorf("legacy expansion cannot carry deployment settings")
+	}
+	if (p.SchemaVersion != "add-quorum-expansion/v1" && p.SchemaVersion != "add-quorum-expansion/v2") || !uuid.MatchString(p.OperationID) || !uuid.MatchString(p.ClusterID) || !hash.MatchString(p.ContextHash) || p.CandidateHostID == "" || net.ParseIP(p.CandidateIP) == nil || !kafkaID.MatchString(p.KafkaClusterID) || !uuid.MatchString(p.ArtifactID) || !hash.MatchString(p.ArtifactSHA256) || !user.MatchString(p.RuntimeUser) {
 		return fmt.Errorf("incomplete expansion identity or artifact")
 	}
 	if p.KafkaVersion != "4.3.0" && p.KafkaVersion != "4.1.0" && p.KafkaVersion != "4.1.1" && p.KafkaVersion != "4.1.2" {
@@ -171,6 +186,7 @@ func (p Plan) Validate() error {
 	if p.QuorumMode == "STATIC" && !p.MaintenanceAcknowledged {
 		return fmt.Errorf("static expansion requires explicit reviewed maintenance acknowledgement")
 	}
+ if p.DeploymentSettings!=nil&&(layout.Overlap(p.DeploymentSettings.ConfigDirectory,p.ParcelDir)||layout.Overlap(p.DeploymentSettings.InstallPath,p.ParcelDir)){return fmt.Errorf("candidate configuration/installation overlaps cached Kafka parcels")}
 	if !safePath(p.ParcelDir) || p.excluded(p.CandidateHostID, p.CandidateIP) {
 		return fmt.Errorf("invalid or excluded candidate runtime")
 	}
@@ -306,6 +322,15 @@ func (p Plan) Validate() error {
 		if i == 1 {
 			role = "broker"
 			nextID = maxBroker + 1
+		}
+		if s := p.DeploymentSettings; s != nil {
+			data, metadata, log, heap := s.BrokerDataPaths, s.BrokerMetadataPath, s.BrokerLogPath, s.BrokerHeapXmx
+			if role == "controller" {
+				data, metadata, log, heap = s.ControllerDataPaths, s.ControllerMetadataPath, s.ControllerLogPath, s.ControllerHeapXmx
+			}
+			if strings.Join(data, ",") != strings.Join(c.DataPaths, ",") || metadata != c.MetadataPath || log != c.LogPath || heap != c.HeapXmx {
+				return fmt.Errorf("process differs from frozen deployment settings")
+			}
 		}
 		if c.Role != role || c.NodeID != nextID || c.NodeID < 1 || c.NodeID > 2147483647 || used[c.NodeID] || !port(c.Port) || ports[c.Port] || !heap.MatchString(c.HeapXmx) || c.Runtime.LimitNofile < 1024 {
 			return fmt.Errorf("invalid sequential candidate identity, port or runtime")
@@ -461,14 +486,26 @@ func (p Plan) Process(role string) (Process, error) {
 	return Process{}, fmt.Errorf("process is outside frozen layout")
 }
 func (p Plan) ConfigPath(role string) string {
+	if p.DeploymentSettings != nil {
+		return p.DeploymentSettings.ConfigDirectory + "/" + role + ".properties"
+	}
 	return "/etc/tantor-kafka/add-expansion/" + p.OperationID + "/" + role + ".properties"
 }
 func (p Plan) Unit(role string) string {
+	if p.DeploymentSettings != nil {
+		return role + ".service"
+	}
 	c, err := p.Process(role)
 	if err != nil {
 		return ""
 	}
 	return "tantor-kafka-" + role + "-" + strconv.Itoa(c.NodeID) + ".service"
+}
+func (p Plan) RuntimeHome() string {
+	if p.DeploymentSettings != nil {
+		return p.DeploymentSettings.InstallPath
+	}
+	return path.Join(p.ParcelDir, "kafka", p.KafkaVersion)
 }
 func (p Plan) ExistingControllers() []string {
 	out := []string{}

@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io.translab/tantor-agent/internal/deploy/layout"
 	"net"
 	"os"
 	"path"
@@ -25,39 +26,41 @@ import (
 )
 
 type Request struct {
-	SchemaVersion                string      `json:"schemaVersion"`
-	HostID                       string      `json:"hostId"`
-	HostIP                       string      `json:"hostIp"`
-	HostIdentityUnique           bool        `json:"hostIdentityUnique"`
-	ContextHash                  string      `json:"contextHash"`
-	ContextStartedAt             time.Time   `json:"contextStartedAt"`
-	ExpiresAt                    time.Time   `json:"expiresAt"`
-	KafkaVersion                 string      `json:"kafkaVersion"`
-	KafkaClusterID               string      `json:"kafkaClusterId"`
-	BrokerPort                   string      `json:"brokerPort"`
-	RuntimeUser                  string      `json:"runtimeUser"`
-	JavaHome                     string      `json:"javaHome"`
-	DataPaths                    []string    `json:"dataPaths"`
-	MetadataPath                 string      `json:"metadataPath"`
-	LogPath                      string      `json:"logPath"`
-	InstallPath                  string      `json:"installPath"`
-	ParcelDir                    string      `json:"parcelDir"`
-	ArtifactChecksum             string      `json:"artifactChecksum"`
-	ControllerEndpoints          []string    `json:"controllerEndpoints"`
-	BrokerEndpoints              []string    `json:"brokerEndpoints"`
-	SecurityMode                 string      `json:"securityMode"`
-	QuorumMode                   string      `json:"quorumMode"`
-	HeapXmx                      string      `json:"heapXmx"`
-	Ports                        []string    `json:"ports"`
-	LimitNofile                  int         `json:"limitNofile"`
-	MinAvailableMemoryMb         int         `json:"minAvailableMemoryMb"`
-	MinDiskGb                    int         `json:"minDiskGb"`
-	MinInodes                    int         `json:"minInodes"`
-	AllowedJavaMajors            []int       `json:"allowedJavaMajors"`
-	PeerProbes                   []PeerProbe `json:"peerProbes"`
-	ExpectedBrokerProbeCount     int         `json:"expectedBrokerProbeCount"`
-	ExpectedControllerProbeCount int         `json:"expectedControllerProbeCount"`
-	ExpectedClientProbeCount     int         `json:"expectedClientProbeCount"`
+	ConfigDirectory              string           `json:"configDirectory"`
+	DeploymentSettings           *layout.Settings `json:"deploymentSettings,omitempty"`
+	SchemaVersion                string           `json:"schemaVersion"`
+	HostID                       string           `json:"hostId"`
+	HostIP                       string           `json:"hostIp"`
+	HostIdentityUnique           bool             `json:"hostIdentityUnique"`
+	ContextHash                  string           `json:"contextHash"`
+	ContextStartedAt             time.Time        `json:"contextStartedAt"`
+	ExpiresAt                    time.Time        `json:"expiresAt"`
+	KafkaVersion                 string           `json:"kafkaVersion"`
+	KafkaClusterID               string           `json:"kafkaClusterId"`
+	BrokerPort                   string           `json:"brokerPort"`
+	RuntimeUser                  string           `json:"runtimeUser"`
+	JavaHome                     string           `json:"javaHome"`
+	DataPaths                    []string         `json:"dataPaths"`
+	MetadataPath                 string           `json:"metadataPath"`
+	LogPath                      string           `json:"logPath"`
+	InstallPath                  string           `json:"installPath"`
+	ParcelDir                    string           `json:"parcelDir"`
+	ArtifactChecksum             string           `json:"artifactChecksum"`
+	ControllerEndpoints          []string         `json:"controllerEndpoints"`
+	BrokerEndpoints              []string         `json:"brokerEndpoints"`
+	SecurityMode                 string           `json:"securityMode"`
+	QuorumMode                   string           `json:"quorumMode"`
+	HeapXmx                      string           `json:"heapXmx"`
+	Ports                        []string         `json:"ports"`
+	LimitNofile                  int              `json:"limitNofile"`
+	MinAvailableMemoryMb         int              `json:"minAvailableMemoryMb"`
+	MinDiskGb                    int              `json:"minDiskGb"`
+	MinInodes                    int              `json:"minInodes"`
+	AllowedJavaMajors            []int            `json:"allowedJavaMajors"`
+	PeerProbes                   []PeerProbe      `json:"peerProbes"`
+	ExpectedBrokerProbeCount     int              `json:"expectedBrokerProbeCount"`
+	ExpectedControllerProbeCount int              `json:"expectedControllerProbeCount"`
+	ExpectedClientProbeCount     int              `json:"expectedClientProbeCount"`
 }
 
 type Check struct {
@@ -101,6 +104,17 @@ func Validate(raw, hostID string) (Request, error) {
 	}
 	if r.MinAvailableMemoryMb < 1 || r.MinDiskGb < 1 || r.MinInodes < 1 || r.LimitNofile < 1 {
 		return r, fmt.Errorf("positive admission policy required")
+	}
+	if r.DeploymentSettings != nil {
+		if err := r.DeploymentSettings.Validate(); err != nil {
+			return r, err
+		}
+		if err := layout.CheckDirectory(r.ConfigDirectory); err != nil {
+			return r, err
+		}
+		if err := layout.CheckDirectory(r.InstallPath); err != nil {
+			return r, err
+		}
 	}
 	for _, p := range append(append(append([]string{}, r.DataPaths...), r.MetadataPath, r.LogPath, r.InstallPath), r.ParcelDir, r.JavaHome) {
 		if p != "" {

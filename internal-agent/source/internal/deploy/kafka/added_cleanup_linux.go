@@ -14,6 +14,7 @@ import (
 	"strings"
 	"syscall"
 
+	"io.translab/tantor-agent/internal/deploy/layout"
 	"io.translab/tantor-agent/internal/taskvalidate"
 	"io.translab/tantor-agent/pkg/api"
 )
@@ -130,13 +131,24 @@ func (d *Deployer) cleanAddedNodesAt(ctx context.Context, t *api.Task, configRoo
 	units := map[string]bool{}
 	files := map[string]bool{}
 	for _, p := range plan.Processes {
-		if p.HostID != plan.HostID || !addedOperation.MatchString(p.OperationID) || p.Unit != "tantor-kafka-"+p.Role+"-"+strconv.Itoa(p.NodeID)+".service" || units[p.Unit] || p.Role != "broker" && p.Role != "controller" || len(p.DataPaths) < 1 || len(p.DataPaths) > 16 {
+		if p.HostID != plan.HostID || !addedOperation.MatchString(p.OperationID) || (p.Unit != "tantor-kafka-"+p.Role+"-"+strconv.Itoa(p.NodeID)+".service" && p.Unit != p.Role+".service") || units[p.Unit] || p.Role != "broker" && p.Role != "controller" || len(p.DataPaths) < 1 || len(p.DataPaths) > 16 {
 			return "", fmt.Errorf("ambiguous cleanup process ownership")
 		}
 		units[p.Unit] = true
 		configParent := filepath.Dir(p.ConfigPath)
 		relative, e := filepath.Rel(configRoot, configParent)
 		parts := strings.Split(relative, string(os.PathSeparator))
+		if p.Unit == p.Role+".service" {
+			if !layout.Approved(p.ConfigPath) || filepath.Base(p.ConfigPath) != p.Role+".properties" {
+				return "", fmt.Errorf("invalid standard cleanup path")
+			}
+			family := "add-expansion"
+			if _, err := os.Lstat(filepath.Join(d.cfg.Paths.DataDir, "broker-addition", p.OperationID, "receipt.json")); err == nil {
+				family = "add-broker"
+			}
+			parts = []string{family, p.OperationID}
+			e = nil
+		}
 		if e != nil || len(parts) != 2 || (parts[0] != "add-broker" && parts[0] != "add-expansion") || parts[1] != p.OperationID {
 			return "", fmt.Errorf("configuration escaped its operation namespace")
 		}

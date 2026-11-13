@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io.translab/tantor-agent/internal/deploy/layout"
 	"net"
 	"path"
 	"regexp"
@@ -17,28 +18,29 @@ import (
 // BrokerPlan is deliberately distinct from the legacy INSTALL_KAFKA envelope.
 // It cannot request a controller, a new cluster identity or arbitrary commands.
 type BrokerPlan struct {
-	SchemaVersion       string   `json:"schemaVersion"`
-	OperationID         string   `json:"operationId"`
-	HostID              string   `json:"hostId"`
-	ContextHash         string   `json:"contextHash"`
-	KafkaClusterID      string   `json:"kafkaClusterId"`
-	NodeID              int      `json:"nodeId"`
-	HostIP              string   `json:"hostIp"`
-	BrokerPort          int      `json:"brokerPort"`
-	KafkaVersion        string   `json:"kafkaVersion"`
-	RuntimeUser         string   `json:"runtimeUser"`
-	JavaHome            string   `json:"javaHome"`
-	ParcelDir           string   `json:"parcelDir"`
-	ArtifactChecksum    string   `json:"artifactChecksum"`
-	DataPaths           []string `json:"dataPaths"`
-	MetadataPath        string   `json:"metadataPath"`
-	LogPath             string   `json:"logPath"`
-	InstallPath         string   `json:"installPath"`
-	HeapXmx             string   `json:"heapXmx"`
-	QuorumMode          string   `json:"quorumMode"`
-	ControllerEndpoints []string `json:"controllerEndpoints"`
-	QuorumVoters        string   `json:"quorumVoters"`
-	BrokerRack          string   `json:"brokerRack"`
+	DeploymentSettings  *layout.Settings `json:"deploymentSettings,omitempty"`
+	SchemaVersion       string           `json:"schemaVersion"`
+	OperationID         string           `json:"operationId"`
+	HostID              string           `json:"hostId"`
+	ContextHash         string           `json:"contextHash"`
+	KafkaClusterID      string           `json:"kafkaClusterId"`
+	NodeID              int              `json:"nodeId"`
+	HostIP              string           `json:"hostIp"`
+	BrokerPort          int              `json:"brokerPort"`
+	KafkaVersion        string           `json:"kafkaVersion"`
+	RuntimeUser         string           `json:"runtimeUser"`
+	JavaHome            string           `json:"javaHome"`
+	ParcelDir           string           `json:"parcelDir"`
+	ArtifactChecksum    string           `json:"artifactChecksum"`
+	DataPaths           []string         `json:"dataPaths"`
+	MetadataPath        string           `json:"metadataPath"`
+	LogPath             string           `json:"logPath"`
+	InstallPath         string           `json:"installPath"`
+	HeapXmx             string           `json:"heapXmx"`
+	QuorumMode          string           `json:"quorumMode"`
+	ControllerEndpoints []string         `json:"controllerEndpoints"`
+	QuorumVoters        string           `json:"quorumVoters"`
+	BrokerRack          string           `json:"brokerRack"`
 }
 
 func ValidateBrokerPlan(raw, hostID string) (BrokerPlan, error) {
@@ -46,8 +48,23 @@ func ValidateBrokerPlan(raw, hostID string) (BrokerPlan, error) {
 	if err := json.Unmarshal([]byte(raw), &p); err != nil {
 		return p, fmt.Errorf("invalid broker plan")
 	}
+	if p.SchemaVersion == "add-broker/v3" {
+		s := p.DeploymentSettings
+		if s == nil {
+			return p, fmt.Errorf("explicit candidate deployment settings required")
+		}
+		if err := s.Validate(); err != nil {
+			return p, err
+		}
+		if s.InstallPath != p.InstallPath || s.JavaHome != p.JavaHome || s.RuntimeUser != p.RuntimeUser || s.BrokerHeapXmx != p.HeapXmx || s.BrokerLogPath != p.LogPath || s.BrokerMetadataPath != p.MetadataPath || strings.Join(s.BrokerDataPaths, ",") != strings.Join(p.DataPaths, ",") {
+			return p, fmt.Errorf("broker profile differs from frozen settings")
+		}
+	} else if p.DeploymentSettings != nil {
+		return p, fmt.Errorf("legacy broker cannot carry custom layout")
+	}
+ if p.DeploymentSettings!=nil&&(layout.Overlap(p.DeploymentSettings.ConfigDirectory,p.ParcelDir)||layout.Overlap(p.InstallPath,p.ParcelDir)){return p,fmt.Errorf("candidate configuration/installation overlaps cached Kafka parcels")}
 	hex := regexp.MustCompile(`^[a-f0-9]{64}$`)
-	if (p.SchemaVersion != "add-broker/v1" && p.SchemaVersion != "add-broker/v2") || p.HostID != hostID || !regexp.MustCompile(`^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$`).MatchString(p.OperationID) || !hex.MatchString(p.ContextHash) || !hex.MatchString(strings.ToLower(p.ArtifactChecksum)) || p.NodeID < 1 || p.BrokerPort < 1 || p.BrokerPort > 65535 || net.ParseIP(p.HostIP) == nil || !regexp.MustCompile(`^[A-Za-z0-9_-]{22}$`).MatchString(p.KafkaClusterID) {
+	if (p.SchemaVersion != "add-broker/v1" && p.SchemaVersion != "add-broker/v2" && p.SchemaVersion != "add-broker/v3") || p.HostID != hostID || !regexp.MustCompile(`^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$`).MatchString(p.OperationID) || !hex.MatchString(p.ContextHash) || !hex.MatchString(strings.ToLower(p.ArtifactChecksum)) || p.NodeID < 1 || p.BrokerPort < 1 || p.BrokerPort > 65535 || net.ParseIP(p.HostIP) == nil || !regexp.MustCompile(`^[A-Za-z0-9_-]{22}$`).MatchString(p.KafkaClusterID) {
 		return p, fmt.Errorf("broker identity, operation or artifact mismatch")
 	}
 	if !versionPattern.MatchString(p.KafkaVersion) || !userPattern.MatchString(p.RuntimeUser) || !regexp.MustCompile(`^[1-9][0-9]*[mMgG]$`).MatchString(p.HeapXmx) {
@@ -126,10 +143,22 @@ func ValidateBrokerPlan(raw, hostID string) (BrokerPlan, error) {
 // ValidateBrokerPayload re-verifies installed executable bytes before any future
 // execution command can use the frozen plan. This command itself never mutates.
 func (p BrokerPlan) ConfigFileName() string {
-	if p.SchemaVersion == "add-broker/v2" {
+	if p.SchemaVersion != "add-broker/v1" {
 		return "broker.properties"
 	}
 	return "server.properties"
+}
+func (p BrokerPlan) ServiceName() string {
+	if p.DeploymentSettings != nil {
+		return "broker"
+	}
+	return "tantor-kafka-broker-" + strconv.Itoa(p.NodeID)
+}
+func (p BrokerPlan) RuntimeHome() string {
+	if p.DeploymentSettings != nil {
+		return p.InstallPath
+	}
+	return path.Join(p.ParcelDir, "kafka", p.KafkaVersion)
 }
 func ValidateBrokerPayload(ctx context.Context, p BrokerPlan) error {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)

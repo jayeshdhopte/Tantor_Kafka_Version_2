@@ -23,7 +23,7 @@ public class AddNodeCleanupPlanService {
                 var payload=mapper.readValue(op.getPlan(),BrokerAdditionLedger.Payload.class);var p=payload.plan();p.validate();
                 if(!op.getId().equals(p.operationId())||!hostId.equals(p.hostId())||op.getNodeId()!=p.nodeId()||!BrokerAdditionLedger.hash(mapper.writeValueAsString(p)+"\n"+payload.properties()+(payload.runtime()==null?"":"\n"+mapper.writeValueAsString(payload.runtime()))).equals(payload.digest()))throw new IllegalStateException("Frozen broker cleanup identity changed.");
                 String file="add-broker/v2".equals(p.schemaVersion())?"broker.properties":"server.properties";
-                result.add(new Process(op.getId(),payload.digest(),hostId,"broker",p.nodeId(),"tantor-kafka-broker-"+p.nodeId()+".service","/etc/tantor-kafka/add-broker/"+op.getId()+"/"+file,p.kafkaClusterId(),p.dataPaths(),p.metadataPath(),p.logPath(),p.parcelDir()+"/kafka/"+p.kafkaVersion()));
+                result.add(new Process(op.getId(),payload.digest(),hostId,"broker",p.nodeId(),p.serviceName()+".service",p.configPath(),p.kafkaClusterId(),p.dataPaths(),p.metadataPath(),p.logPath(),p.parcelDir()+"/kafka/"+p.kafkaVersion()));
             }
             for(var op:expansions.findByClusterIdAndHostIdAndState(clusterId,hostId,KafkaExpansionState.SUCCEEDED)){
                 var p=KafkaExpansionPlan.read(mapper,op.getPlan(),op.getPlanDigest()).plan();if(!op.getId().equals(p.operationId())||!clusterId.equals(p.clusterId())||!hostId.equals(p.candidateHostId()))throw new IllegalStateException("Frozen expansion cleanup identity changed.");
@@ -31,7 +31,7 @@ public class AddNodeCleanupPlanService {
             }
             var services=assignments.findByClusterId(clusterId).stream().filter(s->hostId.equals(s.getHostId())&&s.getRole()!=null&&(s.getRole().contains("broker")||s.getRole().contains("controller"))).toList();
             if(result.isEmpty()){
-                for(var service:services)if(Objects.toString(service.getConfigJson(),"").contains("/etc/tantor-kafka/add-"))throw new IllegalStateException("Added-node cleanup ownership is missing; deletion is blocked.");
+                for(var service:services)if(Objects.toString(service.getConfigJson(),"").matches("(?s).*(/etc/tantor-kafka/add-|add_node_operation_id).*"))throw new IllegalStateException("Added-node cleanup ownership is missing; deletion is blocked.");
                 return Optional.empty();
             }
             if(result.size()>2||services.size()!=result.size()||result.stream().map(Process::unit).distinct().count()!=result.size())throw new IllegalStateException("Ambiguous added-node cleanup scope.");
