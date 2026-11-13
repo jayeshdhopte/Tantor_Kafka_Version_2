@@ -162,10 +162,10 @@ function AddNodeWizard({ clusterId }: { clusterId: string }) {
       <span aria-current="page">Add Node</span>
     </nav>
     <header className="add-node-header">
-      <div><h1 id="add-node-title">Add Node</h1><p>Add a broker or review controller and separate-process expansion for an existing managed Kafka cluster.</p></div>
+      <div><h1 id="add-node-title">Add Node</h1><p>Add a broker, controller, or separate broker and controller processes to an existing managed Kafka cluster.</p></div>
       {canManage && <button className="add-node-button" onClick={refreshInventory} disabled={!inventory && !error}><RefreshCw size={16} /> Refresh inventory</button>}
     </header>
-    <div className="add-node-notice"><Info size={18} /><span><strong>Broker readiness.</strong> Checks observe the host and live Kafka cluster. Review the broker plan after checks pass. Final validation runs again before deployment changes the candidate.</span></div>
+    <div className="add-node-notice"><Info size={18} /><span><strong>Add Node readiness.</strong> Checks observe the host and live Kafka cluster. Choose the process layout after common checks pass. Final validation runs before deployment changes the candidate.</span></div>
 
     {!canManage ? <div className="add-node-notice error" role="alert"><CircleAlert size={18} /><span>Administrator access is required to prepare a node addition.</span></div>
       : !clusterId ? <div className="add-node-notice error" role="alert">Select a cluster from the cluster inventory first.</div>
@@ -233,13 +233,16 @@ function AddNodeWizard({ clusterId }: { clusterId: string }) {
                   <p>Select the process layout for {selectedHost?.hostname || hostId}. Final review checks the selected layout and shows release availability before deployment.</p>
                   <fieldset className="add-node-roles"><legend className="add-node-sr-only">Kafka process layout</legend>
                     <label className={`add-node-role ${role === 'broker' ? 'selected' : ''}`}><span><input type="radio" name="add-node-role" value="broker" checked={role === 'broker'} onChange={() => setRole('broker')} /><Server size={18} /><strong>Broker</strong></span><p>Stores partitions and serves producer and consumer traffic.</p><small>Broker-only execution</small></label>
-                    <label className={`add-node-role ${role === 'controller' ? 'selected' : ''}`}><span><input type="radio" name="add-node-role" value="controller" checked={role === 'controller'} onChange={() => setRole('controller')} /><strong>Controller</strong></span><p>Participates in the metadata quorum.</p><small>Planning preview · execution unavailable</small></label>
-                    <label className={`add-node-role ${role === 'separate' ? 'selected' : ''}`}><span><input type="radio" name="add-node-role" value="separate" checked={role === 'separate'} onChange={() => setRole('separate')} /><strong>Broker + Controller</strong></span><p>Two separate processes with distinct identities and storage.</p><small>Planning preview · execution unavailable</small></label>
+                    <label className={`add-node-role ${role === 'controller' ? 'selected' : ''}`}><span><input type="radio" name="add-node-role" value="controller" checked={role === 'controller'} onChange={() => setRole('controller')} /><strong>Controller</strong></span><p>Participates in the metadata quorum.</p><small>Runtime and quorum validation required</small></label>
+                    <label className={`add-node-role ${role === 'separate' ? 'selected' : ''}`}><span><input type="radio" name="add-node-role" value="separate" checked={role === 'separate'} onChange={() => setRole('separate')} /><strong>Broker + Controller</strong></span><p>Two separate processes with distinct identities and storage.</p><small>Controller-first execution after both process checks pass</small></label>
                   </fieldset>
-                  {role !== 'broker' ? <p>The final review verifies existing participant runtimes, the live quorum and the selected process layout. Static quorum expansion requires planned broker and controller downtime.</p> : <>
-                  <div className="add-node-notice"><Info size={18} /><span>Adding a broker leaves controller voting membership unchanged. Existing partitions are not automatically moved; reassignment is a separate operation.</span></div>
+                  {role !== 'broker' && <p>The final review verifies existing participant runtimes, the live quorum and the selected process layout. Static quorum expansion requires planned broker and controller downtime.</p>}
+                  {role !== 'controller' && <>
+                  {role === 'broker' ? <div className="add-node-notice"><Info size={18} /><span>Adding a broker leaves controller voting membership unchanged. Existing partitions are not automatically moved; reassignment is a separate operation.</span></div>
+                    : <div className="add-node-notice"><Info size={18} /><span>The broker process must pass the checks below before this layout can be reviewed. Final validation also checks the controller and combined resource requirements.</span></div>}
                   {readiness.preview && checkTable(readiness.preview.checks.filter(check => check.phase === 'BROKER'))}
-                  <p>{readiness.brokerPassed ? 'Broker checks passed. Final deployment validation will still be required.' : 'All B01–B11 broker checks must pass before review. Missing remote-probe evidence remains a blocker.'}</p>
+                  <p role={readiness.brokerPassed ? undefined : 'status'}>{readiness.brokerPassed ? 'Broker checks passed. Final deployment validation will still be required.' : 'Resolve all failed, missing or expired broker checks, including the candidate rack, before review.'}</p>
+                  {!readiness.brokerPassed && <button className="add-node-button" onClick={() => setStep(1)}>Edit host or broker rack</button>}
                   <button className="add-node-button" disabled={readiness.running} onClick={() => { setStep(2); void readiness.run(); }}>Run fresh checks</button>
                   </>}
                 </>}

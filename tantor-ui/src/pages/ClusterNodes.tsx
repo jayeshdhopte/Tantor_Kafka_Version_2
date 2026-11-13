@@ -107,7 +107,7 @@ export function ClusterNodes() {
         </div>
         {canManage && <button type="button"
           disabled={Boolean(error) || !cluster || cluster.type !== 'INTERNAL' || cluster.mode !== 'KRAFT' || activeJobs.some(job => job.clusterId === id)}
-          title={cluster?.type === 'EXTERNAL' || cluster?.mode !== 'KRAFT' ? 'Add Node is available for managed KRaft clusters only.' : 'Check broker readiness. Deployment is not available yet.'}
+          title={cluster?.type === 'EXTERNAL' || cluster?.mode !== 'KRAFT' ? 'Add Node is available for managed KRaft clusters only.' : 'Check readiness and review a broker, controller or separate-process addition.'}
           onClick={() => navigate(`/clusters/${id}/add-node`)}><Plus size={16} /> Add Node</button>}
       </header>
 

@@ -504,7 +504,7 @@ export function Clusters() {
       {servicesMenu && <AnchoredMenu anchor={servicesMenu.anchor} className="cluster-services-menu" onClose={() => setServicesMenu(null)}>
           {!['DELETED', 'DELETING'].includes(servicesMenu.cluster.status) &&
             <button role="menuitem" disabled={locked(servicesMenu.cluster.id) || servicesMenu.cluster.mode.toLowerCase() !== 'kraft' || servicesMenu.cluster.status !== 'SUCCESS'}
-              title={servicesMenu.cluster.mode.toLowerCase() !== 'kraft' ? 'Add Node is available for managed KRaft clusters only.' : 'Check broker readiness. Deployment is not available yet.'}
+              title={servicesMenu.cluster.mode.toLowerCase() !== 'kraft' ? 'Add Node is available for managed KRaft clusters only.' : 'Check readiness and review a broker, controller or separate-process addition.'}
               onClick={() => { navigate(`/clusters/${servicesMenu.cluster.id}/add-node`); setServicesMenu(null); }}><Plus size={15} /> Add Node</button>}
         <div role="menu">
           {servicesMenu.cluster.mode === 'EXTERNAL' && !['DELETED','DELETING'].includes(servicesMenu.cluster.status) &&
