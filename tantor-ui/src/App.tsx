@@ -30,6 +30,7 @@ const ExternalClusters = React.lazy(() => import('./pages/ExternalClusters').the
 const ExternalConnectionSettings = React.lazy(() => import('./pages/ExternalConnectionSettings').then(m => ({ default: m.ExternalConnectionSettings })));
 const ClusterDeployment = React.lazy(() => import('./pages/ClusterDeployment').then(m => ({ default: m.ClusterDeployment })));
 const ClusterAddNode = React.lazy(() => import('./pages/ClusterAddNode').then(m => ({ default: m.ClusterAddNode })));
+const ExternalClusterAddNode = React.lazy(() => import('./pages/ExternalClusterAddNode').then(m => ({ default: m.ExternalClusterAddNode })));
 const LdapSettings = React.lazy(() => import('./pages/LdapSettings').then(m => ({ default: m.LdapSettings })));
 const SchemaRegistry = React.lazy(() => import('./pages/SchemaRegistry').then(m => ({ default: m.SchemaRegistry })));
 const KafkaConnect = React.lazy(() => import('./pages/KafkaConnect').then(m => ({ default: m.KafkaConnect })));
@@ -93,6 +94,7 @@ function App() {
                   <Route path="/cluster-deployment" element={<ClusterDeploymentEntry />} />
                   <Route path="/clusters/:id/add-node" element={<ClusterAddNode />} />
                   <Route path="/external-clusters" element={<ExternalClusters />} />
+                  <Route path="/external-clusters/:id/add-node" element={<ExternalClusterAddNode />} />
                   <Route path="/external-clusters/:id/connection-settings" element={<ExternalConnectionSettings />} />
                   <Route path="/clusters/:id" element={<ClusterDetails />}>
                     <Route path="overview" element={<ClusterOverview />} />
