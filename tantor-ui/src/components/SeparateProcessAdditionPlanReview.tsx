@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { QuorumExpansionExecution } from './QuorumExpansionExecution';
+import { QuorumExpansionExecution, type CommonReadinessRefreshProps } from './QuorumExpansionExecution';
 import type { ReadinessPreview } from '../hooks/useAddNodeReadiness';
 import { ParticipantInspectionTable, type InspectionParticipant } from './ParticipantInspectionTable';
 
@@ -17,11 +17,11 @@ type Review = {
   contextHash: string; participants: InspectionParticipant[];
 };
 
-export function SeparateProcessAdditionPlanReview(props: { clusterId: string; hostId: string; brokerRack: string; commonPreview: ReadinessPreview | null }) {
+export function SeparateProcessAdditionPlanReview(props: { clusterId: string; hostId: string; brokerRack: string; commonPreview: ReadinessPreview | null } & CommonReadinessRefreshProps) {
   return <SeparateReviewSession key={`${props.clusterId}:${props.hostId}:${props.brokerRack}`} {...props} />;
 }
 
-function SeparateReviewSession({ clusterId, hostId, brokerRack, commonPreview }: { clusterId: string; hostId: string; brokerRack: string; commonPreview: ReadinessPreview | null }) {
+function SeparateReviewSession({ clusterId, hostId, brokerRack, commonPreview, onRefreshCommon, commonRunning, commonError }: { clusterId: string; hostId: string; brokerRack: string; commonPreview: ReadinessPreview | null } & CommonReadinessRefreshProps) {
   const [review, setReview] = useState<Review | null>(null);
   const [runtimeEvidence, setRuntimeEvidence] = useState<Record<string, string>>({});
   const onRuntimeEvidence = useCallback((serviceId: string, taskId: string | null) => {
@@ -43,7 +43,8 @@ function SeparateReviewSession({ clusterId, hostId, brokerRack, commonPreview }:
         if (abort.signal.aborted) return;
         setReview(body);
         const remaining = Date.parse(body.expiresAt) - Date.now();
-        if (remaining <= 0) setExpired(true); else timer = setTimeout(() => setExpired(true), Math.min(remaining, 2147483647));
+        setExpired(remaining <= 0);
+        if (remaining > 0) timer = setTimeout(() => setExpired(true), Math.min(remaining, 2147483647));
       } catch (failure) {
         if (!abort.signal.aborted) setError(failure instanceof Error ? failure.message : 'Separate-process review failed.');
       }
@@ -54,6 +55,7 @@ function SeparateReviewSession({ clusterId, hostId, brokerRack, commonPreview }:
   return <section aria-label="Separate-process addition plan">
     <h3>Broker + Controller · separate-process planning</h3>
     <p>One fresh host, two Kafka JVMs. Both retain the existing Kafka cluster ID and version. The controller must be verified before the broker starts.</p>
+    <button className="add-node-button" onClick={() => { setError(''); setExpired(true); setRevision(value => value + 1); }}>Refresh separate-process plan</button>
     {error ? <p role="alert" className="add-node-remedy">{error}</p> : !review ? <p role="status">Reading the live quorum and planning both process identities…</p> : <>
       <dl className="add-node-review">
         <dt>Quorum</dt><dd>{review.quorumMode}</dd><dt>Kafka version</dt><dd>{review.kafkaVersion} · inherited by both processes</dd>
@@ -71,9 +73,10 @@ function SeparateReviewSession({ clusterId, hostId, brokerRack, commonPreview }:
         </tr>)}
       </tbody></table></div>
       <h4>Two-process readiness</h4>
-      <p>A broker-only readiness pass does not validate this layout. Both JVMs need resource, port and storage checks.</p>
+      <p>A broker-only readiness pass does not validate this layout. Validate selected layout below completes the pending checks for both JVMs.</p>
       <ul>{review.checks.filter(check => check.phase === 'SEPARATE').map(check => <li key={check.code}><strong>{check.name} · {check.status}</strong><p>{check.expected}<br />{check.observed}</p></li>)}</ul>
       {review.participants?.length > 0 && <><h4>Existing participant observations</h4><ParticipantInspectionTable clusterId={clusterId} contextHash={review.contextHash} participants={review.participants} onRuntimeEvidence={onRuntimeEvidence} /></>}
+      <QuorumExpansionExecution clusterId={clusterId} hostId={hostId} layout="SEPARATE" brokerRack={brokerRack} commonPreview={commonPreview} runtimeTaskIds={Object.values(runtimeEvidence)} expectedParticipants={new Set(review.participants.map(p => p.serviceId).filter(Boolean)).size} maintenanceRequired={review.maintenanceRequired} planCurrent={!expired} planContextHash={review.contextHash} onRefreshCommon={onRefreshCommon} commonRunning={commonRunning} commonError={commonError} />
       <h4>Controller-first workflow</h4>
       <ol>{review.steps.map(step => <li key={step.code}><strong>{step.name}</strong><p>{step.scope}<br /><small>{step.script}</small></p></li>)}</ol>
       <h4>Failure and resume behavior</h4>
@@ -81,8 +84,6 @@ function SeparateReviewSession({ clusterId, hostId, brokerRack, commonPreview }:
       <h4>Requirements before submission</h4><ul>{review.blockers.map(blocker => <li key={blocker}>{blocker}</li>)}</ul>
       <p>No host/ID reservation, job, agent command or membership publication is created by this review.</p>
     </>}
-    <button className="add-node-button" onClick={() => { setReview(null); setError(''); setExpired(false); setRevision(value => value + 1); }}>Refresh separate-process plan</button>
-    {review && !expired && <QuorumExpansionExecution clusterId={clusterId} hostId={hostId} layout="SEPARATE" brokerRack={brokerRack} commonPreview={commonPreview} runtimeTaskIds={Object.values(runtimeEvidence)} expectedParticipants={new Set(review.participants.map(p => p.serviceId).filter(Boolean)).size} maintenanceRequired={review.maintenanceRequired} />}
   </section>;
 }
 

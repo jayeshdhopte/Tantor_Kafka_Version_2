@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { ReadinessPreview } from '../hooks/useAddNodeReadiness';
 
+export type CommonReadinessRefreshProps = { onRefreshCommon?: () => void; commonRunning?: boolean; commonError?: string };
+
 type Props = { clusterId: string; hostId: string; layout: 'CONTROLLER' | 'SEPARATE'; brokerRack?: string;
-  commonPreview: ReadinessPreview | null; runtimeTaskIds: string[]; expectedParticipants: number; maintenanceRequired: boolean };
+  commonPreview: ReadinessPreview | null; runtimeTaskIds: string[]; expectedParticipants: number; maintenanceRequired: boolean; planCurrent?: boolean; planContextHash?: string } & CommonReadinessRefreshProps;
 type Review = { schemaVersion: string; previewId: string; clusterId: string; hostId: string; contextHash: string;
   status: 'RUNNING' | 'PASS' | 'BLOCKED' | 'EXPIRED' | 'STALE'; expiresAt: string; executionEnabled: boolean; message: string;
   proposedPlan: { layout: string; quorumMode: string; kafkaVersion: string; kafkaClusterId: string;
@@ -11,17 +13,17 @@ type Review = { schemaVersion: string; previewId: string; clusterId: string; hos
 
 export function QuorumExpansionExecution(props: Props) {
   const context = JSON.stringify([props.clusterId, props.hostId, props.layout, props.brokerRack, props.commonPreview?.previewId,
-    props.commonPreview?.contextHash, [...props.runtimeTaskIds].sort(), props.maintenanceRequired]);
+    props.commonPreview?.contextHash, [...props.runtimeTaskIds].sort(), props.maintenanceRequired, props.planContextHash]);
   return <ExecutionSession key={context} {...props} />;
 }
 
-function ExecutionSession({ clusterId, hostId, layout, brokerRack = '', commonPreview, runtimeTaskIds, expectedParticipants, maintenanceRequired }: Props) {
+function ExecutionSession({ clusterId, hostId, layout, brokerRack = '', commonPreview, runtimeTaskIds, expectedParticipants, maintenanceRequired, planCurrent = true, onRefreshCommon, commonRunning = false, commonError = '' }: Props) {
   const navigate = useNavigate();
   const [acknowledged, setAcknowledged] = useState(false);
   const [review, setReview] = useState<Review | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(Date.now);
   const [revision, setRevision] = useState(0);
   const idempotencyKey = useRef(crypto.randomUUID());
   const request = useRef<AbortController | null>(null);
@@ -53,10 +55,10 @@ function ExecutionSession({ clusterId, hostId, layout, brokerRack = '', commonPr
     // The keyed session freezes the selected host, layout and evidence references.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [base, previewId, polling, revision]);
-  const commonFresh = Boolean(commonPreview && Date.parse(commonPreview.expiresAt) > now
-    && commonPreview.checks.filter(check => check.phase === 'COMMON').length >= 21
+  const commonFresh = Boolean(commonPreview && !commonRunning && !commonError && !['RUNNING', 'STALE', 'EXPIRED'].includes(commonPreview.status) && Date.parse(commonPreview.expiresAt) > now
+    && commonPreview.checks.filter(check => check.phase === 'COMMON').length === 21
     && commonPreview.checks.filter(check => check.phase === 'COMMON').every(check => check.status === 'PASS'));
-  const readyToCheck = commonFresh && expectedParticipants > 0 && runtimeTaskIds.length === expectedParticipants && (!maintenanceRequired || acknowledged);
+  const readyToCheck = planCurrent && commonFresh && expectedParticipants > 0 && runtimeTaskIds.length === expectedParticipants && (!maintenanceRequired || acknowledged);
   const check = async () => {
     if (!readyToCheck || busy || !commonPreview) return;
     const abort = new AbortController(); request.current = abort; setBusy(true); setError(''); setReview(null);
@@ -88,6 +90,11 @@ function ExecutionSession({ clusterId, hostId, layout, brokerRack = '', commonPr
   return <section aria-label="Expansion execution review">
     <h4>Final layout checks and deployment</h4>
     <p>Approved participant observations: {runtimeTaskIds.length} / {expectedParticipants}. {commonFresh ? 'Common checks are current.' : 'Run fresh common checks before proceeding.'}</p>
+    {onRefreshCommon && <button className="add-node-button" disabled={busy || commonRunning} onClick={onRefreshCommon}>{commonRunning ? 'Refreshing common checks…' : 'Refresh common checks'}</button>}
+    <p><small>Refreshing common checks keeps participant observations that are still valid. Expired observations must be inspected again.</small></p>
+    {commonError && <p role="alert" className="add-node-remedy">{commonError}</p>}
+    {!planCurrent && <p role="status">Refresh the planning review before validating this layout.</p>}
+    {runtimeTaskIds.length !== expectedParticipants && <p role="status">Inspect each existing participant above. Only fresh approved observations count toward validation.</p>}
     {maintenanceRequired && <label><input type="checkbox" checked={acknowledged} disabled={busy || Boolean(review)} onChange={event => setAcknowledged(event.target.checked)} /> I have scheduled downtime for existing brokers and controllers, following the static quorum script.</label>}
     <button className="add-node-button" disabled={!readyToCheck || busy || polling && fresh} onClick={() => void check()}>{busy || polling && fresh ? 'Checking…' : 'Validate selected layout'}</button>
     {review && <><p role="status">{fresh ? review.status : 'EXPIRED'} · {review.message}</p>

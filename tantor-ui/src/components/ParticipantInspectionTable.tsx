@@ -33,8 +33,8 @@ function ParticipantObservation({ clusterId, participant, onRuntimeEvidence }: {
   const runtimeMode = participant.runtimeInspectionAllowed === true;
   const inspectionPath = runtimeMode ? 'runtime-inspections' : 'process-inspections';
   useEffect(() => {
-    if (serviceId) onRuntimeEvidence?.(serviceId, runtimeMode && view?.status === 'OBSERVED' && view.artifactVerified && !expired ? view.taskId : null);
-  }, [serviceId, runtimeMode, view, expired, onRuntimeEvidence]);
+    if (serviceId) onRuntimeEvidence?.(serviceId, runtimeMode && view?.status === 'OBSERVED' && view.artifactVerified && !expired && !error ? view.taskId : null);
+  }, [serviceId, runtimeMode, view, expired, error, onRuntimeEvidence]);
   useEffect(() => () => { if (serviceId) onRuntimeEvidence?.(serviceId, null); }, [serviceId, onRuntimeEvidence]);
   useEffect(() => {
     if (!taskId || !serviceId) return;
@@ -82,7 +82,7 @@ function ParticipantObservation({ clusterId, participant, onRuntimeEvidence }: {
   const pending = view?.status === 'RUNNING' && !isExpired;
   return <div aria-label={`Process inspection ${hostId} ${role} ${nodeId}`}>
     {!view && <small>{participant.evidenceStatus}</small>}
-    {view && <p role="status">{isExpired ? 'Observation expired; request fresh evidence.' : view.status === 'OBSERVED' ? view.artifactVerified ? 'Process identity and approved Kafka version verified.' : 'Runtime identity observed; execution remains unavailable.' : view.status}<br /><small>{view.message}</small></p>}
+    {view && <p role="status">{isExpired ? 'Observation expired; request fresh evidence.' : view.status === 'OBSERVED' ? view.artifactVerified ? 'Process identity and approved Kafka version verified.' : 'Runtime identity observed; execution remains unavailable.' : view.status}<br /><small>{isExpired ? 'This observation no longer counts toward final validation.' : view.message}</small></p>}
     {!isExpired && view?.evidence && <p><small>PID {view.evidence.pid} · config SHA-256 {view.evidence.configSha256.slice(0, 12)}…<br />{view.artifactVerified ? `Kafka ${view.kafkaVersion} libraries verified against the approved package. Live quorum proof remains separate.` : 'Kafka artifact/version and quorum proof remain pending.'}</small></p>}
     {error && <p role="alert" className="add-node-remedy">{error}</p>}
     <button className="add-node-button" disabled={!allowed || busy || pending} onClick={() => void begin()}>{busy || pending ? 'Inspecting recorded process…' : runtimeMode ? 'Inspect process and Kafka version' : 'Inspect recorded process'}</button>

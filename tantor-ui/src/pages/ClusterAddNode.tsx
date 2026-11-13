@@ -248,7 +248,7 @@ function AddNodeWizard({ clusterId }: { clusterId: string }) {
                 </>}
 
                 {step === 4 && <>
-                  {role === 'separate' ? <SeparateProcessAdditionPlanReview clusterId={clusterId} hostId={hostId} brokerRack={brokerRack} commonPreview={readiness.preview} /> : role === 'controller' ? <ControllerAdditionPlanReview clusterId={clusterId} hostId={hostId} commonPreview={readiness.preview} /> : <>
+                  {role === 'separate' ? <SeparateProcessAdditionPlanReview clusterId={clusterId} hostId={hostId} brokerRack={brokerRack} commonPreview={readiness.preview} onRefreshCommon={() => void readiness.run()} commonRunning={readiness.running} commonError={readiness.error} /> : role === 'controller' ? <ControllerAdditionPlanReview clusterId={clusterId} hostId={hostId} commonPreview={readiness.preview} onRefreshCommon={() => void readiness.run()} commonRunning={readiness.running} commonError={readiness.error} /> : <>
                   <p>Review the selected host, inherited settings and proposed broker plan.</p>
                   <dl className="add-node-review">
                     <dt>Cluster</dt><dd>{cluster.name}</dd>
