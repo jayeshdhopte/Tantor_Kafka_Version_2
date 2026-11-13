@@ -1,11 +1,9 @@
-# Prepared configuration only. Do not install while deployment is on hold.
-# 192.168.3.213 / broker6 is reserved for other work and explicitly excluded.
+# Authorized lab scope: 191, 229 and 213 (213 approved for testing on 2026-11-13).
 tantor:
   add-node-inspection:
     allowed-host-ids:
       - node229.translab.io
       - broker3.translab.io
-    excluded-host-ids:
       - broker6
-    excluded-host-ips:
-      - 192.168.3.213
+    excluded-host-ids: []
+    excluded-host-ips: []
