@@ -1,21 +1,18 @@
 {
-  "version": "1.0.0-prod.17-dataservices.4-configchange.10-rollingrestart.1-addnode.8",
-  "source_commit": "b6b7c1d7ca5bfbe977f0a63e2911ca11f0ca8692",
-  "build_date_utc": "2026-11-13T06:57:06Z",
+  "version": "1.0.0-prod.17-dataservices.4-configchange.10-rollingrestart.1-addnode.9",
+  "source_commit": "d3803252320080a4c0dc778ddecb928f03e9b14a",
+  "build_date_utc": "2026-11-13T11:15:21Z",
   "go_version": "go version go1.24.2 windows/amd64",
   "checksums": {
-    "bin/tantor-agent-linux-amd64": "8726e606f0324df90ef2a653dba74d56a34f4673261da2785d8a4bba9c13c711",
-    "bin/tantor-agent-linux-arm64": "7608541baf93e9d793911a5d514a145e1ee220118166e73d08529ea8b257da06",
-    "source-addnode.8.tar.gz": "6fbf253d361f9c1e7c348c66149286b401df95891aaec562283156b91a6a7665"
+    "bin/tantor-agent-linux-amd64": "0b99384f075f1858ffb0912ad34a564a5057edda3a0c339e9326cc99b3079da1",
+    "bin/tantor-agent-linux-arm64": "5c549c6f46fa62868996743774c44306ea7387dbf76c05ed8fcae2c0b8132d4d",
+    "source-addnode.9.tar.gz": "6e32ff1bf0d20d165ff1ab7a2970764a54f65ab89bfbfa4c121ece676aeca0c1"
   },
-  "deployment_status": "HELD_NOT_INSTALLED",
-  "new_commands": [
-    "INSPECT_ADD_NODE_PROCESS",
-    "INSPECT_QUORUM_RUNTIME",
-    "VALIDATE_QUORUM_EXPANSION",
-    "EXECUTE_QUORUM_CANDIDATE",
-    "EXECUTE_QUORUM_PARTICIPANT"
+  "deployment_status": "BUILT_NOT_INSTALLED",
+  "new_layouts": [
+    "add-broker/v3",
+    "add-quorum-expansion/v2"
   ],
-  "controller_execution_enabled": false,
-  "separate_process_execution_enabled": false
+  "legacy_contracts_preserved": true,
+  "live_add_node_layout9_test": "NOT_RUN"
 }
