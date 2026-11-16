@@ -129,6 +129,14 @@ public class ExternalBrokerAdditionLedger {
       throw conflict(
           "A read-only candidate probe is still active. Wait for completion before broker"
               + " submission.");
+    if (Boolean.TRUE.equals(
+        jdbc.queryForObject(
+            "select exists(select 1 from kf_external_controller_tasks where agent_id=? and status"
+                + " in ('PENDING','RUNNING') and deadline>clock_timestamp())",
+            Boolean.class,
+            agent)))
+      throw conflict(
+          "A controller observation/action still owns this candidate; wait for it to settle.");
     var frozen = planning.freeze(clusterId, previewId, null, null);
     var payload = frozen.payload();
     if (!contextHash.equals(frozen.preview().contextHash()) || !planDigest.equals(payload.digest()))

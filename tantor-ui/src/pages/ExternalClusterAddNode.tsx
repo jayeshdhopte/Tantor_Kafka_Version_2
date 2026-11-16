@@ -4,6 +4,8 @@ import { ArrowLeft, ArrowRight, CircleAlert, Info, Loader2, RefreshCw, Server } 
 import { usePermissions } from '../hooks/usePermissions';
 import { useActiveClusterJobs } from '../hooks/useActiveClusterJobs';
 import { AddNodeDeploymentSettings, type DeploymentSettings } from '../components/AddNodeDeploymentSettings';
+import { ExternalControllerReview } from '../components/ExternalControllerReview';
+import { newRequestKey } from '../utils/addNodeRequestKey';
 import './ClusterAddNode.css';
 
 type ExternalCluster = {
@@ -20,7 +22,7 @@ const steps = ['Select host', 'Common checks', 'Choose role', 'Review'];
 type ReadinessCheck = { code: string; name: string; status: string; expected: unknown; observed: unknown; remedy: string };
 type BrokerReview = { previewId: string; contextHash: string; expiresAt: string; planDigest: string; serviceName: string; configPath: string; executionEnabled: boolean; blockers: string[]; proposedPlan: { nodeId: number; kafkaClusterId: string; kafkaVersion: string; brokerRack: string } };
 type Accepted = { operationId: string; jobId: string; state: string; inventoryPublished?: boolean; error?: string };
-type Readiness = { id: string; contextHash?: string; status: string; expiresAt: string; checks: ReadinessCheck[]; deploymentEnabled: false };
+type Readiness = { id: string; contextHash?: string; status: string; expiresAt: string; checks: ReadinessCheck[]; deploymentEnabled: false; controllerCommonPassed?: boolean };
 const initialSettings: DeploymentSettings = { installPath: '/opt/tantor/kafka', configDirectory: '/opt/tantor/kafka/config', javaHome: '/usr/lib/jvm/java-21-openjdk', runtimeUser: 'kafka', brokerDataPaths: ['/opt/tantor-broker-storage/data'], brokerMetadataPath: '', brokerLogPath: '/opt/tantor-broker-storage/logs', brokerHeapXmx: '1G', controllerDataPaths: ['/opt/tantor-controller-storage/data'], controllerMetadataPath: '/opt/tantor-controller-storage/metadata', controllerLogPath: '/opt/tantor-controller-storage/logs', controllerHeapXmx: '1G' };
 const display = (value: unknown) => typeof value === 'string' ? value : JSON.stringify(value);
 const pendingChecks = ['Connectivity and agent capabilities', 'Kafka package and approved checksum', 'Java and JVM profile', 'Listener ports', 'Storage and host resources', 'Live cluster identity and health', 'Conflicting operations and reservations'];
@@ -34,12 +36,6 @@ async function read<T>(url: string, signal: AbortSignal): Promise<T> {
 function address(host: ExternalHost) {
   try { const values: unknown = JSON.parse(host.ipAddresses || '[]'); return Array.isArray(values) ? values.filter(value => typeof value === 'string').join(', ') || 'Not reported' : 'Not reported'; }
   catch { return 'Not reported'; }
-}
-function newRequestKey() {
-  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
-  const bytes = crypto.getRandomValues(new Uint8Array(16)); bytes[6] = (bytes[6] & 15) | 64; bytes[8] = (bytes[8] & 63) | 128;
-  const hex = Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('');
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 function unavailable(host: ExternalHost) {
   if (host.clusterId) return 'Already linked to an external cluster';
@@ -61,6 +57,8 @@ function ExternalWizard({ clusterId }: { clusterId: string }) {
   const [revision, setRevision] = useState(0);
   const [hostId, setHostId] = useState('');
   const [step, setStep] = useState(1);
+  const [role, setRole] = useState<'BROKER' | 'CONTROLLER'>('BROKER');
+  const [controllerAccepted, setControllerAccepted] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null);
   const [settings, setSettings] = useState<DeploymentSettings>(initialSettings);
   const [hostIp, setHostIp] = useState('');
@@ -143,15 +141,16 @@ function ExternalWizard({ clusterId }: { clusterId: string }) {
   const supportedMode = cluster?.kafkaMode?.toLowerCase() === 'kraft';
   const canNavigate = Boolean(canManage && cluster && supportedMode && host && !unavailable(host) && !activeJob);
   const freshPass = Boolean(readiness?.status === 'PASS' && Date.parse(readiness.expiresAt) > now && readiness.checks.length > 0 && readiness.checks.every(check => check.status === 'PASS') && !activeJob);
+  const commonFresh = freshPass || Boolean(readiness?.controllerCommonPassed && readiness.expiresAt && Date.parse(readiness.expiresAt) > now && ['PASS', 'BLOCKED'].includes(readiness.status) && !activeJob);
   useEffect(() => {
-    if (step !== 4 || !previewId || !freshPass || accepted) return;
+    if (role !== 'BROKER' || step !== 4 || !previewId || !freshPass || accepted) return;
     const abort = new AbortController();
     void read<BrokerReview>(`/api/v1/ui/external-clusters/${encodeURIComponent(clusterId)}/add-node/broker-review/${encodeURIComponent(previewId)}`, abort.signal).then(value => {
       if (!value?.proposedPlan || value.previewId !== previewId || value.contextHash !== previewContext || !value.planDigest?.match(/^[a-f0-9]{64}$/) || !Number.isFinite(Date.parse(value.expiresAt)) || typeof value.executionEnabled !== 'boolean') throw new Error('Invalid broker review. Run fresh checks.');
       if (!abort.signal.aborted) { setReview(value); setReviewError(''); }
     }).catch(failure => { if (!abort.signal.aborted) setReviewError(failure instanceof Error ? failure.message : 'Broker review unavailable.'); });
     return () => abort.abort();
-  }, [step, previewId, previewContext, freshPass, clusterId, accepted]);
+  }, [step, previewId, previewContext, freshPass, clusterId, accepted, role]);
   const deployBroker = async () => {
     if (!review || !freshPass || !review.executionEnabled || Date.parse(review.expiresAt) <= now || accepted || submitting) return;
     if (!submissionKey.current) submissionKey.current = newRequestKey();
@@ -179,9 +178,9 @@ function ExternalWizard({ clusterId }: { clusterId: string }) {
   return <section className="add-node-page animate-fade-in" aria-labelledby="external-add-node-title">
     <nav className="add-node-breadcrumb" aria-label="Breadcrumb"><Link to="/clusters">Cluster</Link><span>/</span><span>{cluster?.name || 'External cluster'}</span><span>/</span><span aria-current="page">Add Node</span></nav>
     <header className="add-node-header"><div><h1 id="external-add-node-title">Add Node</h1><p>Add Node for an external Kafka cluster.</p></div>
-      {canManage && <button className="add-node-button" onClick={refresh} disabled={submitting || Boolean(accepted) || (!inventory && !error)}><RefreshCw size={16} /> Refresh inventory</button>}
+      {canManage && <button className="add-node-button" onClick={refresh} disabled={submitting || controllerAccepted || Boolean(accepted) || (!inventory && !error)}><RefreshCw size={16} /> Refresh inventory</button>}
     </header>
-    <div className="add-node-notice"><Info size={18} /><span><strong>External Add Node preview.</strong> Readiness checks observe the host and Kafka cluster. Broker execution requires an approved review and the external release gate. Verification and inventory publication follow the startup checkpoint.</span></div>
+    <div className="add-node-notice"><Info size={18} /><span><strong>External Add Node.</strong> Readiness checks observe the host and Kafka cluster. Deployment requires a passing review and release approval for the selected role. Inventory is published only after identity, membership and health verification.</span></div>
     {!canManage ? <p className="add-node-notice error" role="alert">Administrator access is required to prepare a node addition.</p>
       : !clusterId ? <p role="alert">Select an external cluster first.</p>
         : error ? <p className="add-node-notice error" role="alert">{error} Use Refresh inventory to retry.</p>
@@ -205,7 +204,7 @@ function ExternalWizard({ clusterId }: { clusterId: string }) {
                   </>}
                   {step === 2 && <>
                     <p>Selected host: {host?.hostname || hostId}. Review the intended profile before running checks. The approved package must already be cached on this host.</p>
-                    <AddNodeDeploymentSettings brokerOnly value={settings} disabled={checking || readiness?.status === 'CHECKING'} onChange={value => { invalidate(); setSettings(value); }} />
+                    <AddNodeDeploymentSettings value={settings} disabled={checking || readiness?.status === 'CHECKING'} onChange={value => { invalidate(); setSettings(value); }} />
                     <div className="add-node-fields">
                       <label>Candidate IP<input aria-label="Candidate IP" value={hostIp} disabled={checking} onChange={event => { invalidate(); setHostIp(event.target.value); }} /></label>
                       <label>Cached parcel directory<input aria-label="Cached parcel directory" value={parcelDir} disabled={checking} onChange={event => { invalidate(); setParcelDir(event.target.value); }} /></label>
@@ -216,19 +215,21 @@ function ExternalWizard({ clusterId }: { clusterId: string }) {
                     <button className="add-node-button" disabled={!canNavigate || checking || (readiness?.status === 'CHECKING' && Date.parse(readiness.expiresAt) > now)} onClick={() => void runChecks()}>{checking || (readiness?.status === 'CHECKING' && Date.parse(readiness.expiresAt) > now) ? <><Loader2 size={16} className="spin" /> Checking readiness…</> : 'Run readiness checks'}</button>
                     {readinessError && <p role="alert" className="add-node-notice error">{readinessError}</p>}
                     <p role="status">{readiness ? `Readiness: ${Date.parse(readiness.expiresAt) <= now ? 'EXPIRED' : readiness.status}. Evidence expires ${new Date(readiness.expiresAt).toLocaleTimeString()}.` : 'Readiness not run. Required checks must pass before continuing.'}</p>
+                    {commonFresh && !freshPass && <p role="status">Common checks passed for controller review. The broker profile has blockers and cannot be deployed.</p>}
                     <div className="add-node-table-wrap"><table className="add-node-table"><thead><tr><th>Required check</th><th>Status</th><th>Observation and next step</th></tr></thead><tbody>{readiness ? readiness.checks.map(check => <tr key={check.code}><th scope="row">{check.code} · {check.name}</th><td><span className="add-node-badge">{Date.parse(readiness.expiresAt) <= now ? 'EXPIRED' : check.status}</span></td><td><div>{display(check.observed)}</div>{check.status !== 'PASS' && <small>{check.remedy}</small>}</td></tr>) : pendingChecks.map(check => <tr key={check}><th scope="row">{check}</th><td><span className="add-node-badge">Not run</span></td><td>Run readiness checks to collect evidence.</td></tr>)}</tbody></table></div>
                     <p>No job, host assignment, node ID reservation or deployment authorization is created by these checks.</p>
                   </>}
                   {step === 3 && <fieldset className="add-node-roles"><legend className="add-node-sr-only">Kafka process layout</legend>
-                    <label className="add-node-role selected"><span><input type="radio" name="external-add-role" checked readOnly /><Server size={18} /><strong>Broker</strong></span><p>Stores partitions and serves producer and consumer traffic.</p><small>Broker-only execution · release gate required</small></label>
-                    <label className="add-node-role"><span><input type="radio" name="external-add-role" disabled /><strong>Controller</strong></span><p>Participates in the metadata quorum.</p><small>Unavailable in this phase</small></label>
+                    <label className={`add-node-role ${role === 'BROKER' ? 'selected' : ''}`}><span><input type="radio" name="external-add-role" checked={role === 'BROKER'} disabled={!freshPass} onChange={() => setRole('BROKER')} /><Server size={18} /><strong>Broker</strong></span><p>Stores partitions and serves producer and consumer traffic.</p><small>Broker-only execution · release gate required</small></label>
+                    <label className={`add-node-role ${role === 'CONTROLLER' ? 'selected' : ''}`}><span><input type="radio" name="external-add-role" checked={role === 'CONTROLLER'} onChange={() => setRole('CONTROLLER')} /><strong>Controller</strong></span><p>Participates in the metadata quorum.</p><small>Dynamic quorum only · separate release gate required</small></label>
                     <label className="add-node-role"><span><input type="radio" name="external-add-role" disabled /><strong>Broker + Controller</strong></span><p>Two separate processes with distinct identities and storage.</p><small>Unavailable in this phase</small></label>
                   </fieldset>}
-                  {step === 4 && <><dl className="add-node-review"><dt>Cluster</dt><dd>{cluster.name}</dd><dt>Kafka cluster ID</dt><dd><code>{cluster.clusterId || 'Not reported'}</code></dd><dt>Kafka version</dt><dd>{cluster.kafkaVersion || 'Not reported'}</dd><dt>Target host</dt><dd>{host?.hostname || hostId} · {host ? address(host) : 'Not selected'}</dd><dt>External agent</dt><dd>{host?.version || 'Not reported'}</dd><dt>Process role</dt><dd>broker</dd><dt>Broker node ID</dt><dd>{review ? `${review.proposedPlan.nodeId} · proposed; reserved on submission` : 'Not allocated'}</dd><dt>Readiness</dt><dd>{freshPass ? 'PASS — current read-only evidence' : 'Fresh checks required'}</dd><dt>Service</dt><dd>{review?.serviceName || 'Awaiting review'}</dd><dt>Configuration</dt><dd>{review?.configPath || 'Awaiting review'}</dd><dt>Deployment</dt><dd>{accepted ? accepted.state : review?.executionEnabled ? 'Release gate enabled; final checks run before changes' : 'Disabled — external execution release gate is held'}</dd></dl><p>Reviewing creates no reservation. Deployment reserves this host and broker ID, repeats final checks, then prepares broker.properties, formats empty storage with the existing Kafka ID and starts broker.service. Healthy inventory publication requires verification.</p>{review?.blockers.map(blocker => <p key={blocker} className="add-node-notice warning">{blocker}</p>)}{reviewError && <p role="alert" className="add-node-notice error">{reviewError}</p>}{accepted ? <p role="status">Broker operation {accepted.state}. <Link to={`/jobs/${encodeURIComponent(accepted.jobId)}`}>Track broker execution</Link>. {accepted.state === 'SUCCEEDED' ? <>Broker registration, stable health and inventory publication verified. <Link to={`/clusters/${encodeURIComponent(clusterId)}/nodes`}>View cluster nodes</Link>.</> : <>Startup alone does not confirm a verified addition. {accepted.error && <span>{accepted.error}</span>}</>}</p> : submissionUnknown ? <button className="add-node-button" disabled={submitting} onClick={() => void confirmSubmission()}>Check submission status</button> : <button className="add-node-button primary" disabled={!freshPass || !review?.executionEnabled || Date.parse(review.expiresAt) <= now || submitting || review.contextHash !== readiness?.contextHash} onClick={() => void deployBroker()}>{submitting ? 'Submitting broker operation…' : 'Deploy broker'}</button>}</>}
-                  {!freshPass && step > 2 && <p className="add-node-notice warning" role="alert">Readiness is no longer current. Return to Common checks and rerun before reviewing this layout.</p>}
+                  {step === 4 && role === 'CONTROLLER' && <ExternalControllerReview clusterId={clusterId} commonPreviewId={previewId || ''} commonFresh={commonFresh} onLockChange={setControllerAccepted} />}
+                  {step === 4 && role === 'BROKER' && <><dl className="add-node-review"><dt>Cluster</dt><dd>{cluster.name}</dd><dt>Kafka cluster ID</dt><dd><code>{cluster.clusterId || 'Not reported'}</code></dd><dt>Kafka version</dt><dd>{cluster.kafkaVersion || 'Not reported'}</dd><dt>Target host</dt><dd>{host?.hostname || hostId} · {host ? address(host) : 'Not selected'}</dd><dt>External agent</dt><dd>{host?.version || 'Not reported'}</dd><dt>Process role</dt><dd>broker</dd><dt>Broker node ID</dt><dd>{review ? `${review.proposedPlan.nodeId} · proposed; reserved on submission` : 'Not allocated'}</dd><dt>Readiness</dt><dd>{freshPass ? 'PASS — current read-only evidence' : 'Fresh checks required'}</dd><dt>Service</dt><dd>{review?.serviceName || 'Awaiting review'}</dd><dt>Configuration</dt><dd>{review?.configPath || 'Awaiting review'}</dd><dt>Deployment</dt><dd>{accepted ? accepted.state : review?.executionEnabled ? 'Release gate enabled; final checks run before changes' : 'Disabled — external execution release gate is held'}</dd></dl><p>Reviewing creates no reservation. Deployment reserves this host and broker ID, repeats final checks, then prepares broker.properties, formats empty storage with the existing Kafka ID and starts broker.service. Healthy inventory publication requires verification.</p>{review?.blockers.map(blocker => <p key={blocker} className="add-node-notice warning">{blocker}</p>)}{reviewError && <p role="alert" className="add-node-notice error">{reviewError}</p>}{accepted ? <p role="status">Broker operation {accepted.state}. <Link to={`/jobs/${encodeURIComponent(accepted.jobId)}`}>Track broker execution</Link>. {accepted.state === 'SUCCEEDED' ? <>Broker registration, stable health and inventory publication verified. <Link to={`/clusters/${encodeURIComponent(clusterId)}/nodes`}>View cluster nodes</Link>.</> : <>Startup alone does not confirm a verified addition. {accepted.error && <span>{accepted.error}</span>}</>}</p> : submissionUnknown ? <button className="add-node-button" disabled={submitting} onClick={() => void confirmSubmission()}>Check submission status</button> : <button className="add-node-button primary" disabled={!freshPass || !review?.executionEnabled || Date.parse(review.expiresAt) <= now || submitting || review.contextHash !== readiness?.contextHash} onClick={() => void deployBroker()}>{submitting ? 'Submitting broker operation…' : 'Deploy broker'}</button>}</>}
+                  {!freshPass && step > 2 && role === 'BROKER' && <p className="add-node-notice warning" role="alert">Readiness is no longer current. Return to Common checks and rerun before reviewing this layout.</p>}
                   {!canNavigate && step > 1 && <p className="add-node-notice warning" role="alert">This selection is no longer available. Return to host selection or refresh inventory.</p>}
-                  <footer className="add-node-footer">{step === 1 ? <Link className="add-node-button" to={`/clusters/${encodeURIComponent(clusterId)}/nodes`}><ArrowLeft size={16} /> Cancel</Link> : <button className="add-node-button" disabled={submitting || Boolean(accepted)} onClick={() => { setReview(null); setReviewError(''); setStep(value => value - 1); }}><ArrowLeft size={16} /> Back</button>}
-                    {step < 4 && <button className="add-node-button primary" disabled={!canNavigate || (step > 1 && !freshPass)} onClick={() => setStep(value => value + 1)}>{['Continue to checks', 'Continue to role', 'Review selected layout'][step - 1]}<ArrowRight size={16} /></button>}
+                  <footer className="add-node-footer">{step === 1 ? <Link className="add-node-button" to={`/clusters/${encodeURIComponent(clusterId)}/nodes`}><ArrowLeft size={16} /> Cancel</Link> : <button className="add-node-button" disabled={submitting || controllerAccepted || Boolean(accepted)} onClick={() => { setReview(null); setReviewError(''); setStep(value => value - 1); }}><ArrowLeft size={16} /> Back</button>}
+                    {step < 4 && <button className="add-node-button primary" disabled={!canNavigate || (step === 2 && !commonFresh) || (step === 3 && !(role === 'CONTROLLER' ? commonFresh : freshPass))} onClick={() => { if (step === 2 && !freshPass) setRole('CONTROLLER'); setStep(value => value + 1); }}>{['Continue to checks', 'Continue to role', 'Review selected layout'][step - 1]}<ArrowRight size={16} /></button>}
                   </footer>
                 </section>
               </>}

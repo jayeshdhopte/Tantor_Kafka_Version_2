@@ -13,7 +13,7 @@ public class ExternalBrokerAdditionGuard {
   public void assertMutable(UUID clusterId, UUID ownerJob) {
     var rows =
         jdbc.queryForList(
-            "select job_id from kf_external_broker_additions where cluster_id=? and state not in"
+            "select job_id from kf_external_add_node_owners where cluster_id=? and state not in"
                 + " ('SUCCEEDED','CANCELLED_SAFE')",
             clusterId);
     if (rows.stream()
@@ -21,15 +21,15 @@ public class ExternalBrokerAdditionGuard {
             row ->
                 !Objects.equals(row.get("job_id"), ownerJob == null ? null : ownerJob.toString())))
       throw new IllegalStateException(
-          "An external broker addition retains this cluster reservation. Verify/reconcile the same"
-              + " operation first.");
+          "An external Add Node operation retains this cluster reservation. Verify/reconcile the"
+              + " same operation first.");
   }
 
   public boolean reservedAgent(String agent) {
     return agent != null
         && Boolean.TRUE.equals(
             jdbc.queryForObject(
-                "select exists(select 1 from kf_external_broker_additions where agent_id=? and"
+                "select exists(select 1 from kf_external_add_node_owners where agent_id=? and"
                     + " state not in ('SUCCEEDED','CANCELLED_SAFE'))",
                 Boolean.class,
                 agent));
@@ -39,7 +39,7 @@ public class ExternalBrokerAdditionGuard {
     return agent != null
         && Boolean.TRUE.equals(
             jdbc.queryForObject(
-                "select exists(select 1 from kf_external_broker_additions where agent_id=? and"
+                "select exists(select 1 from kf_external_add_node_owners where agent_id=? and"
                     + " state not in ('SUCCEEDED','CANCELLED_SAFE') and (cast(? as text) is null or"
                     + " job_id<>?))",
                 Boolean.class,
@@ -50,7 +50,7 @@ public class ExternalBrokerAdditionGuard {
 
   public List<UUID> jobs() {
     return jdbc.query(
-        "select job_id from kf_external_broker_additions where state not in"
+        "select job_id from kf_external_add_node_owners where state not in"
             + " ('SUCCEEDED','CANCELLED_SAFE')",
         (rs, n) -> UUID.fromString(rs.getString(1)));
   }

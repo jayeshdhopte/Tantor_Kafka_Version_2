@@ -4,6 +4,8 @@
 
 This supersedes the Phase 3 startup-only behavior. The historical Phase 3 record remains available in [external-add-node-phase3.md](external-add-node-phase3.md).
 
+Current source has advanced to [Phase 5 external dynamic controllers](external-add-node-phase5.md). The following records Phase 4 broker behavior and validation; its live acceptance remains pending.
+
 ## What completes an addition
 
 After the candidate starts, the operation enters `VERIFYING`. Three successful samples, at least five seconds apart, must prove:

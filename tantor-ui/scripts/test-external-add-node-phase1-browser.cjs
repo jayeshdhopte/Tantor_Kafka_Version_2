@@ -57,7 +57,7 @@ const fs = require('node:fs');
     await page.getByRole('button', { name: 'Continue to role', exact: true }).click();
     const radios = page.getByRole('radio'); assert.equal(await radios.count(), 3);
     assert.equal(await radios.nth(0).isChecked(), true);
-    assert.equal(await radios.nth(1).isDisabled(), true); assert.equal(await radios.nth(2).isDisabled(), true);
+    assert.equal(await radios.nth(1).isDisabled(), false); assert.equal(await radios.nth(2).isDisabled(), true);
     await capture('03-broker-only-test-data.png');
     await page.getByRole('button', { name: 'Review selected layout', exact: true }).click();
     await page.getByRole('heading', { name: 'Review selected layout', exact: true }).waitFor();
@@ -85,7 +85,7 @@ const fs = require('node:fs');
     assert.equal(inventoryReads, before); assert.equal(mutations, 0); assert.deepEqual(errors, []);
     await page.close(); const video = page.video(); await context.close();
     if (video) await video.saveAs(path.join(output, 'external-phase1-fixture-demo.webm'));
-    const result = { status: 'PASS', data: 'EXPLICIT_TEST_FIXTURES', liveAcceptance: 'PENDING_NO_EXTERNAL_CLUSTER', mutations, readinessPosts, checks: ['External Nodes entry point', 'Four-screen navigation', 'Live-API-shaped inventory binding', 'Stale/assigned hosts blocked', 'Broker only', 'Readiness required before role review', 'Deployment disabled', 'Refresh invalidation', 'Empty inventory', 'API error/retry', 'Viewer denied'], output };
+    const result = { status: 'PASS', data: 'EXPLICIT_TEST_FIXTURES', liveAcceptance: 'PENDING_NO_EXTERNAL_CLUSTER', mutations, readinessPosts, checks: ['External Nodes entry point', 'Four-screen navigation', 'Live-API-shaped inventory binding', 'Stale/assigned hosts blocked', 'Broker default; dynamic controller review available; separate-process remains disabled', 'Readiness required before role review', 'Deployment disabled', 'Refresh invalidation', 'Empty inventory', 'API error/retry', 'Viewer denied'], output };
     fs.writeFileSync(path.join(output, 'acceptance-fixture-results.json'), JSON.stringify(result, null, 2));
     console.log(JSON.stringify(result));
   } catch (error) { if (page && !page.isClosed()) console.error(await page.locator('body').innerText()); throw error; }

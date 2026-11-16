@@ -22,23 +22,24 @@ const externalAddNodeInspectionAPI = "/api/v1/ui/external-clusters/discovery/add
 // Host observation only. A zero count is not proof of clean Kafka storage,
 // runtime compatibility, cluster health or permission to deploy a new process.
 type addNodeHostObservation struct {
-	SchemaVersion          string    `json:"schemaVersion"`
-	AgentID                string    `json:"agentId"`
-	AgentVersion           string    `json:"agentVersion"`
-	ObservedAt             time.Time `json:"observedAt"`
-	Addresses              []string  `json:"addresses"`
-	Root                   bool      `json:"root"`
-	InspectionEnabled      bool      `json:"inspectionEnabled"`
-	InventoryComplete      bool      `json:"inventoryComplete"`
-	KafkaProcessCount      int       `json:"kafkaProcessCount"`
-	KafkaUnitCount         int       `json:"kafkaUnitCount"`
-	DiscoveredProcessCount int       `json:"discoveredProcessCount"`
-	ExecutionEnabled       bool      `json:"executionEnabled"`
-	BrokerExecutionCapable bool      `json:"brokerExecutionCapable"`
+	SchemaVersion              string    `json:"schemaVersion"`
+	AgentID                    string    `json:"agentId"`
+	AgentVersion               string    `json:"agentVersion"`
+	ObservedAt                 time.Time `json:"observedAt"`
+	Addresses                  []string  `json:"addresses"`
+	Root                       bool      `json:"root"`
+	InspectionEnabled          bool      `json:"inspectionEnabled"`
+	InventoryComplete          bool      `json:"inventoryComplete"`
+	KafkaProcessCount          int       `json:"kafkaProcessCount"`
+	KafkaUnitCount             int       `json:"kafkaUnitCount"`
+	DiscoveredProcessCount     int       `json:"discoveredProcessCount"`
+	ExecutionEnabled           bool      `json:"executionEnabled"`
+	BrokerExecutionCapable     bool      `json:"brokerExecutionCapable"`
+	ControllerExecutionCapable bool      `json:"controllerExecutionCapable"`
 }
 
 func validateAddNodeInspectionMode(cfg RuntimeConfig, uid int, goos string) error {
-	if cfg.EnableAddNodeExecution && !cfg.EnableAddNodeInspection {
+	if (cfg.EnableAddNodeExecution || cfg.EnableControllerAddition) && !cfg.EnableAddNodeInspection {
 		return fmt.Errorf("broker execution requires explicit Add Node inspection")
 	}
 	if !cfg.EnableAddNodeInspection {
@@ -53,6 +54,7 @@ func validateAddNodeInspectionMode(cfg RuntimeConfig, uid int, goos string) erro
 func observeAddNodeHost(cfg RuntimeConfig, records []DiscoveredCluster) addNodeHostObservation {
 	r := addNodeHostObservation{SchemaVersion: externalAddNodeInspectionSchema, AgentID: cfg.HostID, AgentVersion: buildVersion, ObservedAt: time.Now().UTC(), Root: os.Geteuid() == 0, InspectionEnabled: cfg.EnableAddNodeInspection, DiscoveredProcessCount: len(records), Addresses: []string{}}
 	r.BrokerExecutionCapable = cfg.EnableAddNodeExecution
+	r.ControllerExecutionCapable = cfg.EnableControllerAddition
 	addresses, err := net.InterfaceAddrs()
 	if err != nil {
 		return r

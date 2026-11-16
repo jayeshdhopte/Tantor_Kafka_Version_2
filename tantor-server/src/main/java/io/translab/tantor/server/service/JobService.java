@@ -70,12 +70,14 @@ public class JobService {
         lockAndCheck(owner.getResourceKey(),JobType.BROKER_ADDITION,jobId);
     }
 
+    static boolean isExternalAddNode(JobType type){return type==JobType.EXTERNAL_BROKER_ADDITION||type==JobType.EXTERNAL_CONTROLLER_ADDITION;}
+
     @Transactional
     public void assertExternalBrokerAdditionOwnsCluster(UUID clusterId, UUID jobId) {
         Job owner=getJob(jobId);
-        if(owner.getType()!=JobType.EXTERNAL_BROKER_ADDITION || !Objects.equals(owner.getResourceKey(),"cluster:"+clusterId) || owner.getStatus()!=JobStatus.IN_PROGRESS)
+        if(!isExternalAddNode(owner.getType()) || !Objects.equals(owner.getResourceKey(),"cluster:"+clusterId) || owner.getStatus()!=JobStatus.IN_PROGRESS)
             throw new IllegalStateException("Executing external broker operation ownership is required.");
-        lockAndCheck(owner.getResourceKey(),JobType.EXTERNAL_BROKER_ADDITION,jobId);
+        lockAndCheck(owner.getResourceKey(),owner.getType(),jobId);
     }
 
     @Transactional
@@ -112,7 +114,7 @@ public class JobService {
                 .filter(job -> resource.equals(job.getResourceKey()) && !Objects.equals(job.getId(), excluded)).findFirst();
         if (outstanding.isPresent()) throw new ClusterOperationConflictException("An agent task is still pending or running for job " + outstanding.get().getId() + ". Resume that job before another cluster operation.");
         for (Job other : active) {
-            if (!other.getId().equals(excluded) && (incoming == JobType.EXTERNAL_BROKER_ADDITION || other.getType()==JobType.EXTERNAL_BROKER_ADDITION || incoming == JobType.QUORUM_EXPANSION || other.getType()==JobType.QUORUM_EXPANSION || incoming == JobType.BROKER_ADDITION || other.getType()==JobType.BROKER_ADDITION || incoming == JobType.ROLLING_RESTART
+            if (!other.getId().equals(excluded) && (isExternalAddNode(incoming) || isExternalAddNode(other.getType()) || incoming == JobType.QUORUM_EXPANSION || other.getType()==JobType.QUORUM_EXPANSION || incoming == JobType.BROKER_ADDITION || other.getType()==JobType.BROKER_ADDITION || incoming == JobType.ROLLING_RESTART
                     || incoming == JobType.EXTERNAL_SERVICES || incoming == JobType.ROLLING_CONFIG_UPDATE
                     || incoming == JobType.CONFIG_CHANGE || incoming == JobType.TARGETED_CONFIG_CHANGE
                     || other.getType() == JobType.ROLLING_RESTART
@@ -194,7 +196,7 @@ public class JobService {
             return false;
         }
     }
-    private boolean retainsAddNodeOwnership(Job job){return job.getType()==JobType.EXTERNAL_BROKER_ADDITION||job.getType()==JobType.BROKER_ADDITION||job.getType()==JobType.QUORUM_EXPANSION;}
+    private boolean retainsAddNodeOwnership(Job job){return isExternalAddNode(job.getType())||job.getType()==JobType.BROKER_ADDITION||job.getType()==JobType.QUORUM_EXPANSION;}
 
     public List<JobStep> getSteps(UUID jobId) {
         return jobStepRepository.findByJobIdOrderByStepOrderAsc(jobId);
@@ -251,7 +253,7 @@ public class JobService {
     @Transactional
     public boolean finishExternalBrokerAttempt(UUID id, Integer attempt, JobStatus status, String message) {
         Job job = jobRepository.findForUpdateById(id).orElseThrow();
-        if (job.getType() != JobType.EXTERNAL_BROKER_ADDITION)
+        if (!isExternalAddNode(job.getType()))
             throw new IllegalStateException("External broker attempt required.");
         if (job.getStatus() == JobStatus.SUCCESS || !java.util.Objects.equals(attempt, job.getRetryCount()))
             return false;
@@ -442,8 +444,8 @@ public class JobService {
 
     private Job retryOwnedJob(UUID id,boolean externalOwner) {
         Job job = jobRepository.findForUpdateById(id).orElseThrow(() -> new IllegalArgumentException("Job not found: " + id));
-        if(job.getType()==JobType.EXTERNAL_BROKER_ADDITION&&!externalOwner)throw new IllegalStateException("Resume the owned external Add Node operation so candidate state is reconciled first.");
-        if(externalOwner&&job.getType()!=JobType.EXTERNAL_BROKER_ADDITION)throw new IllegalStateException("External broker job required.");
+        if(isExternalAddNode(job.getType())&&!externalOwner)throw new IllegalStateException("Resume the owned external Add Node operation so candidate state is reconciled first.");
+        if(externalOwner&&!isExternalAddNode(job.getType()))throw new IllegalStateException("External broker job required.");
         if (job.getType() == JobType.QUORUM_EXPANSION) {
             var operation = quorumExpansions.findByJobId(id).orElseThrow(() -> new IllegalStateException("Expansion operation ownership is missing."));
             if (operation.getState() == KafkaExpansionState.CANCELLED_SAFE)

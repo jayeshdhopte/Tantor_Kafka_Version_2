@@ -118,7 +118,7 @@ public class ExternalBrokerAdditionPlanning {
     Set<Integer> reserved =
         new HashSet<>(
             jdbc.query(
-                "select node_id from kf_external_broker_additions where cluster_id=? and"
+                "select node_id from kf_external_add_node_owners where cluster_id=? and"
                     + " state<>'CANCELLED_SAFE' and (cast(? as text) is null or job_id<>?)",
                 (rs, n) -> rs.getInt(1),
                 clusterId,

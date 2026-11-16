@@ -171,10 +171,10 @@ export function JobStatusPage() {
     if (job?.configRecoveryBlockedReason) return;
     try {
       let endpoint = `/api/v1/ui/jobs/${id}/retry`;
-      if (job?.type === 'EXTERNAL_BROKER_ADDITION') {
+      if (job?.type === 'EXTERNAL_BROKER_ADDITION' || job?.type === 'EXTERNAL_CONTROLLER_ADDITION') {
         const payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
         if (!payload?.clusterId || !payload?.operationId) throw new Error('External Add Node operation identity is missing.');
-        endpoint = `/api/v1/ui/external-clusters/${encodeURIComponent(payload.clusterId)}/add-node/broker-operations/${encodeURIComponent(payload.operationId)}/resume`;
+        endpoint = `/api/v1/ui/external-clusters/${encodeURIComponent(payload.clusterId)}/add-node/${job.type === 'EXTERNAL_CONTROLLER_ADDITION' ? 'controller-operations' : 'broker-operations'}/${encodeURIComponent(payload.operationId)}/resume`;
       } else if (job?.type === 'BROKER_ADDITION' || job?.type === 'QUORUM_EXPANSION') {
         const payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
         if (!payload?.clusterId || !payload?.operationId) throw new Error('Add Node operation identity is missing.');
@@ -382,6 +382,7 @@ export function JobStatusPage() {
   return (
     <div className="job-status-page animate-fade-in">
       {deletionDetails && <div className="job-deletion-context"><strong>{deletionDetails.force ? 'Force deletion' : 'Cluster deletion'} · {deletionDetails.clusterName || 'Cluster'}</strong><span>{deletionDetails.mode === 'EXTERNAL' ? 'External registration removal' : 'Managed cluster cleanup'} · Requested by {job?.requestedBy || 'Not recorded'}</span></div>}
+      {job.type === 'EXTERNAL_CONTROLLER_ADDITION' && <div className="job-deletion-context" role="status"><strong>External dynamic controller addition</strong><span>Observer startup, catch-up and voter admission are separate checkpoints. Resume reconciles actual directory identity and live voter membership. An uncertain format or admission retains reservations; existing cluster services are not restarted.</span></div>}
       {job.type === 'EXTERNAL_BROKER_ADDITION' && <div className="job-deletion-context" role="status"><strong>External broker addition</strong><span>Startup and verified membership are separate checkpoints. This operation retains the host and node ID until verification completes. Resume inspects the saved receipt and storage before continuing incomplete work; an uncertain format outcome stays blocked for investigation.</span></div>}
       <div className="page-header-actions">
         <div className="back-nav" onClick={() => navigate('/jobs')} style={{ cursor: 'pointer' }}>
@@ -394,7 +395,7 @@ export function JobStatusPage() {
         <div className="action-buttons">
           {canManage && ['FAILED', 'PARTIAL_SUCCESS', 'ROLLBACK_FAILED'].includes(job.status) && (
             <button className="btn btn-outline-primary" onClick={handleRetry} disabled={Boolean(job.configRecoveryBlockedReason)} title={job.configRecoveryBlockedReason || undefined}>
-              <RefreshCw size={14} style={{ marginRight: '6px' }} /> {job.status === 'ROLLBACK_FAILED' ? 'Retry rollback' : ['ROLLING_RESTART', 'TARGETED_CONFIG_CHANGE', 'CONFIG_CHANGE', 'QUORUM_EXPANSION', 'BROKER_ADDITION', 'EXTERNAL_BROKER_ADDITION'].includes(job.type) ? 'Retry / Resume' : 'Retry Job'}
+              <RefreshCw size={14} style={{ marginRight: '6px' }} /> {job.status === 'ROLLBACK_FAILED' ? 'Retry rollback' : ['ROLLING_RESTART', 'TARGETED_CONFIG_CHANGE', 'CONFIG_CHANGE', 'QUORUM_EXPANSION', 'BROKER_ADDITION', 'EXTERNAL_BROKER_ADDITION', 'EXTERNAL_CONTROLLER_ADDITION'].includes(job.type) ? 'Retry / Resume' : 'Retry Job'}
             </button>
           )}
           {canManage && job.type !== 'ROLLING_RESTART' && job.rollbackSupported && (['TARGETED_CONFIG_CHANGE', 'CONFIG_CHANGE'].includes(job.type) ? ['FAILED', 'PARTIAL_SUCCESS'] : ['SUCCESS', 'FAILED', 'PARTIAL_SUCCESS']).includes(job.status) && (

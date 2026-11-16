@@ -46,7 +46,7 @@ public class JobExecutor {
       } else {
         handler.execute(job);
         if (externalFinished(job, attempt)) return;
-        if (job.getType() == io.translab.tantor.server.domain.JobType.EXTERNAL_BROKER_ADDITION)
+        if (JobService.isExternalAddNode(job.getType()))
           throw new IllegalStateException(
               "External broker handler returned without verified publication.");
         jobService.updateJobStatus(jobId, JobStatus.SUCCESS);
@@ -55,7 +55,7 @@ public class JobExecutor {
     } catch (ExternalBrokerAwaitingVerification waiting) {
       if (externalFinished(job, attempt)) return;
       if (rollback
-          || job.getType() != io.translab.tantor.server.domain.JobType.EXTERNAL_BROKER_ADDITION) {
+          || !JobService.isExternalAddNode(job.getType())) {
         fail(job, rollback, waiting, attempt);
         return;
       }
@@ -67,7 +67,7 @@ public class JobExecutor {
   }
 
   private boolean externalFinished(Job job, Integer attempt) {
-    if (job.getType() != io.translab.tantor.server.domain.JobType.EXTERNAL_BROKER_ADDITION)
+    if (!JobService.isExternalAddNode(job.getType()))
       return false;
     Job current = jobService.getJob(job.getId());
     return current.getStatus() == JobStatus.SUCCESS
@@ -85,7 +85,7 @@ public class JobExecutor {
                 : JobStatus.FAILED;
     String message =
         (rollback ? "Rollback failed: " : "Job execution failed: ") + error.getMessage();
-    if (job.getType() == io.translab.tantor.server.domain.JobType.EXTERNAL_BROKER_ADDITION) {
+    if (JobService.isExternalAddNode(job.getType())) {
       jobService.finishExternalBrokerAttempt(job.getId(), attempt, status, message);
       return;
     }

@@ -58,6 +58,29 @@ public class ExternalAddNodeReadinessService {
           "RACK",
           "ARTIFACT");
 
+  static final Set<String> CONTROLLER_COMMON_CODES =
+      Set.of(
+          "HOST",
+          "ADDRESS",
+          "C04",
+          "C01",
+          "C02",
+          "C03",
+          "C05",
+          "C06",
+          "C07",
+          "C08",
+          "B09",
+          "ARTIFACT",
+          "C09",
+          "C10",
+          "C12",
+          "C14",
+          "C15",
+          "C16",
+          "C17",
+          "C20");
+
   public record Request(
       String agentId,
       String hostIp,
@@ -76,7 +99,21 @@ public class ExternalAddNodeReadinessService {
       Instant expiresAt,
       String status,
       List<Check> checks,
-      boolean deploymentEnabled) {}
+      boolean deploymentEnabled) {
+    @com.fasterxml.jackson.annotation.JsonProperty("controllerCommonPassed")
+    public boolean controllerCommonPassed() {
+      return Set.of("PASS", "BLOCKED").contains(status)
+          && expiresAt != null
+          && expiresAt.isAfter(Instant.now())
+          && checks != null
+          && CONTROLLER_COMMON_CODES.stream()
+              .allMatch(
+                  code -> {
+                    var values = checks.stream().filter(c -> code.equals(c.code())).toList();
+                    return values.size() == 1 && "PASS".equals(values.getFirst().status());
+                  });
+    }
+  }
 
   public record Result(
       UUID claimToken,
@@ -614,6 +651,21 @@ public class ExternalAddNodeReadinessService {
     var preview = get(clusterId, previewId, ownerJob);
     if (!"PASS".equals(preview.status()))
       throw conflict("A complete current readiness PASS is required.");
+    return loadEvidence(clusterId, previewId, preview);
+  }
+
+  @Transactional
+  public ExecutionEvidence controllerEvidence(UUID clusterId, UUID previewId) {
+    var preview = get(clusterId, previewId, null);
+    if (!preview.controllerCommonPassed())
+      throw conflict(
+          "Fresh common identity, package, Java, network and cluster checks must pass before"
+              + " controller planning. Broker-specific profile checks do not validate a"
+              + " controller.");
+    return loadEvidence(clusterId, previewId, preview);
+  }
+
+  private ExecutionEvidence loadEvidence(UUID clusterId, UUID previewId, Preview preview) {
     var request =
         jdbc.queryForObject(
             "select request from kf_external_add_node_previews where id=? and cluster_id=?",
@@ -650,10 +702,58 @@ public class ExternalAddNodeReadinessService {
             String.class,
             id);
     var report = parse(raw, ExternalAddNodeInspectionService.Observation.class);
-    if (!candidate.getVersion().endsWith("-an.3") || !report.brokerExecutionCapable())
+    if (!(candidate.getVersion().endsWith("-an.3") || candidate.getVersion().endsWith("-an.4"))
+        || !report.brokerExecutionCapable())
       throw conflict(
           "Install the compatible external broker-add adapter and explicitly enable broker"
               + " execution on the candidate.");
+  }
+
+  String participantAddress(UUID clusterId, String agentId, String host) {
+    var a = agent(agentId);
+    requireControllerAgent(agentId, false);
+    guardEndpoint((host.contains(":") ? "[" + host + "]" : host) + ":1", clusterId);
+    try {
+      var approved = ips(a);
+      var addresses =
+          Arrays.stream(InetAddress.getAllByName(host))
+              .map(InetAddress::getHostAddress)
+              .map(ExternalAddNodeReadinessService::canonical)
+              .distinct()
+              .sorted(Comparator.comparing((String value) -> value.contains(":")))
+              .toList();
+      if (addresses.isEmpty() || !approved.containsAll(addresses))
+        throw conflict("Participant DNS route is not bound to its enrolled agent.");
+      return addresses.getFirst();
+    } catch (ResponseStatusException e) {
+      throw e;
+    } catch (Exception e) {
+      throw conflict("Participant address cannot be resolved inside the approved scope.");
+    }
+  }
+
+  void assertControllerScope(UUID clusterId, String candidate, boolean execution) {
+    guardCluster(clusterId, cluster(clusterId));
+    requireControllerAgent(candidate, execution);
+  }
+
+  void requireControllerAgent(String id, boolean execution) {
+    var a = agent(id);
+    requireAgent(a);
+    guardAgent(a);
+    if (!a.getVersion().endsWith("-an.4"))
+      throw conflict("A compatible external controller adapter (an.4) is required.");
+    if (execution) {
+      var raw =
+          jdbc.queryForObject(
+              "select report from kf_external_add_node_observations where agent_id=?",
+              String.class,
+              id);
+      if (!parse(raw, ExternalAddNodeInspectionService.Observation.class)
+          .controllerExecutionCapable())
+        throw conflict(
+            "Enable the separate external controller execution opt-in on this candidate.");
+    }
   }
 
   private ExternalCluster cluster(UUID id) {

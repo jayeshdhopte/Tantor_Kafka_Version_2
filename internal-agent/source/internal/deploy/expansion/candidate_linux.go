@@ -79,7 +79,25 @@ func RunCandidate(ctx context.Context, hostID, base string, params map[string]st
 			return "", fmt.Errorf("invalid controller proof")
 		}
 	}
-	report, err := executeCandidate(ctx, p, params["plan_digest"], hostID, params["role"], params["action"], proof, env)
+	action := params["action"]
+	if action == "RECONCILE_FORMAT" {
+		// This action can only adopt an already matching format-intent outcome.
+		// It never enters the PREPARED branch that invokes the formatter.
+		r, e := env.LoadReceipt(params["role"])
+		if e != nil || r == nil || r.Phase != "FORMAT_INTENT" {
+			return "", fmt.Errorf("matching format intent required for reconciliation")
+		}
+		c, e := p.Process(params["role"])
+		if e != nil {
+			return "", e
+		}
+		o, e := env.Observe(ctx, p, c)
+		if e != nil || o.StorageState != "MATCHING" || o.ServiceActive {
+			return "", fmt.Errorf("formatted storage identity is not proven")
+		}
+		action = "FORMAT"
+	}
+	report, err := executeCandidate(ctx, p, params["plan_digest"], hostID, params["role"], action, proof, env)
 	if err != nil {
 		return "", err
 	}

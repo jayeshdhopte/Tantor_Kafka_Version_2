@@ -14,7 +14,7 @@ import (
 )
 
 func TestExternalAddNodeInspectionIsExplicitAndCannotEnableMutation(t *testing.T) {
-	if len(buildVersion) > 128 || !strings.HasSuffix(buildVersion, "-an.3") {
+	if len(buildVersion) > 128 || !strings.HasSuffix(buildVersion, "-an.4") {
 		t.Fatal("external version must fit the deployed VARCHAR(128) and retain the inspection marker")
 	}
 	cfg := RuntimeConfig{}

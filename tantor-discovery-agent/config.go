@@ -17,48 +17,49 @@ import (
 )
 
 type RuntimeConfig struct {
-	ServerURL               string
-	HostID                  string
-	AgentName               string
-	NodeName                string
-	ClusterName             string
-	Environment             string
-	ScanPaths               []string
-	DiscoveryPolicy         string
-	DiscoveryInterval       time.Duration
-	TaskPollInterval        time.Duration
-	MetricsInterval         time.Duration
-	JMXMetricsURL           string
-	ControllerJMXMetricsURL string
-	KafkaExporterMetricsURL string
-	HTTPTimeout             time.Duration
-	HTTPRetries             int
-	AuthType                string
-	AuthUsername            string
-	AuthPassword            string
-	AuthPasswordFile        string
-	AuthToken               string
-	AuthTokenFile           string
-	CAFile                  string
-	ClientCertFile          string
-	ClientKeyFile           string
-	InsecureSkipVerify      bool
-	BackupRoot              string
-	EnableTasks             bool
-	EnableAddNodeInspection bool
-	EnableAddNodeExecution  bool
-	EnableServiceDeployment bool
-	ServiceStateDir         string
-	AllowConfigWrite        bool
-	AllowServiceRestart     bool
-	RestartWithSudo         bool
-	AllowedServices         []string
-	RunPrecheck             bool
-	PrecheckOnly            bool
-	PrecheckJSON            bool
-	Once                    bool
-	LogLevel                string
-	LogDir                  string
+	ServerURL                string
+	HostID                   string
+	AgentName                string
+	NodeName                 string
+	ClusterName              string
+	Environment              string
+	ScanPaths                []string
+	DiscoveryPolicy          string
+	DiscoveryInterval        time.Duration
+	TaskPollInterval         time.Duration
+	MetricsInterval          time.Duration
+	JMXMetricsURL            string
+	ControllerJMXMetricsURL  string
+	KafkaExporterMetricsURL  string
+	HTTPTimeout              time.Duration
+	HTTPRetries              int
+	AuthType                 string
+	AuthUsername             string
+	AuthPassword             string
+	AuthPasswordFile         string
+	AuthToken                string
+	AuthTokenFile            string
+	CAFile                   string
+	ClientCertFile           string
+	ClientKeyFile            string
+	InsecureSkipVerify       bool
+	BackupRoot               string
+	EnableTasks              bool
+	EnableAddNodeInspection  bool
+	EnableAddNodeExecution   bool
+	EnableControllerAddition bool
+	EnableServiceDeployment  bool
+	ServiceStateDir          string
+	AllowConfigWrite         bool
+	AllowServiceRestart      bool
+	RestartWithSudo          bool
+	AllowedServices          []string
+	RunPrecheck              bool
+	PrecheckOnly             bool
+	PrecheckJSON             bool
+	Once                     bool
+	LogLevel                 string
+	LogDir                   string
 }
 
 func env(key, fallback string) string {
@@ -206,6 +207,7 @@ func LoadRuntimeConfig(args []string) (RuntimeConfig, error) {
 	enableTasks := fs.Bool("enable-tasks", envBool("TANTOR_AGENT_ENABLE_TASKS", false), "Enable server task polling")
 	enableAddNodeInspection := fs.Bool("enable-add-node-inspection", envBool("TANTOR_AGENT_ENABLE_ADD_NODE_INSPECTION", false), "Opt in to read-only Add Node host inspection; Kafka deployment is not enabled")
 	enableAddNodeExecution := fs.Bool("enable-add-node-execution", envBool("TANTOR_AGENT_ENABLE_ADD_NODE_EXECUTION", false), "Explicitly allow operation-owned broker addition; requires Add Node inspection")
+	enableControllerAddition := fs.Bool("enable-controller-addition", envBool("TANTOR_AGENT_ENABLE_CONTROLLER_ADDITION", false), "Explicitly allow operation-owned external dynamic controller addition")
 	enableServices := fs.Bool("enable-service-deployment", envBool("TANTOR_AGENT_ENABLE_SERVICE_DEPLOYMENT", false), "Allow Schema Registry/Connect deployment as root")
 	serviceState := fs.String("service-state-dir", env("TANTOR_AGENT_SERVICE_STATE_DIR", "/var/lib/tantor-discovery-agent/services"), "Private service task journal and artifact cache")
 	allowConfigWrite := fs.Bool("allow-config-write", envBool("TANTOR_AGENT_ALLOW_CONFIG_WRITE", false), "Allow server-requested Kafka config changes")
@@ -225,48 +227,49 @@ func LoadRuntimeConfig(args []string) (RuntimeConfig, error) {
 	explicitNodeName := strings.TrimSpace(*nodeName) != ""
 
 	cfg := RuntimeConfig{
-		ServerURL:               strings.TrimRight(strings.TrimSpace(*serverURL), "/"),
-		HostID:                  strings.TrimSpace(*hostID),
-		AgentName:               strings.TrimSpace(*agentName),
-		NodeName:                strings.TrimSpace(*nodeName),
-		ClusterName:             strings.TrimSpace(*clusterName),
-		Environment:             strings.TrimSpace(*environment),
-		ScanPaths:               splitCSV(*scanPaths),
-		DiscoveryPolicy:         strings.ToLower(strings.TrimSpace(*discoveryPolicy)),
-		DiscoveryInterval:       *discoveryInterval,
-		TaskPollInterval:        *taskPollInterval,
-		MetricsInterval:         *metricsInterval,
-		JMXMetricsURL:           strings.TrimSpace(*jmxURL),
-		ControllerJMXMetricsURL: strings.TrimSpace(*controllerJMXURL),
-		KafkaExporterMetricsURL: strings.TrimSpace(*kafkaExporterURL),
-		HTTPTimeout:             *httpTimeout,
-		HTTPRetries:             *httpRetries,
-		AuthType:                strings.ToLower(strings.TrimSpace(*authType)),
-		AuthUsername:            strings.TrimSpace(*authUsername),
-		AuthPassword:            env("TANTOR_AGENT_AUTH_PASSWORD", ""),
-		AuthPasswordFile:        strings.TrimSpace(*authPasswordFile),
-		AuthToken:               env("TANTOR_AGENT_AUTH_TOKEN", ""),
-		AuthTokenFile:           strings.TrimSpace(*authTokenFile),
-		CAFile:                  strings.TrimSpace(*caFile),
-		ClientCertFile:          strings.TrimSpace(*clientCert),
-		ClientKeyFile:           strings.TrimSpace(*clientKey),
-		InsecureSkipVerify:      *insecure,
-		BackupRoot:              strings.TrimSpace(*backupRoot),
-		EnableTasks:             *enableTasks,
-		EnableServiceDeployment: *enableServices,
-		EnableAddNodeInspection: *enableAddNodeInspection,
-		EnableAddNodeExecution:  *enableAddNodeExecution,
-		ServiceStateDir:         *serviceState,
-		AllowConfigWrite:        *allowConfigWrite,
-		AllowServiceRestart:     *allowRestart,
-		RestartWithSudo:         *restartWithSudo,
-		AllowedServices:         splitCSV(*allowedServices),
-		RunPrecheck:             *runPrecheck,
-		PrecheckOnly:            *precheckOnly,
-		PrecheckJSON:            *precheckJSON,
-		Once:                    *once,
-		LogLevel:                strings.ToLower(strings.TrimSpace(*logLevel)),
-		LogDir:                  strings.TrimSpace(*logDir),
+		ServerURL:                strings.TrimRight(strings.TrimSpace(*serverURL), "/"),
+		HostID:                   strings.TrimSpace(*hostID),
+		AgentName:                strings.TrimSpace(*agentName),
+		NodeName:                 strings.TrimSpace(*nodeName),
+		ClusterName:              strings.TrimSpace(*clusterName),
+		Environment:              strings.TrimSpace(*environment),
+		ScanPaths:                splitCSV(*scanPaths),
+		DiscoveryPolicy:          strings.ToLower(strings.TrimSpace(*discoveryPolicy)),
+		DiscoveryInterval:        *discoveryInterval,
+		TaskPollInterval:         *taskPollInterval,
+		MetricsInterval:          *metricsInterval,
+		JMXMetricsURL:            strings.TrimSpace(*jmxURL),
+		ControllerJMXMetricsURL:  strings.TrimSpace(*controllerJMXURL),
+		KafkaExporterMetricsURL:  strings.TrimSpace(*kafkaExporterURL),
+		HTTPTimeout:              *httpTimeout,
+		HTTPRetries:              *httpRetries,
+		AuthType:                 strings.ToLower(strings.TrimSpace(*authType)),
+		AuthUsername:             strings.TrimSpace(*authUsername),
+		AuthPassword:             env("TANTOR_AGENT_AUTH_PASSWORD", ""),
+		AuthPasswordFile:         strings.TrimSpace(*authPasswordFile),
+		AuthToken:                env("TANTOR_AGENT_AUTH_TOKEN", ""),
+		AuthTokenFile:            strings.TrimSpace(*authTokenFile),
+		CAFile:                   strings.TrimSpace(*caFile),
+		ClientCertFile:           strings.TrimSpace(*clientCert),
+		ClientKeyFile:            strings.TrimSpace(*clientKey),
+		InsecureSkipVerify:       *insecure,
+		BackupRoot:               strings.TrimSpace(*backupRoot),
+		EnableTasks:              *enableTasks,
+		EnableServiceDeployment:  *enableServices,
+		EnableAddNodeInspection:  *enableAddNodeInspection,
+		EnableAddNodeExecution:   *enableAddNodeExecution,
+		EnableControllerAddition: *enableControllerAddition,
+		ServiceStateDir:          *serviceState,
+		AllowConfigWrite:         *allowConfigWrite,
+		AllowServiceRestart:      *allowRestart,
+		RestartWithSudo:          *restartWithSudo,
+		AllowedServices:          splitCSV(*allowedServices),
+		RunPrecheck:              *runPrecheck,
+		PrecheckOnly:             *precheckOnly,
+		PrecheckJSON:             *precheckJSON,
+		Once:                     *once,
+		LogLevel:                 strings.ToLower(strings.TrimSpace(*logLevel)),
+		LogDir:                   strings.TrimSpace(*logDir),
 	}
 
 	if cfg.NodeName == "" {
