@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-var buildVersion = "3.4.0-dataservices.2-configchange.10-backupintegrity.1-rollingrestart.4-logging.1-paths.1-cleanup.1-plugins.2-schema.1-an.1"
+var buildVersion = "3.4.0-dataservices.2-configchange.10-backupintegrity.1-rollingrestart.4-logging.1-paths.1-cleanup.1-plugins.2-schema.1-an.2"
 var buildCommit = "unknown"
 
 func newLogger(level string) *slog.Logger {
@@ -136,6 +136,9 @@ func main() {
 	if cfg.EnableAddNodeInspection {
 		go runAddNodeInspectionLoop(ctx, client, cfg, store, logger)
 		go runAddNodeReadinessTasks(ctx, client, cfg, logger)
+		if cfg.EnableAddNodeExecution {
+			go runExternalBrokerTasks(ctx, client, cfg, logger)
+		}
 	}
 	if cfg.EnableServiceDeployment {
 		go runServicePoller(ctx, client, cfg, store, logger)

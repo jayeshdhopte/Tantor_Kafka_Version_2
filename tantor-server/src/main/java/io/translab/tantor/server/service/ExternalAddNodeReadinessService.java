@@ -86,6 +86,11 @@ public class ExternalAddNodeReadinessService {
 
   @Transactional
   public Preview create(UUID clusterId, Request request) {
+    return create(clusterId, request, null);
+  }
+
+  @Transactional
+  public Preview create(UUID clusterId, Request request, UUID ownerJob) {
     validate(request);
     if (json(request).getBytes(StandardCharsets.UTF_8).length > 65536)
       throw new IllegalArgumentException("Readiness request exceeds the bounded profile contract.");
@@ -111,10 +116,13 @@ public class ExternalAddNodeReadinessService {
     String context = context(clusterId, request);
     var checks = new ArrayList<Check>();
     var observed =
-        inspection.candidates(clusterId).candidates().stream()
-            .filter(c -> c.agentId().equals(request.agentId()))
-            .findFirst()
-            .orElseThrow(() -> conflict("Candidate is not enrolled."));
+        (ownerJob == null
+                ? inspection.candidates(clusterId)
+                : inspection.candidates(clusterId, ownerJob))
+            .candidates().stream()
+                .filter(c -> c.agentId().equals(request.agentId()))
+                .findFirst()
+                .orElseThrow(() -> conflict("Candidate is not enrolled."));
     checks.add(
         check(
             "HOST",
@@ -129,7 +137,8 @@ public class ExternalAddNodeReadinessService {
             address,
             address ? "Matched registered interface" : "Address mismatch"));
     try {
-      conflicts.verify(clusterId);
+      if (ownerJob == null) conflicts.verify(clusterId);
+      else conflicts.verifyOwned(clusterId, ownerJob);
       checks.add(check("C04", "Conflicting cluster operations", true, "No conflicting operation"));
     } catch (RuntimeException e) {
       checks.add(
@@ -139,6 +148,7 @@ public class ExternalAddNodeReadinessService {
               false,
               "A conflicting cluster operation exists"));
     }
+    String staticVoters = "";
     AddNodeKafkaReadiness.Observation live = null;
     AddNodeArtifactCatalog.Artifact artifact = null;
     if (checks.stream().allMatch(c -> "PASS".equals(c.status()))) {
@@ -172,6 +182,7 @@ public class ExternalAddNodeReadinessService {
             for (String voter : value.split(","))
               guardEndpoint(voter.substring(voter.indexOf('@') + 1), clusterId);
             config.put("controller_quorum_voters", value);
+            staticVoters = value;
           }
         } catch (InterruptedException e) {
           Thread.currentThread().interrupt();
@@ -269,11 +280,21 @@ public class ExternalAddNodeReadinessService {
       payload.put("kafkaVersion", cluster.getKafkaVersion());
       payload.put("kafkaClusterId", cluster.getKafkaClusterId());
       payload.put("brokerPort", String.valueOf(request.brokerPort()));
-      payload.put("ports", List.of(String.valueOf(request.brokerPort())));
+      var ports = new TreeSet<String>();
+      ports.add(String.valueOf(request.brokerPort()));
+      nodes.findByClusterId(clusterId).stream()
+          .filter(
+              n ->
+                  Boolean.TRUE.equals(n.getIsBroker())
+                      && n.getJmxExporterPort() != null
+                      && n.getJmxExporterPort() > 0)
+          .forEach(n -> ports.add(n.getJmxExporterPort().toString()));
+      payload.put("ports", List.copyOf(ports));
       payload.put("parcelDir", request.parcelDir());
       payload.put("artifactChecksum", artifact.checksum());
       payload.put("securityMode", "PLAINTEXT");
       payload.put("quorumMode", live.quorumMode());
+      payload.put("quorumVoters", staticVoters);
       payload.put("controllerEndpoints", live.controllerEndpoints());
       payload.put("brokerEndpoints", live.brokerEndpoints());
       payload.put("limitNofile", 100000);
@@ -344,11 +365,16 @@ public class ExternalAddNodeReadinessService {
       payload.put("expectedClientProbeCount", Math.max(1, clientIds.size()));
       enqueue(id, candidate.getId(), "INSPECT", payload, expires);
     }
-    return get(clusterId, id);
+    return get(clusterId, id, ownerJob);
   }
 
   @Transactional
   public Preview get(UUID clusterId, UUID id) {
+    return get(clusterId, id, null);
+  }
+
+  @Transactional
+  public Preview get(UUID clusterId, UUID id, UUID ownerJob) {
     var rows =
         jdbc.queryForList(
             "select * from kf_external_add_node_previews where id=? and cluster_id=?",
@@ -397,9 +423,10 @@ public class ExternalAddNodeReadinessService {
                       + " or connectivity."));
       }
       var observed =
-          inspection.candidates(clusterId).candidates().stream()
-              .filter(c -> c.agentId().equals(request.agentId()))
-              .findFirst();
+          (ownerJob == null
+                  ? inspection.candidates(clusterId)
+                  : inspection.candidates(clusterId, ownerJob))
+              .candidates().stream().filter(c -> c.agentId().equals(request.agentId())).findFirst();
       if (observed.isEmpty() || !observed.get().blockers().isEmpty())
         checks.add(
             unknown(
@@ -407,7 +434,8 @@ public class ExternalAddNodeReadinessService {
                 "Fresh candidate observation",
                 "Candidate heartbeat, ownership or opt-in inspection is no longer current."));
       try {
-        conflicts.verify(clusterId);
+        if (ownerJob == null) conflicts.verify(clusterId);
+        else conflicts.verifyOwned(clusterId, ownerJob);
       } catch (RuntimeException e) {
         checks.add(
             check(
@@ -578,6 +606,56 @@ public class ExternalAddNodeReadinessService {
     if (r.artifactId() != null && !r.artifactId().isBlank()) UUID.fromString(r.artifactId());
   }
 
+  public record ExecutionEvidence(
+      Preview preview, Request request, Map<String, Object> inspectionParameters) {}
+
+  @Transactional
+  public ExecutionEvidence executionEvidence(UUID clusterId, UUID previewId, UUID ownerJob) {
+    var preview = get(clusterId, previewId, ownerJob);
+    if (!"PASS".equals(preview.status()))
+      throw conflict("A complete current readiness PASS is required.");
+    var request =
+        jdbc.queryForObject(
+            "select request from kf_external_add_node_previews where id=? and cluster_id=?",
+            String.class,
+            previewId,
+            clusterId);
+    var parameters =
+        jdbc.queryForObject(
+            "select parameters from kf_external_add_node_tasks where preview_id=? and"
+                + " command='INSPECT' and status='SUCCESS'",
+            String.class,
+            previewId);
+    return new ExecutionEvidence(
+        preview, parse(request, Request.class), parse(parameters, Map.class));
+  }
+
+  void assertContext(UUID clusterId, Request request, String expected) {
+    if (!expected.equals(context(clusterId, request)))
+      throw conflict("The frozen external Add Node context changed.");
+  }
+
+  void assertExecutionScope(UUID clusterId, String agentId) {
+    guardCluster(clusterId, cluster(clusterId));
+    requireExecutionAgent(agentId);
+  }
+
+  void requireExecutionAgent(String id) {
+    var candidate = agent(id);
+    requireAgent(candidate);
+    guardAgent(candidate);
+    var raw =
+        jdbc.queryForObject(
+            "select report from kf_external_add_node_observations where agent_id=?",
+            String.class,
+            id);
+    var report = parse(raw, ExternalAddNodeInspectionService.Observation.class);
+    if (!candidate.getVersion().endsWith("-an.2") || !report.brokerExecutionCapable())
+      throw conflict(
+          "Install the compatible external broker-add adapter and explicitly enable broker"
+              + " execution on the candidate.");
+  }
+
   private ExternalCluster cluster(UUID id) {
     var c =
         clusters
@@ -709,7 +787,8 @@ public class ExternalAddNodeReadinessService {
                         Objects.toString(n.getConfigFile(), ""),
                         Objects.toString(n.getSystemdService(), ""),
                         Objects.toString(n.getIsBroker(), ""),
-                        Objects.toString(n.getIsController(), "")))
+                        Objects.toString(n.getIsController(), ""),
+                        Objects.toString(n.getJmxExporterPort(), "")))
             .toList();
     var identities =
         agents.findAll().stream()

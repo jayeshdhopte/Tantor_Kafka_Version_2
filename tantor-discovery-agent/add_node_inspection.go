@@ -34,9 +34,13 @@ type addNodeHostObservation struct {
 	KafkaUnitCount         int       `json:"kafkaUnitCount"`
 	DiscoveredProcessCount int       `json:"discoveredProcessCount"`
 	ExecutionEnabled       bool      `json:"executionEnabled"`
+	BrokerExecutionCapable bool      `json:"brokerExecutionCapable"`
 }
 
 func validateAddNodeInspectionMode(cfg RuntimeConfig, uid int, goos string) error {
+	if cfg.EnableAddNodeExecution && !cfg.EnableAddNodeInspection {
+		return fmt.Errorf("broker execution requires explicit Add Node inspection")
+	}
 	if !cfg.EnableAddNodeInspection {
 		return nil
 	}
@@ -48,6 +52,7 @@ func validateAddNodeInspectionMode(cfg RuntimeConfig, uid int, goos string) erro
 
 func observeAddNodeHost(cfg RuntimeConfig, records []DiscoveredCluster) addNodeHostObservation {
 	r := addNodeHostObservation{SchemaVersion: externalAddNodeInspectionSchema, AgentID: cfg.HostID, AgentVersion: buildVersion, ObservedAt: time.Now().UTC(), Root: os.Geteuid() == 0, InspectionEnabled: cfg.EnableAddNodeInspection, DiscoveredProcessCount: len(records), Addresses: []string{}}
+	r.BrokerExecutionCapable = cfg.EnableAddNodeExecution
 	addresses, err := net.InterfaceAddrs()
 	if err != nil {
 		return r

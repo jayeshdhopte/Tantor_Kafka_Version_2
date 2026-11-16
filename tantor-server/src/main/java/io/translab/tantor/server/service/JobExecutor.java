@@ -41,6 +41,10 @@ public class JobExecutor {
                 jobService.updateJobStatus(jobId, JobStatus.SUCCESS);
                 jobService.appendLog(jobId, "Job execution completed successfully.");
             }
+        } catch (ExternalBrokerAwaitingVerification waiting) {
+            if (rollback || job.getType()!=io.translab.tantor.server.domain.JobType.EXTERNAL_BROKER_ADDITION) {fail(job,rollback,waiting);return;}
+            jobService.updateJobStatus(jobId,JobStatus.PARTIAL_SUCCESS);
+            jobService.appendLog(jobId,waiting.getMessage());
         } catch (Exception e) {
             fail(job, rollback, e);
         }

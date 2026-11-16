@@ -1,5 +1,7 @@
 # External Add Node — Phase 2 readiness
 
+Phase 2 implementation/verification record. Phase 3 development is now implemented behind default-off gates; see [Phase 3 contract](external-add-node-phase3.md). Live Phase 2 acceptance is still pending.
+
 Status, 16 November 2026: source implementation and automated checks; **live external-cluster acceptance pending**. The management database has no connected external cluster. The user will deploy Kafka. No cluster has been created for this feature, and no running backend/UI or internal/external agent has been replaced by Phase 2.
 
 The agreed seven phases are in [external-add-node-phases.md](external-add-node-phases.md). Phase 2 does not authorize broker execution. Controller and separate-process choices and Deploy broker remain disabled. A readiness PASS is observation evidence only, never a deployment permission.
@@ -62,7 +64,7 @@ V107 stores latest bounded monotonic local observations. V108 stores preview con
 | Real host measurements | PASS diagnostic on 191: 20 results collected; checksum and missing network evidence remained FAIL/UNKNOWN. This diagnostic is not external-cluster admission |
 | Real external-cluster wizard run | **PENDING** — no connected external cluster on 194 |
 | User demonstration/acceptance | **PENDING** — fixture demonstration is labelled test data |
-| Phase 3 broker execution | **NOT STARTED** |
+| Phase 3 broker execution | Implemented behind separate gates; live broker-add acceptance pending |
 
 The browser demonstration script is `tantor-ui/scripts/test-external-add-node-phase2-browser.cjs`; its artifacts are explicitly fixture-only. Live external acceptance must demonstrate both a healthy eligible candidate and real blockers/expiry before advancing to Phase 3.
 

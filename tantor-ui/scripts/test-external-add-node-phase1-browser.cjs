@@ -22,11 +22,12 @@ const fs = require('node:fs');
       { id: 'assigned', hostname: 'assigned-fixture', fresh: true, status: 'ONLINE', clusterId: 'other-cluster', lastHeartbeat: new Date().toISOString() },
     ];
     let failure = false, mutations = 0, inventoryReads = 0, readinessPosts = 0;
-    const readiness = { id: 'navigation-fixture', status: 'PASS', expiresAt: new Date(Date.now() + 120000).toISOString(), checks: [{ code: 'C01', name: 'Fixture readiness', status: 'PASS', observed: 'TEST DATA' }], deploymentEnabled: false };
+    const readiness = { id: 'navigation-fixture', contextHash: 'a'.repeat(64), status: 'PASS', expiresAt: new Date(Date.now() + 120000).toISOString(), checks: [{ code: 'C01', name: 'Fixture readiness', status: 'PASS', observed: 'TEST DATA' }], deploymentEnabled: false };
     const errors = [];
     await context.route('**/src/main.tsx*', route => route.fulfill({ contentType: 'application/javascript', body: `import '/src/index.css';import React from '${react}';import ReactDOM from '${reactDom}';import{BrowserRouter,Routes,Route}from '${router}';import{AuthContext}from '/src/contexts/authContextDef.ts';import{ExternalClusterAddNode}from '/src/pages/ExternalClusterAddNode.tsx';import{ClusterNodes}from '/src/pages/ClusterNodes.tsx';ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(AuthContext.Provider,{value:{decodedToken:{roles:[sessionStorage.getItem('fixtureRole')||'admin']}}},React.createElement(BrowserRouter,null,React.createElement(Routes,null,React.createElement(Route,{path:'/external-clusters/:id/add-node',element:React.createElement(ExternalClusterAddNode)}),React.createElement(Route,{path:'/clusters/:id/nodes',element:React.createElement(ClusterNodes)})))));` }));
     await context.route('**/api/**', route => {
       const request = route.request(), pathname = new URL(request.url()).pathname;
+      if (pathname.endsWith('/add-node/broker-review/navigation-fixture')) return route.fulfill({ json: { previewId: readiness.id, contextHash: readiness.contextHash, expiresAt: readiness.expiresAt, proposedPlan: { nodeId: 2, kafkaClusterId: 'abcdefghijklmnopqrstuv', kafkaVersion: '4.3.0' }, planDigest: 'c'.repeat(64), serviceName: 'broker.service', configPath: '/opt/tantor/kafka/config/broker.properties', executionEnabled: false, blockers: ['External execution release gate is held — TEST DATA'] } });
       if (request.method() === 'POST' && pathname.endsWith('/add-node/readiness')) { readinessPosts++; return route.fulfill({ json: readiness }); }
       if (pathname.endsWith('/add-node/readiness/navigation-fixture')) return route.fulfill({ json: readiness });
       if (request.method() !== 'GET') { mutations++; return route.fulfill({ status: 500, json: { message: 'Mutation forbidden in Phase 1' } }); }
@@ -61,7 +62,7 @@ const fs = require('node:fs');
     await page.getByRole('button', { name: 'Review selected layout', exact: true }).click();
     await page.getByRole('heading', { name: 'Review selected layout', exact: true }).waitFor();
     assert.equal(await page.getByRole('button', { name: 'Deploy broker', exact: true }).isDisabled(), true);
-    await page.getByText('Not allocated', { exact: true }).waitFor();
+    await page.getByText('2 · proposed; reserved on submission', { exact: true }).waitFor();
     await page.getByText('PASS — current read-only evidence', { exact: true }).waitFor();
     await capture('04-review-deploy-disabled-test-data.png');
     await page.getByRole('button', { name: 'Back', exact: true }).click();

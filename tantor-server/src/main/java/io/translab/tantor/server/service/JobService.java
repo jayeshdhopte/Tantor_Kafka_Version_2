@@ -18,6 +18,7 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class JobService {
+    @org.springframework.beans.factory.annotation.Autowired private ExternalBrokerAdditionGuard externalBrokerGuard;
     @org.springframework.beans.factory.annotation.Autowired private ExternalKafkaManagement externalKafka;
     @org.springframework.beans.factory.annotation.Autowired private RestartNodeDisplayService nodeDisplay;
     @org.springframework.beans.factory.annotation.Autowired private io.translab.tantor.server.repository.BrokerAdditionOperationRepository brokerAdditions;
@@ -70,6 +71,14 @@ public class JobService {
     }
 
     @Transactional
+    public void assertExternalBrokerAdditionOwnsCluster(UUID clusterId, UUID jobId) {
+        Job owner=getJob(jobId);
+        if(owner.getType()!=JobType.EXTERNAL_BROKER_ADDITION || !Objects.equals(owner.getResourceKey(),"cluster:"+clusterId) || owner.getStatus()!=JobStatus.IN_PROGRESS)
+            throw new IllegalStateException("Executing external broker operation ownership is required.");
+        lockAndCheck(owner.getResourceKey(),JobType.EXTERNAL_BROKER_ADDITION,jobId);
+    }
+
+    @Transactional
     public void assertQuorumExpansionOwnsCluster(UUID clusterId,UUID jobId) {
         Job owner=getJob(jobId);
         if(owner.getType()!=JobType.QUORUM_EXPANSION||!Objects.equals(owner.getResourceKey(),"cluster:"+clusterId)||owner.getStatus()!=JobStatus.IN_PROGRESS)
@@ -87,6 +96,7 @@ public class JobService {
         UUID clusterId = UUID.fromString(resource.substring("cluster:".length()));
         if (clusterRepository.findForServiceUpdate(clusterId).isEmpty())
             externalClusterRepository.findForServiceUpdate(clusterId);
+        if(externalBrokerGuard!=null)externalBrokerGuard.assertMutable(clusterId,excluded);
         if(brokerAdditions!=null) for(var operation:brokerAdditions.findReservedForCluster(clusterId))
             if(!Objects.equals(operation.getJobId(),excluded))
                 throw new ClusterOperationConflictException("Broker addition "+operation.getJobId()+" retains this cluster reservation. Reconcile/resume it before another mutation.");
@@ -102,7 +112,7 @@ public class JobService {
                 .filter(job -> resource.equals(job.getResourceKey()) && !Objects.equals(job.getId(), excluded)).findFirst();
         if (outstanding.isPresent()) throw new ClusterOperationConflictException("An agent task is still pending or running for job " + outstanding.get().getId() + ". Resume that job before another cluster operation.");
         for (Job other : active) {
-            if (!other.getId().equals(excluded) && (incoming == JobType.QUORUM_EXPANSION || other.getType()==JobType.QUORUM_EXPANSION || incoming == JobType.BROKER_ADDITION || other.getType()==JobType.BROKER_ADDITION || incoming == JobType.ROLLING_RESTART
+            if (!other.getId().equals(excluded) && (incoming == JobType.EXTERNAL_BROKER_ADDITION || other.getType()==JobType.EXTERNAL_BROKER_ADDITION || incoming == JobType.QUORUM_EXPANSION || other.getType()==JobType.QUORUM_EXPANSION || incoming == JobType.BROKER_ADDITION || other.getType()==JobType.BROKER_ADDITION || incoming == JobType.ROLLING_RESTART
                     || incoming == JobType.EXTERNAL_SERVICES || incoming == JobType.ROLLING_CONFIG_UPDATE
                     || incoming == JobType.CONFIG_CHANGE || incoming == JobType.TARGETED_CONFIG_CHANGE
                     || other.getType() == JobType.ROLLING_RESTART
@@ -166,6 +176,7 @@ public class JobService {
         jobRepository.findWithUnfinishedRestartTasks().forEach(job -> active.putIfAbsent(job.getId(), job));
         if(brokerAdditions!=null) brokerAdditions.findAllReserved().forEach(op->jobRepository.findById(op.getJobId()).ifPresent(job->active.putIfAbsent(job.getId(),job)));
         if(quorumExpansions!=null) quorumExpansions.findAllReserved().forEach(op->jobRepository.findById(op.getJobId()).ifPresent(job->active.putIfAbsent(job.getId(),job)));
+        if(externalBrokerGuard!=null)externalBrokerGuard.jobs().forEach(id->jobRepository.findById(id).ifPresent(job->active.putIfAbsent(id,job)));
         return active.values().stream().filter(job -> job.getResourceKey() != null &&
                         (job.getResourceKey().startsWith("cluster:") || job.getResourceKey().startsWith("external-services:")))
                 .map(job -> Map.of("id", job.getId().toString(),
@@ -183,7 +194,7 @@ public class JobService {
             return false;
         }
     }
-    private boolean retainsAddNodeOwnership(Job job){return job.getType()==JobType.BROKER_ADDITION||job.getType()==JobType.QUORUM_EXPANSION;}
+    private boolean retainsAddNodeOwnership(Job job){return job.getType()==JobType.EXTERNAL_BROKER_ADDITION||job.getType()==JobType.BROKER_ADDITION||job.getType()==JobType.QUORUM_EXPANSION;}
 
     public List<JobStep> getSteps(UUID jobId) {
         return jobStepRepository.findByJobIdOrderByStepOrderAsc(jobId);
@@ -410,6 +421,7 @@ public class JobService {
     @Transactional
     public Job retryJob(UUID id) {
         Job job = jobRepository.findForUpdateById(id).orElseThrow(() -> new IllegalArgumentException("Job not found: " + id));
+        if(job.getType()==JobType.EXTERNAL_BROKER_ADDITION)throw new IllegalStateException("External broker reconciliation/resume belongs to Phase 4. Preserve the existing operation and its receipts.");
         if (job.getType() == JobType.QUORUM_EXPANSION) {
             var operation = quorumExpansions.findByJobId(id).orElseThrow(() -> new IllegalStateException("Expansion operation ownership is missing."));
             if (operation.getState() == KafkaExpansionState.CANCELLED_SAFE)

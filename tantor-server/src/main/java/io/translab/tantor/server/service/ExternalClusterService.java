@@ -46,6 +46,7 @@ import io.translab.tantor.server.repository.ExternalClusterRepository;
 @RequiredArgsConstructor
 @Slf4j
 public class ExternalClusterService {
+    @org.springframework.beans.factory.annotation.Autowired private ExternalBrokerAdditionGuard externalBrokerGuard;
 
     private static final String EXTERNAL_MODE = "EXTERNAL";
 
@@ -583,6 +584,8 @@ public class ExternalClusterService {
         validateDiscoveryReport(report);
         report.setLastSeen(OffsetDateTime.now().toString());
         upsertDiscoveryAgent(report, null);
+        if(externalBrokerGuard!=null&&externalBrokerGuard.reservedAgent(report.getHostId()))
+            return Map.of("status","ADD_NODE_VERIFICATION_PENDING","message","Observation retained as agent heartbeat; reserved candidate membership is not published before verification.");
 
         String agentId = report.getHostId() == null || report.getHostId().isBlank() 
                 ? discoveryHostId(report) 

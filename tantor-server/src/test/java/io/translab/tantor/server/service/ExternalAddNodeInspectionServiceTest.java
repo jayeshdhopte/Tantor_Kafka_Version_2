@@ -116,6 +116,20 @@ class ExternalAddNodeInspectionServiceTest {
   }
 
   @Test
+  void reservedCandidateBlocksAnotherPreviewButAllowsItsOwnFinalChecks() {
+    var guard = mock(ExternalBrokerAdditionGuard.class);
+    org.springframework.test.util.ReflectionTestUtils.setField(
+        service, "externalBrokerGuard", guard);
+    when(guard.reservedAgentExcept(agent.getId(), null)).thenReturn(true);
+    assertEquals("BLOCKED", candidate().status());
+    UUID owner = UUID.randomUUID();
+    when(guard.reservedAgentExcept(agent.getId(), owner)).thenReturn(false);
+    assertEquals(
+        "HOST_OBSERVED",
+        service.candidates(cluster.getId(), owner).candidates().getFirst().status());
+  }
+
+  @Test
   void excludedAddressAndUnapprovedScopeBlock() {
     scope.setExcludedHostIps(List.of("192.0.2.10"));
     assertEquals("BLOCKED", candidate().status());

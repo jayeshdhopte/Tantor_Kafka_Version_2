@@ -17,6 +17,9 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 @RequiredArgsConstructor
 public class ExternalAddNodeInspectionService {
+  @org.springframework.beans.factory.annotation.Autowired
+  private ExternalBrokerAdditionGuard externalBrokerGuard;
+
   private final DiscoveryAgentRepository agents;
   private final ExternalClusterRepository clusters;
   private final ExternalClusterNodeRepository nodes;
@@ -38,7 +41,37 @@ public class ExternalAddNodeInspectionService {
       int kafkaProcessCount,
       int kafkaUnitCount,
       int discoveredProcessCount,
-      boolean executionEnabled) {
+      boolean executionEnabled,
+      boolean brokerExecutionCapable) {
+    public Observation(
+        String schemaVersion,
+        String agentId,
+        String agentVersion,
+        Instant observedAt,
+        List<String> addresses,
+        boolean root,
+        boolean inspectionEnabled,
+        boolean inventoryComplete,
+        int kafkaProcessCount,
+        int kafkaUnitCount,
+        int discoveredProcessCount,
+        boolean executionEnabled) {
+      this(
+          schemaVersion,
+          agentId,
+          agentVersion,
+          observedAt,
+          addresses,
+          root,
+          inspectionEnabled,
+          inventoryComplete,
+          kafkaProcessCount,
+          kafkaUnitCount,
+          discoveredProcessCount,
+          executionEnabled,
+          false);
+    }
+
     public Observation {
       addresses = addresses == null ? List.of() : List.copyOf(addresses);
     }
@@ -96,6 +129,11 @@ public class ExternalAddNodeInspectionService {
 
   @Transactional(readOnly = true)
   public Review candidates(UUID clusterId) {
+    return candidates(clusterId, null);
+  }
+
+  @Transactional(readOnly = true)
+  public Review candidates(UUID clusterId, UUID ownerJob) {
     var cluster =
         clusters
             .findById(clusterId)
@@ -126,6 +164,11 @@ public class ExternalAddNodeInspectionService {
     for (var agent : enrolled) {
       var report = byAgent.get(agent.getId());
       var blockers = new ArrayList<String>();
+      if (externalBrokerGuard != null
+          && externalBrokerGuard.reservedAgentExcept(agent.getId(), ownerJob))
+        blockers.add(
+            "Another external broker operation retains this candidate. Inspect or resume that"
+                + " operation before starting another preview.");
       if (!supported)
         blockers.add(
             "Initial external Add Node support requires a supported Kafka 4.x KRaft cluster.");

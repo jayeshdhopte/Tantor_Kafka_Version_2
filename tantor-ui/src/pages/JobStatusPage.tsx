@@ -378,6 +378,7 @@ export function JobStatusPage() {
   return (
     <div className="job-status-page animate-fade-in">
       {deletionDetails && <div className="job-deletion-context"><strong>{deletionDetails.force ? 'Force deletion' : 'Cluster deletion'} · {deletionDetails.clusterName || 'Cluster'}</strong><span>{deletionDetails.mode === 'EXTERNAL' ? 'External registration removal' : 'Managed cluster cleanup'} · Requested by {job?.requestedBy || 'Not recorded'}</span></div>}
+      {job.type === 'EXTERNAL_BROKER_ADDITION' && <div className="job-deletion-context" role="status"><strong>External broker addition</strong><span>Startup and verified membership are separate checkpoints. This operation retains the host and node ID until verification or recovery completes. Verification and resume are not enabled in this release.</span></div>}
       <div className="page-header-actions">
         <div className="back-nav" onClick={() => navigate('/jobs')} style={{ cursor: 'pointer' }}>
           <ArrowLeft size={16} /> 
@@ -387,7 +388,7 @@ export function JobStatusPage() {
           </div>
         </div>
         <div className="action-buttons">
-          {canManage && ['FAILED', 'PARTIAL_SUCCESS', 'ROLLBACK_FAILED'].includes(job.status) && (
+          {canManage && job.type !== 'EXTERNAL_BROKER_ADDITION' && ['FAILED', 'PARTIAL_SUCCESS', 'ROLLBACK_FAILED'].includes(job.status) && (
             <button className="btn btn-outline-primary" onClick={handleRetry} disabled={Boolean(job.configRecoveryBlockedReason)} title={job.configRecoveryBlockedReason || undefined}>
               <RefreshCw size={14} style={{ marginRight: '6px' }} /> {job.status === 'ROLLBACK_FAILED' ? 'Retry rollback' : ['ROLLING_RESTART', 'TARGETED_CONFIG_CHANGE', 'CONFIG_CHANGE', 'QUORUM_EXPANSION', 'BROKER_ADDITION'].includes(job.type) ? 'Retry / Resume' : 'Retry Job'}
             </button>

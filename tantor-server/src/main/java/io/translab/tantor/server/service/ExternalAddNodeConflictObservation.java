@@ -16,4 +16,9 @@ public class ExternalAddNodeConflictObservation {
   public void verify(UUID clusterId) {
     jobs.assertClusterMutable(clusterId);
   }
+
+  @Transactional(propagation = Propagation.REQUIRES_NEW)
+  public void verifyOwned(UUID clusterId, UUID jobId) {
+    jobs.assertExternalBrokerAdditionOwnsCluster(clusterId, jobId);
+  }
 }

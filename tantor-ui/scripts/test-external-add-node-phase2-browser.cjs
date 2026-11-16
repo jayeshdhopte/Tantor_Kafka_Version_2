@@ -13,7 +13,7 @@ const path = require('node:path');
  const context=await browser.newContext({viewport:{width:1440,height:1100}});
  const results=[];let mode='FAIL',posts=0,otherMutations=0,body,preview;
  const check=(code,status,observed)=>({code,name:code==='C15'?'Package SHA-256':'Live readiness observation',status,expected:'Current measured evidence',observed,remedy:status==='PASS'?'':'Resolve the difference and rerun checks.'});
- const newPreview=()=>({id:'preview-fixture',status:mode==='FAIL'?'BLOCKED':'PASS',expiresAt:new Date(Date.now()+(mode==='EXPIRED'?500:120000)).toISOString(),checks:[check('C01','PASS','Existing cluster ID verified'),check('C15',mode==='FAIL'?'FAIL':'PASS',mode==='FAIL'?'Checksum mismatch — TEST DATA':'Approved SHA-256 verified — TEST DATA')],deploymentEnabled:false});
+ const newPreview=()=>({id:'preview-fixture',contextHash:'a'.repeat(64),status:mode==='FAIL'?'BLOCKED':'PASS',expiresAt:new Date(Date.now()+(mode==='EXPIRED'?500:120000)).toISOString(),checks:[check('C01','PASS','Existing cluster ID verified'),check('C15',mode==='FAIL'?'FAIL':'PASS',mode==='FAIL'?'Checksum mismatch — TEST DATA':'Approved SHA-256 verified — TEST DATA')],deploymentEnabled:false});
  try {
   await context.route('**/src/main.tsx*',route=>route.fulfill({contentType:'application/javascript',body:`import '/src/index.css';import React from '${react}';import ReactDOM from '${react.replace('/react.js','/react-dom_client.js')}';import{BrowserRouter,Routes,Route}from '${router}';import{AuthContext}from '/src/contexts/authContextDef.ts';import{ExternalClusterAddNode}from '/src/pages/ExternalClusterAddNode.tsx';ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(AuthContext.Provider,{value:{decodedToken:{roles:['admin']}}},React.createElement(BrowserRouter,null,React.createElement(Routes,null,React.createElement(Route,{path:'/external-clusters/:id/add-node',element:React.createElement(ExternalClusterAddNode)})))));`}));
   await context.route('**/api/**',async route=>{
@@ -21,6 +21,7 @@ const path = require('node:path');
    if(request.method()==='POST'&&url.pathname.endsWith('/add-node/readiness')) {
     posts++;body=request.postDataJSON();preview=newPreview();return route.fulfill({json:preview});
    }
+   if(url.pathname.endsWith('/add-node/broker-review/preview-fixture'))return route.fulfill({json:{previewId:preview.id,contextHash:preview.contextHash,expiresAt:preview.expiresAt,proposedPlan:{nodeId:2,kafkaClusterId:'existing-kafka-id',kafkaVersion:'4.3.0'},planDigest:'c'.repeat(64),serviceName:'broker.service',configPath:'/opt/tantor/kafka/config/broker.properties',executionEnabled:false,blockers:['External execution release gate is held — TEST DATA']}});
    if(request.method()!=='GET'){otherMutations++;return route.fulfill({status:500,json:{message:'Unexpected mutation'}});}
    if(url.pathname.endsWith('/jobs/active-clusters'))return route.fulfill({json:[]});
    if(url.pathname.endsWith('/add-node/readiness/preview-fixture'))return route.fulfill({json:mode==='STALE'?{...preview,status:'STALE'}:preview});

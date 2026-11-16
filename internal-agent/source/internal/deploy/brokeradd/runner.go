@@ -49,6 +49,12 @@ func Digest(plan, properties string) string {
 func Run(ctx context.Context, command, hostID, base string, params map[string]string, exec executor.Executor, artifacts *client.APIClient) (string, error) {
 	return run(ctx, command, hostID, base, params, exec, "/etc/tantor-kafka/add-broker", "/etc/systemd/system", artifacts.DownloadArtifactByID)
 }
+
+// RunWithDownloader shares the exact broker ownership/format/start implementation
+// with the external adapter. The caller supplies only an approved artifact-ID downloader.
+func RunWithDownloader(ctx context.Context, command, hostID, base string, params map[string]string, exec executor.Executor, download func(string, string) (string, error)) (string, error) {
+	return run(ctx, command, hostID, base, params, exec, "/etc/tantor-kafka/add-broker", "/etc/systemd/system", download)
+}
 func run(ctx context.Context, command, hostID, base string, params map[string]string, exec executor.Executor, configRoot, unitRoot string, downloaders ...func(string, string) (string, error)) (string, error) {
 	p, err := readiness.ValidateBrokerPlan(params["broker_plan"], hostID)
 	if err != nil {
