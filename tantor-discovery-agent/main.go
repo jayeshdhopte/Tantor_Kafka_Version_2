@@ -9,12 +9,13 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
 )
 
-var buildVersion = "3.4.0-dataservices.2-configchange.10-backupintegrity.1-rollingrestart.4-logging.1-paths.1-cleanup.1-plugins.2-schema.1"
+var buildVersion = "3.4.0-dataservices.2-configchange.10-backupintegrity.1-rollingrestart.4-logging.1-paths.1-cleanup.1-plugins.2-schema.1-an.1"
 var buildCommit = "unknown"
 
 func newLogger(level string) *slog.Logger {
@@ -71,6 +72,10 @@ func main() {
 	}
 	defer logFile.Close()
 	logger := newLoggerOutput(cfg.LogLevel, logFile)
+	if err := validateAddNodeInspectionMode(cfg, os.Geteuid(), runtime.GOOS); err != nil {
+		logger.Error("Add Node inspection configuration rejected", "error", err)
+		os.Exit(2)
+	}
 	if cfg.EnableServiceDeployment && os.Geteuid() != 0 {
 		logger.Error("service deployment requires a root-run Discovery agent; monitoring-only use remains supported")
 		os.Exit(2)
@@ -114,6 +119,12 @@ func main() {
 	clusters := runDiscovery(ctx, client, cfg, logger)
 	store.Set(clusters)
 	if cfg.Once {
+		if cfg.EnableAddNodeInspection {
+			if err := publishAddNodeInspection(ctx, client, cfg, clusters); err != nil {
+				logger.Error("Add Node host inspection failed", "error", err)
+				os.Exit(2)
+			}
+		}
 		return
 	}
 
@@ -122,6 +133,10 @@ func main() {
 		go runManagedPoller(ctx, client, cfg, store, logger)
 	}
 	go runMetricsLoop(ctx, client, cfg, store, logger)
+	if cfg.EnableAddNodeInspection {
+		go runAddNodeInspectionLoop(ctx, client, cfg, store, logger)
+		go runAddNodeReadinessTasks(ctx, client, cfg, logger)
+	}
 	if cfg.EnableServiceDeployment {
 		go runServicePoller(ctx, client, cfg, store, logger)
 	}

@@ -12,6 +12,7 @@ import (
 )
 
 type ExternalClusterPayload struct {
+	IpAddresses         string            `json:"ipAddresses,omitempty"`
 	DataServicePaths    []DataServicePath `json:"dataServicePaths"`
 	HostID              string            `json:"hostId"`
 	AgentName           string            `json:"agentName"`

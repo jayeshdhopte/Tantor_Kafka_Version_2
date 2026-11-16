@@ -45,6 +45,7 @@ type RuntimeConfig struct {
 	InsecureSkipVerify      bool
 	BackupRoot              string
 	EnableTasks             bool
+	EnableAddNodeInspection bool
 	EnableServiceDeployment bool
 	ServiceStateDir         string
 	AllowConfigWrite        bool
@@ -202,6 +203,7 @@ func LoadRuntimeConfig(args []string) (RuntimeConfig, error) {
 	insecure := fs.Bool("insecure-skip-verify", envBool("TANTOR_AGENT_INSECURE_SKIP_VERIFY", false), "Disable TLS certificate verification (not recommended)")
 	backupRoot := fs.String("backup-root", env("TANTOR_AGENT_BACKUP_ROOT", "/var/lib/tantor-agent/backups"), "Agent-controlled backup root")
 	enableTasks := fs.Bool("enable-tasks", envBool("TANTOR_AGENT_ENABLE_TASKS", false), "Enable server task polling")
+	enableAddNodeInspection := fs.Bool("enable-add-node-inspection", envBool("TANTOR_AGENT_ENABLE_ADD_NODE_INSPECTION", false), "Opt in to read-only Add Node host inspection; Kafka deployment is not enabled")
 	enableServices := fs.Bool("enable-service-deployment", envBool("TANTOR_AGENT_ENABLE_SERVICE_DEPLOYMENT", false), "Allow Schema Registry/Connect deployment as root")
 	serviceState := fs.String("service-state-dir", env("TANTOR_AGENT_SERVICE_STATE_DIR", "/var/lib/tantor-discovery-agent/services"), "Private service task journal and artifact cache")
 	allowConfigWrite := fs.Bool("allow-config-write", envBool("TANTOR_AGENT_ALLOW_CONFIG_WRITE", false), "Allow server-requested Kafka config changes")
@@ -250,6 +252,7 @@ func LoadRuntimeConfig(args []string) (RuntimeConfig, error) {
 		BackupRoot:              strings.TrimSpace(*backupRoot),
 		EnableTasks:             *enableTasks,
 		EnableServiceDeployment: *enableServices,
+		EnableAddNodeInspection: *enableAddNodeInspection,
 		ServiceStateDir:         *serviceState,
 		AllowConfigWrite:        *allowConfigWrite,
 		AllowServiceRestart:     *allowRestart,
