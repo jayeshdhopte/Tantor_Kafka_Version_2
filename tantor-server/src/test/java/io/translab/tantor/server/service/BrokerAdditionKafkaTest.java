@@ -37,4 +37,15 @@ class BrokerAdditionKafkaTest {
   when(plan.brokerRack()).thenReturn("rack2");when(plan.dataPaths()).thenReturn(List.of("/data/broker"));when(plan.metadataPath()).thenReturn("");when(plan.quorumMode()).thenReturn("STATIC");when(plan.quorumVoters()).thenReturn("101@192.0.2.10:9093");
   String properties=service.properties(cluster,plan);assertTrue(properties.contains("broker.rack=rack2\n"));assertFalse(properties.contains("broker.rack=rack1\n"));
  }
+ @Test void externalPublicationRequiresCompleteHealthIncludingLogDirectoriesAndLeader() {
+  brokers(List.of(new Node(1,"192.0.2.10",9092),new Node(4,"192.0.2.20",9092)));
+  assertThrows(IllegalStateException.class,()->service.verifyExternal(cluster,payload(baseline),Map.of()));
+  var all=List.of("C01","C02","C03","C05","C06","C07","C08","B09").stream().map(code->new Check(code,"health","COMMON","PASS","expected","observed","",Instant.now(),"KAFKA")).toList();
+  when(health.observe(eq(cluster),anyMap())).thenReturn(new AddNodeKafkaReadiness.Observation(all,Set.of(),List.of(),List.of(),"STATIC"));
+  assertTrue(service.verifyExternal(cluster,payload(baseline),Map.of()).contains("unfenced broker 4"));
+  var failed=all.stream().map(c->"C05".equals(c.code())?new Check(c.code(),c.name(),"COMMON","FAIL","expected","bad log directory","",Instant.now(),"KAFKA"):c).toList();
+  when(health.observe(eq(cluster),anyMap())).thenReturn(new AddNodeKafkaReadiness.Observation(failed,Set.of(),List.of(),List.of(),"STATIC"));
+  assertThrows(IllegalStateException.class,()->service.verifyExternal(cluster,payload(baseline),Map.of()));
+ }
+
 }

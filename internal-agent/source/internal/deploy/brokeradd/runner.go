@@ -124,7 +124,17 @@ func run(ctx context.Context, command, hostID, base string, params map[string]st
 	if command == "INSPECT_ADD_BROKER" {
 		if os.IsNotExist(readErr) {
 			receipt.Phase = "ABSENT"
-		} else if receipt.Phase != "CLAIMED" {
+		} else if receipt.Phase == "CLAIMED" {
+			for file, content := range map[string]string{configPath: properties, unitPath: unitContent(p, configPath, dir, options), filepath.Join(filepath.Dir(configPath), "log4j2.xml"): logrotation.KafkaLog4j2(p.LogPath, unitName+".log")} {
+				if _, e := os.Lstat(file); e == nil {
+					if e = exactFile(file, content); e != nil {
+						return "", e
+					}
+				} else if !os.IsNotExist(e) {
+					return "", e
+				}
+			}
+		} else {
 			if err = exactFile(configPath, properties); err != nil {
 				return "", err
 			}
@@ -394,6 +404,17 @@ func runtimeDirectory(ctx context.Context, path, user string, exec executor.Exec
 	}
 	return nil
 }
+
+// EmptyStorage observes all intended storage without deleting or formatting it.
+func EmptyStorage(p readiness.BrokerPlan) bool {
+	for _, path := range storagePaths(p) {
+		if empty(path) != nil {
+			return false
+		}
+	}
+	return true
+}
+
 func storageState(p readiness.BrokerPlan) string {
 	matches, missing := 0, 0
 	identities := map[string]bool{}

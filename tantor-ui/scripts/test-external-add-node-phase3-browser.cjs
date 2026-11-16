@@ -15,6 +15,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
    if(r.method()==='POST'&&url.pathname.endsWith('/add-node/broker-operations')){submissions++;submitted=r.postDataJSON();return route.fulfill({status:503,json:{message:'Simulated lost submission response — TEST DATA'}});}
    assert.equal(r.method(),'GET','Unexpected mutation');
    if(url.pathname.includes('/broker-operations/request/')){lookups++;assert(url.pathname.endsWith(submitted.requestKey));return route.fulfill({json:{operationId:'operation-fixture',jobId:'job-fixture',state:'STARTED_PENDING_VERIFICATION'}});}
+   if(url.pathname.endsWith('/broker-operations/operation-fixture'))return route.fulfill({json:{operationId:'operation-fixture',jobId:'job-fixture',state:'STARTED_PENDING_VERIFICATION'}});
    if(url.pathname.endsWith('/broker-review/preview'))return route.fulfill({json:{previewId:'preview',contextHash:readiness.contextHash,expiresAt:readiness.expiresAt,planDigest:'c'.repeat(64),proposedPlan:{nodeId:3,kafkaClusterId:'DcrFbOf_S7WbFGoCwifutA',kafkaVersion:'4.3.0'},serviceName:'broker.service',configPath:'/opt/tantor/kafka/config/broker.properties',executionEnabled:released,blockers:released?[]:['Phase 2 acceptance and release gate held — TEST DATA']}});
    if(url.pathname.endsWith('/readiness/preview'))return route.fulfill({json:readiness});
    if(url.pathname.endsWith('/jobs/active-clusters'))return route.fulfill({json:[]});

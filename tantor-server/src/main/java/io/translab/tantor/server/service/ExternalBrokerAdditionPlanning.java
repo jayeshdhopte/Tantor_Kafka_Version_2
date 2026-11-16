@@ -39,7 +39,23 @@ public class ExternalBrokerAdditionPlanning {
       BrokerAdditionLedger.RuntimeOptions runtime,
       String voterBaseline,
       String artifactId,
-      String digest) {}
+      String digest,
+      String bindingHash) {
+    public Payload(
+        ExternalAddNodeReadinessService.Request request,
+        BrokerAdditionPlan plan,
+        String properties,
+        BrokerAdditionLedger.RuntimeOptions runtime,
+        String voterBaseline,
+        String artifactId,
+        String digest) {
+      this(request, plan, properties, runtime, voterBaseline, artifactId, digest, "");
+    }
+
+    public Payload {
+      bindingHash = Objects.toString(bindingHash, "");
+    }
+  }
 
   public record Review(
       UUID previewId,
@@ -172,7 +188,16 @@ public class ExternalBrokerAdditionPlanning {
     String digest =
         BrokerAdditionLedger.hash(json(plan) + "\n" + properties + "\n" + json(runtime));
     return new Frozen(
-        preview, new Payload(r, plan, properties, runtime, baseline, artifact.id(), digest));
+        preview,
+        new Payload(
+            r,
+            plan,
+            properties,
+            runtime,
+            baseline,
+            artifact.id(),
+            digest,
+            readiness.executionBinding(clusterId, r)));
   }
 
   public Map<String, String> parameters(Payload payload) {
@@ -188,11 +213,8 @@ public class ExternalBrokerAdditionPlanning {
   }
 
   public void assertCurrent(UUID clusterId, Payload p) {
-    requireRelease();
-    if (p.runtime().limitNofile() != deployment.getLimitNofile())
-      throw conflict("Broker runtime policy changed after review.");
+    assertBinding(clusterId, p);
     readiness.assertExecutionScope(clusterId, p.plan().hostId());
-    readiness.assertContext(clusterId, p.request(), p.plan().contextHash());
     var snapshot = external.resolve(clusterId);
     snapshot.setKafkaClusterId(p.plan().kafkaClusterId());
     if (!p.voterBaseline().equals(kafka.voterBaseline(snapshot))
@@ -209,6 +231,18 @@ public class ExternalBrokerAdditionPlanning {
                 artifacts
                     .resolveType("JMX_EXPORTER", null, p.runtime().jmxArtifactId())
                     .checksum())) throw conflict("Approved monitoring payload changed.");
+  }
+
+  void assertBinding(UUID clusterId, Payload p) {
+    requireRelease();
+    if (p.runtime().limitNofile() != deployment.getLimitNofile())
+      throw conflict("Broker runtime policy changed after review.");
+    if (!p.bindingHash().matches("[a-f0-9]{64}"))
+      throw conflict(
+          "Legacy broker operation lacks a stable recovery binding. Preserve it for explicit"
+              + " migration/review.");
+    if (!p.bindingHash().equals(readiness.executionBinding(clusterId, p.request())))
+      throw conflict("Frozen participant, candidate or connection binding changed.");
   }
 
   public String json(Object value) {

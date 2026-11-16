@@ -187,6 +187,7 @@ class ExternalBrokerAdditionTest {
         new ExternalBrokerAdditionLedger.Operation(
             id, cluster, "candidate", job.getId(), 3, "ACCEPTED", null, null, payload(id));
     when(ledger.forJob(job.getId())).thenReturn(op);
+    when(ledger.get(id)).thenReturn(op);
     var steps = new ArrayList<JobStep>();
     for (int i = 0; i < 5; i++) {
       var s = new JobStep();
@@ -207,41 +208,136 @@ class ExternalBrokerAdditionTest {
                 "BLOCKED",
                 List.of(),
                 false));
-    var handler = new ExternalBrokerAdditionJobHandler(ledger, planning, ready, jobs);
+    var handler =
+        new ExternalBrokerAdditionJobHandler(
+            ledger,
+            planning,
+            ready,
+            jobs,
+            mock(ExternalBrokerRecoveryService.class),
+            mock(ExternalBrokerVerification.class));
     assertThrows(IllegalStateException.class, () -> handler.execute(job));
-    verify(ledger).recovery(id);
-    verify(ledger, never()).dispatch(any(), any(), anyString(), anyString());
+    verify(ledger).recovery(id, 0);
+    verify(ledger, never()).dispatch(any(), any(), anyString(), anyString(), anyInt());
   }
 
   @Test
-  void phase3CheckpointCannotBecomeJobSuccessOrReplayWork() {
+  void failedStartedInspectionNeverReplaysFormatOrStart() {
     var ledger = mock(ExternalBrokerAdditionLedger.class);
     var planning = mock(ExternalBrokerAdditionPlanning.class);
     var ready = mock(ExternalAddNodeReadinessService.class);
     var jobs = mock(JobService.class);
+    var recovery = mock(ExternalBrokerRecoveryService.class);
+    var verification = mock(ExternalBrokerVerification.class);
     var job = new Job();
     job.setId(UUID.randomUUID());
     job.setType(JobType.EXTERNAL_BROKER_ADDITION);
     job.setStatus(JobStatus.IN_PROGRESS);
-    var id = UUID.randomUUID();
-    when(ledger.forJob(job.getId()))
+    UUID id = UUID.randomUUID();
+    var op =
+        new ExternalBrokerAdditionLedger.Operation(
+            id,
+            UUID.randomUUID(),
+            "candidate",
+            job.getId(),
+            3,
+            "STARTED_PENDING_VERIFICATION",
+            null,
+            null,
+            payload(id));
+    when(ledger.forJob(job.getId())).thenReturn(op);
+    when(ledger.get(id)).thenReturn(op);
+    var steps = new ArrayList<JobStep>();
+    for (int i = 0; i < 5; i++) {
+      var step = new JobStep();
+      step.setId(UUID.randomUUID());
+      step.setJob(job);
+      steps.add(step);
+    }
+    when(jobs.getSteps(job.getId())).thenReturn(steps);
+    when(ledger.dispatch(id, steps.get(4).getId(), "INSPECT_ADD_BROKER", "RECONCILING", 0))
         .thenReturn(
-            new ExternalBrokerAdditionLedger.Operation(
-                id,
-                UUID.randomUUID(),
-                "candidate",
-                job.getId(),
-                3,
-                "STARTED_PENDING_VERIFICATION",
-                null,
-                null,
-                payload(id)));
-    var handler = new ExternalBrokerAdditionJobHandler(ledger, planning, ready, jobs);
-    when(jobs.getJob(job.getId())).thenReturn(job);
-    new JobExecutor(jobs, List.of(handler)).execute(job.getId(), false);
-    verify(jobs).updateJobStatus(job.getId(), JobStatus.PARTIAL_SUCCESS);
-    verify(jobs, never()).updateJobStatus(job.getId(), JobStatus.SUCCESS);
-    verifyNoInteractions(ready, planning);
-    verify(ledger, never()).dispatch(any(), any(), anyString(), anyString());
+            new ExternalBrokerAdditionLedger.TaskView(
+                UUID.randomUUID(), "INSPECT_ADD_BROKER", "FAILED", null));
+    assertThrows(
+        IllegalStateException.class,
+        () ->
+            new ExternalBrokerAdditionJobHandler(
+                    ledger, planning, ready, jobs, recovery, verification)
+                .execute(job));
+    verify(ledger, never()).dispatch(any(), any(), eq("FORMAT_ADD_BROKER"), anyString(), anyInt());
+    verify(ledger, never()).dispatch(any(), any(), eq("START_ADD_BROKER"), anyString(), anyInt());
+    verifyNoInteractions(ready, verification);
+  }
+
+  @Test
+  void resumedStartedBrokerIsVerifiedAndPublishedWithoutReplayingMutations() {
+    var ledger = mock(ExternalBrokerAdditionLedger.class);
+    var planning = mock(ExternalBrokerAdditionPlanning.class);
+    var ready = mock(ExternalAddNodeReadinessService.class);
+    var jobs = mock(JobService.class);
+    var recovery = mock(ExternalBrokerRecoveryService.class);
+    var verification = mock(ExternalBrokerVerification.class);
+    var job = new Job();
+    job.setId(UUID.randomUUID());
+    job.setType(JobType.EXTERNAL_BROKER_ADDITION);
+    job.setStatus(JobStatus.IN_PROGRESS);
+    UUID id = UUID.randomUUID();
+    var op =
+        new ExternalBrokerAdditionLedger.Operation(
+            id,
+            UUID.randomUUID(),
+            "candidate",
+            job.getId(),
+            3,
+            "STARTED_PENDING_VERIFICATION",
+            null,
+            null,
+            payload(id),
+            1);
+    when(ledger.forJob(job.getId())).thenReturn(op);
+    when(ledger.get(id)).thenReturn(op);
+    var steps = new ArrayList<JobStep>();
+    for (int i = 0; i < 5; i++) {
+      var step = new JobStep();
+      step.setId(UUID.randomUUID());
+      step.setJob(job);
+      steps.add(step);
+    }
+    when(jobs.getSteps(job.getId())).thenReturn(steps);
+    var task =
+        new ExternalBrokerAdditionLedger.TaskView(
+            UUID.randomUUID(), "INSPECT_ADD_BROKER", "SUCCESS", "fixture");
+    when(ledger.dispatch(
+            eq(id), eq(steps.get(4).getId()), eq("INSPECT_ADD_BROKER"), anyString(), eq(1)))
+        .thenReturn(task);
+    when(ledger.result(task))
+        .thenAnswer(
+            call ->
+                new ExternalBrokerAdditionLedger.Result(
+                    UUID.randomUUID(),
+                    "SUCCESS",
+                    ExternalBrokerRecoveryTest.receipt(op, Instant.now()),
+                    null));
+    when(recovery.reconciled(id, 1, task.id())).thenReturn("STARTED_PENDING_VERIFICATION");
+    when(verification.sample(eq(op), any()))
+        .thenAnswer(
+            call ->
+                new ExternalBrokerVerification.Sample(
+                    Instant.now(), "healthy", call.getArgument(1)));
+    doAnswer(
+            call -> {
+              ExternalBrokerVerification.validate(op, call.getArgument(2));
+              return null;
+            })
+        .when(recovery)
+        .verified(eq(id), eq(1), any());
+    new ExternalBrokerAdditionJobHandler(ledger, planning, ready, jobs, recovery, verification)
+        .execute(job);
+    verify(recovery).publish(id, 1, steps.get(4).getId());
+    verify(verification, times(3)).sample(eq(op), any());
+    verify(ledger, never()).dispatch(any(), any(), eq("FORMAT_ADD_BROKER"), anyString(), anyInt());
+    verify(ledger, never()).dispatch(any(), any(), eq("START_ADD_BROKER"), anyString(), anyInt());
+    verifyNoInteractions(ready);
   }
 }

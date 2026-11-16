@@ -6,10 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io.translab/tantor-agent/internal/deploy/brokeradd"
+	"io.translab/tantor-agent/internal/deploy/layout"
 	"io.translab/tantor-agent/internal/deploy/readiness"
 	"io.translab/tantor-agent/internal/executor"
 	"os"
+	"path/filepath"
 	"runtime"
+	"strings"
+	"time"
 )
 
 func Run(ctx context.Context, command, hostID, stateDir string, params map[string]string, download func(string, string) (string, error)) (string, error) {
@@ -38,8 +42,48 @@ func Run(ctx context.Context, command, hostID, stateDir string, params map[strin
 		if err := readiness.ValidateBrokerPayload(ctx, plan); err != nil {
 			return "", err
 		}
-		proof, _ := json.Marshal(map[string]any{"schemaVersion": "add-broker/v1", "operationId": plan.OperationID, "hostId": hostID, "contextHash": plan.ContextHash, "planDigest": params["plan_digest"], "payloadVerified": true, "rootMutationSupported": true, "supportedActions": []string{"PREPARE_ADD_BROKER", "FORMAT_ADD_BROKER", "START_ADD_BROKER", "INSPECT_ADD_BROKER"}})
+		proof, _ := json.Marshal(map[string]any{"schemaVersion": "add-broker/v1", "operationId": plan.OperationID, "hostId": hostID, "contextHash": plan.ContextHash, "planDigest": params["plan_digest"], "observedAt": time.Now().UTC(), "payloadVerified": true, "rootMutationSupported": true, "supportedActions": []string{"PREPARE_ADD_BROKER", "FORMAT_ADD_BROKER", "START_ADD_BROKER", "INSPECT_ADD_BROKER"}})
 		return string(proof), nil
 	}
-	return brokeradd.RunWithDownloader(ctx, command, hostID, stateDir, params, executor.New(executor.Options{PrivilegeMode: "direct"}), download)
+	proof, err := brokeradd.RunWithDownloader(ctx, command, hostID, stateDir, params, executor.New(executor.Options{PrivilegeMode: "direct"}), download)
+	if err != nil || command != "INSPECT_ADD_BROKER" {
+		return proof, err
+	}
+	var report map[string]any
+	if json.Unmarshal([]byte(proof), &report) != nil {
+		return "", fmt.Errorf("invalid owned receipt")
+	}
+	complete, active := observeFormatter("/proc", filepath.Join(plan.DeploymentSettings.ConfigDirectory, "broker.properties"))
+	report["formatterObservationComplete"] = complete
+	report["formatterActive"] = active
+	report["storageEmpty"] = brokeradd.EmptyStorage(plan)
+	report["runtimeVerified"] = false
+	if report["phase"] != "ABSENT" && report["phase"] != "CLAIMED" {
+		if err := readiness.ValidateBrokerPayload(ctx, plan); err != nil {
+			return "", err
+		}
+		if err := layout.VerifyRuntime(ctx, filepath.Join(plan.ParcelDir, "kafka", plan.KafkaVersion), plan.InstallPath); err != nil {
+			return "", err
+		}
+		report["runtimeVerified"] = true
+	}
+	report["processVerified"] = false
+	if report["serviceActive"] == true {
+		exec := executor.New(executor.Options{PrivilegeMode: "direct"})
+		pid, _, err := exec.Run(ctx, "systemctl", "show", "--property=MainPID", "--value", plan.ServiceName()+".service")
+		if err != nil {
+			return "", err
+		}
+		if err := verifyBrokerProcess("/proc", pid, filepath.Join(plan.DeploymentSettings.ConfigDirectory, "broker.properties"), plan.JavaHome, plan.InstallPath, plan.HeapXmx); err != nil {
+			return "", err
+		}
+		after, _, err := exec.Run(ctx, "systemctl", "show", "--property=MainPID", "--value", plan.ServiceName()+".service")
+		if err != nil || strings.TrimSpace(pid) != strings.TrimSpace(after) {
+			return "", fmt.Errorf("broker process changed during inspection")
+		}
+		report["processVerified"] = true
+	}
+	report["observedAt"] = time.Now().UTC()
+	encoded, err := json.Marshal(report)
+	return string(encoded), err
 }

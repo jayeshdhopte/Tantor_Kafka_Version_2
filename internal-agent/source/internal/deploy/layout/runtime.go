@@ -3,10 +3,106 @@ package layout
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 )
+
+// VerifyRuntime observes installed bin/libs without repairing or creating files.
+func VerifyRuntime(ctx context.Context, source, destination string) error {
+	if err := CheckDirectory(source); err != nil {
+		return err
+	}
+	if err := CheckDirectory(destination); err != nil {
+		return err
+	}
+	seen := map[string]bool{}
+	count := 0
+	var total int64
+	for _, dir := range []string{"bin", "libs"} {
+		if err := filepath.WalkDir(filepath.Join(source, dir), func(p string, e os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			count++
+			if count > 100000 {
+				return fmt.Errorf("runtime exceeds inspection bound")
+			}
+			rel, err := filepath.Rel(source, p)
+			if err != nil {
+				return err
+			}
+			target := filepath.Join(destination, rel)
+			seen[target] = true
+			a, err := os.Lstat(p)
+			if err != nil {
+				return err
+			}
+			b, err := os.Lstat(target)
+			if err != nil {
+				return err
+			}
+			if a.Mode()&os.ModeSymlink != 0 || b.Mode()&os.ModeSymlink != 0 || a.IsDir() != b.IsDir() {
+				return fmt.Errorf("foreign runtime entry")
+			}
+			if a.IsDir() {
+				return nil
+			}
+			if !a.Mode().IsRegular() || !b.Mode().IsRegular() || a.Size() != b.Size() || a.Size() > 256*1024*1024 {
+				return fmt.Errorf("runtime file identity differs")
+			}
+			total += a.Size()
+			if total > 2*1024*1024*1024 {
+				return fmt.Errorf("runtime inspection exceeds byte bound")
+			}
+			hash := func(path string) ([32]byte, error) {
+				var sum [32]byte
+				f, err := os.Open(path)
+				if err != nil {
+					return sum, err
+				}
+				defer f.Close()
+				h := sha256.New()
+				_, err = io.Copy(h, io.LimitReader(f, 256*1024*1024+1))
+				copy(sum[:], h.Sum(nil))
+				return sum, err
+			}
+			ah, err := hash(p)
+			if err != nil {
+				return err
+			}
+			bh, err := hash(target)
+			if err != nil {
+				return err
+			}
+			if ah != bh || a.Mode().Perm()&0111 != b.Mode().Perm()&0111 {
+				return fmt.Errorf("installed runtime differs from approved payload")
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+	for _, dir := range []string{"bin", "libs"} {
+		if err := filepath.WalkDir(filepath.Join(destination, dir), func(p string, e os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if !seen[p] {
+				return fmt.Errorf("unexpected installed runtime entry")
+			}
+			return ctx.Err()
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // CheckDirectory rejects symlinks and special ancestors before any mutation.
 func CheckDirectory(p string) error {

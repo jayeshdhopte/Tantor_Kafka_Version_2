@@ -2,6 +2,8 @@
 
 16 November 2026: implementation and automated validation; **not deployed, not live-accepted, not a complete broker-only release**. The latest read-only inventory check on 194 still found no connected external cluster. The user will deploy Kafka. Both backend release flags remain false by default; no running agent, Kafka service or application database was replaced/migrated by this development.
 
+Current source has advanced to [Phase 4 verification/recovery](external-add-node-phase4.md). The following is the historical Phase 3 contract and validation record.
+
 ## Scope and release boundary
 
 The external wizard supports broker-only preparation/startup for the explicitly supported PLAINTEXT KRaft adapters. Controller and separate-process selections remain disabled. The final external agent source keeps existing feature compatibility prefixes and adds `-an.2`; earlier `-an.1` agents remain inspection-only.

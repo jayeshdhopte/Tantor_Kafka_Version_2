@@ -17,6 +17,7 @@ import (
 const externalBrokerTasksAPI = "/api/v1/ui/external-clusters/discovery/add-broker-tasks/"
 
 type externalBrokerTask struct {
+	ExpiresAt  time.Time         `json:"expiresAt"`
 	ID         string            `json:"id"`
 	Command    string            `json:"command"`
 	ClaimToken string            `json:"claimToken"`
@@ -38,15 +39,15 @@ func pollExternalBrokerTask(ctx context.Context, client *APIClient, cfg RuntimeC
 	if task.ID == "" {
 		return nil
 	}
-	taskCtx, cancel := context.WithTimeout(ctx, 180*time.Second)
-	defer cancel()
-	download := func(id, dest string) (string, error) {
-		if !regexp.MustCompile(`^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$`).MatchString(id) {
-			return "", fmt.Errorf("approved artifact ID required")
+	proof, err := withBrokerLease(ctx, task.ExpiresAt, func(taskCtx context.Context) (string, error) {
+		download := func(id, dest string) (string, error) {
+			if !regexp.MustCompile(`^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$`).MatchString(id) {
+				return "", fmt.Errorf("approved artifact ID required")
+			}
+			return (serviceDownloader{client: client, ctx: taskCtx}).DownloadArtifact(client.endpoint("/api/v1/artifacts/"+id+"/download"), dest)
 		}
-		return (serviceDownloader{client: client, ctx: taskCtx}).DownloadArtifact(client.endpoint("/api/v1/artifacts/"+id+"/download"), dest)
-	}
-	proof, err := addnodebroker.Run(taskCtx, task.Command, cfg.HostID, "/var/lib/tantor-discovery-agent/add-node", task.Parameters, download)
+		return addnodebroker.Run(taskCtx, task.Command, cfg.HostID, "/var/lib/tantor-discovery-agent/add-node", task.Parameters, download)
+	})
 	result := map[string]any{"claimToken": task.ClaimToken, "status": "SUCCESS", "report": json.RawMessage(proof)}
 	if err != nil {
 		result["status"] = "FAILED"
@@ -78,4 +79,19 @@ func runExternalBrokerTasks(ctx context.Context, client *APIClient, cfg RuntimeC
 		case <-ticker.C:
 		}
 	}
+}
+
+// No native action or download begins without a current absolute execution lease.
+func withBrokerLease(ctx context.Context, expires time.Time, action func(context.Context) (string, error)) (string, error) {
+	if expires.IsZero() || !expires.After(time.Now()) {
+		return "", fmt.Errorf("missing or expired broker task lease")
+	}
+	taskCtx, cancel := context.WithTimeout(ctx, 180*time.Second)
+	defer cancel()
+	leased, stop := context.WithDeadline(taskCtx, expires)
+	defer stop()
+	if err := leased.Err(); err != nil {
+		return "", err
+	}
+	return action(leased)
 }

@@ -33,7 +33,21 @@ public class ExternalBrokerAdditionLedger {
       String state,
       UUID finalPreviewId,
       String error,
-      ExternalBrokerAdditionPlanning.Payload payload) {}
+      ExternalBrokerAdditionPlanning.Payload payload,
+      int generation) {
+    public Operation(
+        UUID id,
+        UUID clusterId,
+        String agentId,
+        UUID jobId,
+        int nodeId,
+        String state,
+        UUID finalPreviewId,
+        String error,
+        ExternalBrokerAdditionPlanning.Payload payload) {
+      this(id, clusterId, agentId, jobId, nodeId, state, finalPreviewId, error, payload, 0);
+    }
+  }
 
   public record Accepted(UUID operationId, UUID jobId, String state) {}
 
@@ -229,7 +243,13 @@ public class ExternalBrokerAdditionLedger {
 
   @Transactional
   public void validating(UUID id) {
+    validating(id, get(id).generation());
+  }
+
+  @Transactional
+  public void validating(UUID id, int generation) {
     var op = owned(id);
+    fence(op, generation);
     if (!Set.of("ACCEPTED", "VALIDATING").contains(op.state()))
       throw conflict("Operation cannot restart final checks without reconciliation.");
     jdbc.update(
@@ -239,7 +259,13 @@ public class ExternalBrokerAdditionLedger {
 
   @Transactional
   public void finalPreview(UUID id, UUID preview) {
+    finalPreview(id, preview, get(id).generation());
+  }
+
+  @Transactional
+  public void finalPreview(UUID id, UUID preview, int generation) {
     var op = owned(id);
+    fence(op, generation);
     if (!"VALIDATING".equals(op.state())
         || !Boolean.TRUE.equals(
             jdbc.queryForObject(
@@ -259,9 +285,15 @@ public class ExternalBrokerAdditionLedger {
 
   @Transactional
   public TaskView dispatch(UUID id, UUID step, String command, String intent) {
+    return dispatch(id, step, command, intent, get(id).generation());
+  }
+
+  @Transactional
+  public TaskView dispatch(UUID id, UUID step, String command, String intent, int generation) {
     if (!COMMANDS.contains(command))
       throw new IllegalArgumentException("Unsupported broker-only action.");
     var op = owned(id);
+    fence(op, generation);
     String requiredIntent =
         switch (command) {
           case "VALIDATE_ADD_BROKER_PLAN" -> "VALIDATING";
@@ -286,7 +318,23 @@ public class ExternalBrokerAdditionLedger {
                 + " created_at desc limit 1",
             id,
             step);
-    if (!existing.isEmpty()) {
+    boolean newerInspection =
+        !existing.isEmpty()
+            && Boolean.TRUE.equals(
+                jdbc.queryForObject(
+                    "select exists(select 1 from kf_external_broker_additions o join"
+                        + " kf_external_broker_tasks t on t.id=o.resume_inspection_id where o.id=?"
+                        + " and t.operation_id=o.id and t.resume_generation=o.resume_generation and"
+                        + " t.command='INSPECT_ADD_BROKER' and t.status='SUCCESS' and"
+                        + " t.created_at>?)",
+                    Boolean.class,
+                    id,
+                    existing.getFirst().get("created_at")));
+    if (!newerInspection
+        && !existing.isEmpty()
+        && !"INSPECT_ADD_BROKER".equals(command)
+        && ((Number) existing.getFirst().getOrDefault("resume_generation", 0)).intValue()
+            == generation) {
       var previous = task(existing.getFirst());
       if (!previous.command().equals(command) || "FAILED".equals(previous.status()))
         throw conflict("Reconcile the previous broker action before retrying.");
@@ -303,14 +351,16 @@ public class ExternalBrokerAdditionLedger {
       throw conflict("Broker checkpoint does not allow this action.");
     UUID task = UUID.randomUUID();
     jdbc.update(
-        "insert into kf_external_broker_tasks(id,operation_id,step_id,command,parameters,deadline)"
-            + " values(?,?,?,?,?,?)",
+        "insert into"
+            + " kf_external_broker_tasks(id,operation_id,step_id,command,parameters,deadline,resume_generation)"
+            + " values(?,?,?,?,?,?,?)",
         task,
         id,
         step,
         command,
         json(planning.parameters(op.payload())),
-        Timestamp.from(Instant.now().plusSeconds(300)));
+        Timestamp.from(Instant.now().plusSeconds(300)),
+        generation);
     jdbc.update(
         "update kf_external_broker_additions set state=?,updated_at=now() where id=?", intent, id);
     jobs.appendLog(op.jobId(), "External broker task " + task + ": " + command);
@@ -325,7 +375,13 @@ public class ExternalBrokerAdditionLedger {
 
   @Transactional
   public void checkpoint(UUID id, String state, String evidence) {
+    checkpoint(id, state, evidence, get(id).generation());
+  }
+
+  @Transactional
+  public void checkpoint(UUID id, String state, String evidence, int generation) {
     var op = owned(id);
+    fence(op, generation);
     String expected =
         switch (state) {
           case "PREPARED" -> "PREPARING";
@@ -344,18 +400,26 @@ public class ExternalBrokerAdditionLedger {
 
   @Transactional
   public void recovery(UUID id) {
+    recovery(id, get(id).generation());
+  }
+
+  @Transactional
+  public void recovery(UUID id, int generation) {
     jdbc.update(
         "update kf_external_broker_additions set state='RECOVERY_REQUIRED',last_error='Execution"
             + " interrupted; preserve receipts and reservations for"
             + " reconciliation.',updated_at=now() where id=? and state not in"
-            + " ('SUCCEEDED','CANCELLED_SAFE','STARTED_PENDING_VERIFICATION')",
-        id);
+            + " ('SUCCEEDED','CANCELLED_SAFE') and resume_generation=?",
+        id,
+        generation);
   }
 
   @Transactional
   public Accepted cancelSafe(UUID clusterId, UUID id) {
     var op = get(id);
     if (!clusterId.equals(op.clusterId())) throw conflict("Foreign operation.");
+    jdbc.queryForObject(
+        "select id from kf_jobs where id=? for update", String.class, op.jobId().toString());
     clusters.findForServiceUpdate(clusterId).orElseThrow();
     jdbc.queryForObject(
         "select id from kf_external_broker_additions where id=? for update", UUID.class, id);
@@ -387,30 +451,54 @@ public class ExternalBrokerAdditionLedger {
         jdbc.queryForList(
             "select t.* from kf_external_broker_tasks t join kf_external_broker_additions o on"
                 + " o.id=t.operation_id join kf_jobs j on j.id=o.job_id where o.agent_id=? and"
-                + " o.state not in"
-                + " ('RECOVERY_REQUIRED','SUCCEEDED','CANCELLED_SAFE','STARTED_PENDING_VERIFICATION')"
-                + " and j.status='IN_PROGRESS' and t.status='PENDING' and t.deadline>now() order by"
-                + " t.created_at limit 1 for update of t skip locked",
+                + " j.status='IN_PROGRESS' and t.resume_generation=o.resume_generation and"
+                + " t.status='PENDING' and t.deadline>clock_timestamp() and t.retired_at is null"
+                + " order by t.created_at limit 1 for update of t skip locked",
             agentId);
     if (rows.isEmpty()) return Map.of();
     var row = rows.getFirst();
     var op = get((UUID) row.get("operation_id"));
+    String command = String.valueOf(row.get("command"));
+    String state =
+        switch (command) {
+          case "VALIDATE_ADD_BROKER_PLAN" -> "VALIDATING";
+          case "PREPARE_ADD_BROKER" -> "PREPARING";
+          case "FORMAT_ADD_BROKER" -> "FORMATTING";
+          case "START_ADD_BROKER" -> "STARTING";
+          case "INSPECT_ADD_BROKER" -> op.state();
+          default -> "";
+        };
+    if (!state.equals(op.state())
+        || "INSPECT_ADD_BROKER".equals(command)
+            && !Set.of("RECONCILING", "VERIFYING", "PUBLISHING", "STARTED_PENDING_VERIFICATION")
+                .contains(state)) return Map.of();
     planning.assertCurrent(op.clusterId(), op.payload());
-    if ("PREPARE_ADD_BROKER".equals(row.get("command"))) assertFinalFresh(op);
+    if ("PREPARE_ADD_BROKER".equals(command)) assertFinalFresh(op);
     UUID token = UUID.randomUUID();
-    jdbc.update(
-        "update kf_external_broker_tasks set status='RUNNING',claim_token=? where id=?",
-        token,
-        row.get("id"));
+    int updated =
+        jdbc.update(
+            "update kf_external_broker_tasks set"
+                + " status='RUNNING',claimed_at=clock_timestamp(),claim_token=? where id=? and"
+                + " status='PENDING' and deadline>clock_timestamp() and retired_at is null and"
+                + " exists(select 1 from kf_external_broker_additions o join kf_jobs j on"
+                + " j.id=o.job_id where o.id=operation_id and o.state=? and"
+                + " o.resume_generation=kf_external_broker_tasks.resume_generation and"
+                + " j.status='IN_PROGRESS')",
+            token,
+            row.get("id"),
+            state);
+    if (updated != 1) return Map.of();
     return Map.of(
         "id",
         row.get("id"),
         "command",
-        row.get("command"),
+        command,
         "claimToken",
         token,
         "parameters",
-        parse(row.get("parameters"), Map.class));
+        parse(row.get("parameters"), Map.class),
+        "expiresAt",
+        instant(row.get("deadline")).toString());
   }
 
   @Transactional
@@ -424,19 +512,23 @@ public class ExternalBrokerAdditionLedger {
         jdbc.queryForList(
             "select t.* from kf_external_broker_tasks t join kf_external_broker_additions o on"
                 + " o.id=t.operation_id where t.id=? and o.agent_id=? and t.claim_token=? and"
-                + " t.deadline>now() for update of t",
+                + " t.retired_at is null for update of t",
             taskId,
             agentId,
             result.claimToken());
     if (rows.isEmpty()) throw conflict("Unknown or expired broker claim.");
     var row = rows.getFirst();
     var op = get((UUID) row.get("operation_id"));
-    if ("SUCCESS".equals(result.status()))
-      validateProof(op, String.valueOf(row.get("command")), result.report());
     if (Set.of("SUCCESS", "FAILED").contains(row.get("status"))) {
       if (!json(result).equals(row.get("result")))
         throw conflict("Completed broker result cannot be replaced.");
       return;
+    }
+    if ("SUCCESS".equals(result.status())) {
+      validateProof(op, String.valueOf(row.get("command")), result.report());
+      if (Instant.parse(result.report().path("observedAt").asText())
+          .isAfter(instant(row.get("deadline")).plusSeconds(5)))
+        throw conflict("Broker receipt was produced after its execution lease.");
     }
     if (!"RUNNING".equals(row.get("status"))) throw conflict("Broker task was not claimed.");
     jdbc.update(
@@ -455,6 +547,14 @@ public class ExternalBrokerAdditionLedger {
         || !p.digest().equals(proof.path("planDigest").asText()))
       throw conflict("Broker receipt is not bound to the operation and frozen plan.");
     if ("VALIDATE_ADD_BROKER_PLAN".equals(command)) {
+      Instant at;
+      try {
+        at = Instant.parse(proof.path("observedAt").asText());
+      } catch (Exception e) {
+        throw conflict("Capability receipt time is invalid.");
+      }
+      if (at.isBefore(Instant.now().minusSeconds(300)) || at.isAfter(Instant.now().plusSeconds(5)))
+        throw conflict("Capability receipt is stale.");
       Set<String> actions = new HashSet<>();
       proof.path("supportedActions").forEach(a -> actions.add(a.asText()));
       if (!proof.path("payloadVerified").asBoolean()
@@ -504,6 +604,21 @@ public class ExternalBrokerAdditionLedger {
   }
 
   private void assertFinalFresh(Operation op) {
+    var inspections =
+        jdbc.queryForList(
+            "select t.result from kf_external_broker_additions o join kf_external_broker_tasks t on"
+                + " t.id=o.resume_inspection_id where o.id=? and t.operation_id=o.id and"
+                + " t.resume_generation=o.resume_generation and t.command='INSPECT_ADD_BROKER' and"
+                + " t.status='SUCCESS'",
+            op.id());
+    if (inspections.size() == 1) {
+      var proof = parse(inspections.getFirst().get("result"), Result.class).report();
+      validateProof(op, "INSPECT_ADD_BROKER", proof);
+      if ("VALIDATING".equals(ExternalBrokerRecovery.checkpoint(proof))
+          && Instant.parse(proof.path("observedAt").asText())
+              .isAfter(Instant.now().minusSeconds(60))) return;
+    }
+
     if (op.finalPreviewId() == null
         || !Boolean.TRUE.equals(
             jdbc.queryForObject(
@@ -521,14 +636,26 @@ public class ExternalBrokerAdditionLedger {
 
   private Operation owned(UUID id) {
     var op = get(id);
+    jdbc.queryForObject(
+        "select id from kf_jobs where id=? for update", String.class, op.jobId().toString());
     jobs.assertExternalBrokerAdditionOwnsCluster(op.clusterId(), op.jobId());
     jdbc.queryForObject(
         "select id from kf_external_broker_additions where id=? for update", UUID.class, id);
     op = get(id);
-    if (Set.of("SUCCEEDED", "CANCELLED_SAFE", "RECOVERY_REQUIRED", "STARTED_PENDING_VERIFICATION")
-        .contains(op.state()))
+    if (Set.of("SUCCEEDED", "CANCELLED_SAFE", "RECOVERY_REQUIRED").contains(op.state()))
       throw conflict("Operation requires verification/reconciliation instead of another mutation.");
     return op;
+  }
+
+  private static Instant instant(Object value) {
+    if (value instanceof Timestamp t) return t.toInstant();
+    if (value instanceof OffsetDateTime t) return t.toInstant();
+    return Instant.parse(value.toString());
+  }
+
+  static void fence(Operation op, int generation) {
+    if (op.generation() != generation)
+      throw conflict("A newer resume attempt owns this operation.");
   }
 
   private Operation operation(Map<String, Object> row) {
@@ -541,7 +668,8 @@ public class ExternalBrokerAdditionLedger {
         String.valueOf(row.get("state")),
         (UUID) row.get("final_preview_id"),
         (String) row.get("last_error"),
-        parse(row.get("plan"), ExternalBrokerAdditionPlanning.Payload.class));
+        parse(row.get("plan"), ExternalBrokerAdditionPlanning.Payload.class),
+        ((Number) row.getOrDefault("resume_generation", 0)).intValue());
   }
 
   private TaskView task(Map<String, Object> row) {

@@ -650,7 +650,7 @@ public class ExternalAddNodeReadinessService {
             String.class,
             id);
     var report = parse(raw, ExternalAddNodeInspectionService.Observation.class);
-    if (!candidate.getVersion().endsWith("-an.2") || !report.brokerExecutionCapable())
+    if (!candidate.getVersion().endsWith("-an.3") || !report.brokerExecutionCapable())
       throw conflict(
           "Install the compatible external broker-add adapter and explicitly enable broker"
               + " execution on the candidate.");
@@ -769,6 +769,56 @@ public class ExternalAddNodeReadinessService {
     } catch (Exception e) {
       throw conflict("Resolve Kafka endpoints before checking protected-host scope.");
     }
+  }
+
+  String executionBinding(UUID id, Request request) {
+    var c = cluster(id);
+    var participants =
+        nodes.findByClusterId(id).stream()
+            .sorted(Comparator.comparing(n -> n.getId().toString()))
+            .map(
+                n ->
+                    List.of(
+                        n.getId(),
+                        Objects.toString(n.getAgentId(), ""),
+                        Objects.toString(n.getNodeId(), ""),
+                        Objects.toString(n.getHost(), ""),
+                        Objects.toString(n.getPort(), ""),
+                        Objects.toString(n.getConfigFile(), ""),
+                        Objects.toString(n.getSystemdService(), ""),
+                        Objects.toString(n.getIsBroker(), ""),
+                        Objects.toString(n.getIsController(), ""),
+                        Objects.toString(n.getJmxExporterPort(), "")))
+            .toList();
+    var ids = new TreeSet<String>();
+    ids.add(request.agentId());
+    nodes.findByClusterId(id).forEach(n -> ids.add(n.getAgentId()));
+    var identities =
+        ids.stream()
+            .map(this::agent)
+            .map(
+                a ->
+                    List.of(
+                        a.getId(),
+                        Objects.toString(a.getHostname(), ""),
+                        contextIps(a),
+                        Objects.toString(a.getClusterId(), "")))
+            .toList();
+    if (!ips(agent(request.agentId())).contains(canonical(request.hostIp())))
+      throw conflict("Candidate address no longer matches enrollment.");
+    return hash(
+        json(
+            List.of(
+                request,
+                c.getKafkaClusterId(),
+                c.getKafkaVersion(),
+                c.getBootstrapServers(),
+                Objects.toString(c.getConnectionSettings(), ""),
+                Objects.toString(c.getSecurityProtocol(), ""),
+                participants,
+                identities,
+                policy,
+                scope)));
   }
 
   private String context(UUID id, Request request) {

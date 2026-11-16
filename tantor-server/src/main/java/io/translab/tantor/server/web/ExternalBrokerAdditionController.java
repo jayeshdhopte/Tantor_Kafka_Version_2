@@ -15,6 +15,8 @@ public class ExternalBrokerAdditionController {
   private final ExternalBrokerAdditionLedger ledger;
   private final RoleAuthenticationUtil permissions;
 
+  private final ExternalBrokerRecoveryService recovery;
+
   public record Accept(UUID previewId, String contextHash, String planDigest, String requestKey) {}
 
   private boolean allowed(String auth) {
@@ -59,6 +61,15 @@ public class ExternalBrokerAdditionController {
       @PathVariable UUID id) {
     if (!allowed(auth)) return ResponseEntity.status(403).build();
     return ResponseEntity.ok(ledger.view(clusterId, id));
+  }
+
+  @PostMapping("/api/v1/ui/external-clusters/{clusterId}/add-node/broker-operations/{id}/resume")
+  public ResponseEntity<?> resume(
+      @RequestHeader(value = "Authorization", required = false) String auth,
+      @PathVariable UUID clusterId,
+      @PathVariable UUID id) {
+    if (!allowed(auth)) return ResponseEntity.status(403).build();
+    return ResponseEntity.ok(recovery.resume(clusterId, id));
   }
 
   @PostMapping(

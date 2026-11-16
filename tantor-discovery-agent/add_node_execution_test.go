@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestBrokerExecutionRequiresSeparateOptIn(t *testing.T) {
@@ -26,7 +27,7 @@ func TestBrokerExecutionRequiresSeparateOptIn(t *testing.T) {
 			t.Error("missing auth")
 		}
 		if strings.HasSuffix(r.URL.Path, "/claim") {
-			io.WriteString(w, `{"id":"task","command":"INSTALL_KAFKA","claimToken":"claim","parameters":{}}`)
+			json.NewEncoder(w).Encode(map[string]any{"id": "task", "command": "INSTALL_KAFKA", "claimToken": "claim", "parameters": map[string]string{}, "expiresAt": time.Now().Add(time.Minute)})
 		} else {
 			var result map[string]any
 			json.NewDecoder(r.Body).Decode(&result)
@@ -50,5 +51,40 @@ func TestBrokerExecutionRequiresSeparateOptIn(t *testing.T) {
 	}
 	if calls != 2 {
 		t.Fatalf("unexpected calls %d", calls)
+	}
+}
+
+func TestBrokerLeasePreventsExpiredOrCancelledExecution(t *testing.T) {
+	calls := 0
+	action := func(ctx context.Context) (string, error) {
+		calls++
+		if _, ok := ctx.Deadline(); !ok {
+			t.Fatal("unbounded action")
+		}
+		return "proof", nil
+	}
+	for _, deadline := range []time.Time{{}, time.Now().Add(-time.Second)} {
+		if _, err := withBrokerLease(context.Background(), deadline, action); err == nil {
+			t.Fatal("expired lease accepted")
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := withBrokerLease(ctx, time.Now().Add(time.Minute), action); err == nil {
+		t.Fatal("cancelled action accepted")
+	}
+	if calls != 0 {
+		t.Fatal("action began without a live lease")
+	}
+	expires := time.Now().Add(time.Minute)
+	_, err := withBrokerLease(context.Background(), expires, func(ctx context.Context) (string, error) {
+		deadline, _ := ctx.Deadline()
+		if !deadline.Equal(expires) {
+			t.Fatal("server lease not enforced")
+		}
+		return action(ctx)
+	})
+	if err != nil || calls != 1 {
+		t.Fatal("valid bounded action failed")
 	}
 }

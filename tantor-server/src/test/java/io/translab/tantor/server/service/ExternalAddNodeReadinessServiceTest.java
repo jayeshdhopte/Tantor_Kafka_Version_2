@@ -253,4 +253,27 @@ class ExternalAddNodeReadinessServiceTest {
         ExternalAddNodeReadinessService.canonical("2001:db8::1"),
         ExternalAddNodeReadinessService.canonical("2001:db8:0:0:0:0:0:1"));
   }
+
+  @Test
+  void recoveryBindingSurvivesRestartAndCompatibleUpgradeButRejectsIdentityDrift() {
+    String frozen = service.executionBinding(clusterId, request());
+    agent.setLastHeartbeat(OffsetDateTime.now().plusSeconds(10));
+    agent.setVersion("3.4.0-fixture-an.3");
+    assertEquals(frozen, service.executionBinding(clusterId, request()));
+    var unrelated = new DiscoveryAgent();
+    unrelated.setId("unrelated");
+    when(agents.findAll()).thenReturn(List.of(agent, unrelated));
+    assertEquals(frozen, service.executionBinding(clusterId, request()));
+    agent.setHostname("different-machine");
+    assertNotEquals(frozen, service.executionBinding(clusterId, request()));
+    agent.setHostname("candidate");
+    agent.setClusterId(UUID.randomUUID());
+    assertNotEquals(frozen, service.executionBinding(clusterId, request()));
+    agent.setClusterId(null);
+    cluster.setBootstrapServers("192.0.2.99:9092");
+    assertNotEquals(frozen, service.executionBinding(clusterId, request()));
+    agent.setIpAddresses("[\"192.0.2.99\"]");
+    assertThrows(
+        ResponseStatusException.class, () -> service.executionBinding(clusterId, request()));
+  }
 }

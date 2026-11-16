@@ -18,7 +18,8 @@ class ExternalBrokerAdditionControllerTest {
     var permissions = mock(RoleAuthenticationUtil.class);
     var mvc =
         MockMvcBuilders.standaloneSetup(
-                new ExternalBrokerAdditionController(planning, ledger, permissions))
+                new ExternalBrokerAdditionController(
+                    planning, ledger, permissions, mock(ExternalBrokerRecoveryService.class)))
             .build();
     String base = "/api/v1/ui/external-clusters/" + UUID.randomUUID() + "/add-node/";
     mvc.perform(get(base + "broker-review/" + UUID.randomUUID())).andExpect(status().isForbidden());
@@ -27,6 +28,8 @@ class ExternalBrokerAdditionControllerTest {
     mvc.perform(get(base + "broker-operations/" + UUID.randomUUID()))
         .andExpect(status().isForbidden());
     mvc.perform(get(base + "broker-operations/request/fixture-request-key"))
+        .andExpect(status().isForbidden());
+    mvc.perform(post(base + "broker-operations/" + UUID.randomUUID() + "/resume"))
         .andExpect(status().isForbidden());
     mvc.perform(post(base + "broker-operations/" + UUID.randomUUID() + "/cancel-safe"))
         .andExpect(status().isForbidden());

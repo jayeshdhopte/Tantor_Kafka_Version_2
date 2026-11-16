@@ -65,7 +65,9 @@ public class BrokerAdditionKafka {
         } catch(Exception e){throw new IllegalStateException("Cannot freeze inherited broker configuration: "+e.getMessage(),e);}
     }
 
-    public String verify(Cluster cluster,BrokerAdditionLedger.Payload payload,Map<String,Object> config) {
+    public String verify(Cluster cluster,BrokerAdditionLedger.Payload payload,Map<String,Object> config) {return verify(cluster,payload,config,false);}
+    public String verifyExternal(Cluster cluster,BrokerAdditionLedger.Payload payload,Map<String,Object> config) {return verify(cluster,payload,config,true);}
+    private String verify(Cluster cluster,BrokerAdditionLedger.Payload payload,Map<String,Object> config,boolean full) {
         try {
             var p=payload.plan();var admin=kafka.getAdminClient(cluster.getId());
             var description=admin.describeCluster(new DescribeClusterOptions().includeFencedBrokers(false).timeoutMs(30000));
@@ -83,7 +85,7 @@ public class BrokerAdditionKafka {
             if(!Objects.toString(candidate.rack(),"").equals(p.brokerRack()))throw new IllegalStateException("Registered broker rack differs from the frozen candidate rack.");
             if(!payload.voterBaseline().equals(voterBaseline(cluster)))throw new IllegalStateException("Controller voter identities changed during broker addition.");
             var health=readiness.observe(cluster,config);
-            var required=Set.of("C01","C03","C06","C07","C08","B09");
+            var required=full?Set.of("C01","C02","C03","C05","C06","C07","C08","B09"):Set.of("C01","C03","C06","C07","C08","B09");
             var checked=health.checks().stream().filter(c->required.contains(c.code())).toList();
             if(checked.size()!=required.size()||checked.stream().anyMatch(c->!"PASS".equals(c.status())))throw new IllegalStateException("Stable cluster health is not proven.");
             return "Verified Kafka ID, unfenced broker "+p.nodeId()+", advertised endpoint, unchanged voter identities and live cluster health.";
