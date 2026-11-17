@@ -1,0 +1,64 @@
+.cluster-live-logs {
+  padding: 20px;
+  color: inherit;
+}
+.cluster-live-logs header, .cluster-live-filters, .cluster-live-actions {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.cluster-live-logs header { justify-content: space-between; margin-bottom: 16px; }
+.cluster-live-logs h2, .cluster-live-logs p { margin: 0 0 6px; }
+.cluster-live-filters { margin-bottom: 16px; }
+.cluster-live-filters label { display: grid; gap: 5px; font-size: 13px; }
+.cluster-live-logs :is(select, input, button) {
+  min-height: 36px;
+  max-width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--border-color, #8b8192);
+  border-radius: 6px;
+  background: var(--card-bg, #fff);
+  color: var(--text-primary, #302738);
+}
+.cluster-live-logs button { cursor: pointer; }
+.cluster-live-logs button:disabled { opacity: .6; cursor: default; }
+.cluster-live-console {
+  overflow: auto;
+  max-height: 65vh;
+  min-height: 260px;
+  background: #17131e;
+  color: #f0edf4;
+  border-radius: 8px;
+  padding: 14px;
+  font: 13px/1.55 ui-monospace, Consolas, monospace;
+}
+.cluster-live-entry {
+  display: grid;
+  grid-template-columns: 22ch 6ch minmax(0, 1fr);
+  gap: 10px;
+  padding: 4px 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.cluster-live-entry time { color: #c6bbce; }
+.cluster-live-entry [data-level="ERROR"], .cluster-live-entry [data-level="FATAL"] { color: #ffa7b2; }
+.cluster-live-entry [data-level="WARN"] { color: #ffd280; }
+@media (max-width: 640px) {
+  .cluster-live-entry { grid-template-columns: 1fr auto; }
+  .cluster-live-entry span:last-child { grid-column: 1 / -1; }
+}
+
+.cluster-live-services {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.cluster-live-services button { min-height: 46px; font-weight: 600; }
+.cluster-live-logs button[aria-pressed="true"] {
+  border-color: #a55cb9;
+  box-shadow: inset 0 0 0 1px #a55cb9;
+}
+.cluster-live-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.cluster-live-actions label { font-size: 13px; }

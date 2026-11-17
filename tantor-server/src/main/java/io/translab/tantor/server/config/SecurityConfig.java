@@ -26,6 +26,8 @@ public class SecurityConfig {
 
         private static final RequestMatcher INTERNAL_PROMETHEUS_PATH = new AntPathRequestMatcher(
                         "/internal/prometheus/**", HttpMethod.GET.name());
+        private static final RequestMatcher LIVE_LOGS_PATH = new AntPathRequestMatcher(
+                        "/api/v1/ui/clusters/*/live-logs", HttpMethod.GET.name());
         private static final RequestMatcher IPV4_LOOPBACK = new IpAddressMatcher("127.0.0.0/8");
         private static final RequestMatcher IPV6_LOOPBACK = new IpAddressMatcher("::1");
         private static final RequestMatcher LOOPBACK_INTERNAL_PROMETHEUS = request -> INTERNAL_PROMETHEUS_PATH
@@ -59,6 +61,10 @@ public class SecurityConfig {
                                 .authorizeHttpRequests(auth -> {
                                         // Allow error dispatches so Spring can render error pages.
                                         auth.dispatcherTypeMatchers(DispatcherType.ERROR).permitAll();
+
+                                        // The initial journal request requires a JWT. Its async dispatch only writes the result.
+                                        auth.requestMatchers(request -> request.getDispatcherType() == DispatcherType.ASYNC
+                                                        && LIVE_LOGS_PATH.matches(request)).permitAll();
 
                                         // ── Anonymous / public endpoints ──
                                         auth.requestMatchers(HttpMethod.POST, "/api/v1/auth/login").permitAll();

@@ -3,6 +3,7 @@ package task
 import (
 	"context"
 	"log/slog"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -40,6 +41,7 @@ func NewEngine(cfg *config.Config, c *client.APIClient, col *collect.Collector, 
 }
 
 func (e *Engine) Start(ctx context.Context) {
+	go e.client.RunLiveLogs(ctx, os.Getenv("TANTOR_LIVE_LOG_TOKEN"))
 	registered := e.register()
 	pollTicker := time.NewTicker(time.Duration(e.cfg.Agent.PollInterval) * time.Second)
 	heartbeatTicker := time.NewTicker(time.Duration(e.cfg.Agent.HeartbeatInterval) * time.Second)

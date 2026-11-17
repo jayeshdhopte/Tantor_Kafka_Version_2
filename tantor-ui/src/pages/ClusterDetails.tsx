@@ -259,6 +259,7 @@ export function ClusterDetails() {
   } else {
     tabs.push({ to: `/clusters/${id}/actions`, icon: Activity, label: 'Actions & Restarts', disabled: cluster.status !== 'SUCCESS' });
     tabs.push({ to: `/clusters/${id}/logs`, icon: RefreshCw, label: 'Deployment Logs', disabled: false });
+    tabs.push({ to: `/clusters/${id}/live-logs`, icon: Activity, label: 'Live Logs', disabled: false });
   }
 
   // Keep the active Configuration tab visible without compressing the navigation.
