@@ -16,7 +16,8 @@ public enum ServiceType {
     JMX_EXPORTER("jmx-exporter"),
     KAFKA_EXPORTER("kafka-exporter"),
     PROMETHEUS("prometheus"),
-    GRAFANA("grafana");
+    GRAFANA("grafana"),
+    JAVA("java");
 
     private final String directory;
 

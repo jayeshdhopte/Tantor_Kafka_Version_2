@@ -114,7 +114,8 @@ public class JobService {
                 .filter(job -> resource.equals(job.getResourceKey()) && !Objects.equals(job.getId(), excluded)).findFirst();
         if (outstanding.isPresent()) throw new ClusterOperationConflictException("An agent task is still pending or running for job " + outstanding.get().getId() + ". Resume that job before another cluster operation.");
         for (Job other : active) {
-            if (!other.getId().equals(excluded) && (isExternalAddNode(incoming) || isExternalAddNode(other.getType()) || incoming == JobType.QUORUM_EXPANSION || other.getType()==JobType.QUORUM_EXPANSION || incoming == JobType.BROKER_ADDITION || other.getType()==JobType.BROKER_ADDITION || incoming == JobType.ROLLING_RESTART
+            if (!other.getId().equals(excluded) && (incoming == JobType.JAVA_UPGRADE
+                    || other.getType() == JobType.JAVA_UPGRADE || isExternalAddNode(incoming) || isExternalAddNode(other.getType()) || incoming == JobType.QUORUM_EXPANSION || other.getType()==JobType.QUORUM_EXPANSION || incoming == JobType.BROKER_ADDITION || other.getType()==JobType.BROKER_ADDITION || incoming == JobType.ROLLING_RESTART
                     || incoming == JobType.EXTERNAL_SERVICES || incoming == JobType.ROLLING_CONFIG_UPDATE
                     || incoming == JobType.CONFIG_CHANGE || incoming == JobType.TARGETED_CONFIG_CHANGE
                     || other.getType() == JobType.ROLLING_RESTART
@@ -450,6 +451,9 @@ public class JobService {
             var operation = quorumExpansions.findByJobId(id).orElseThrow(() -> new IllegalStateException("Expansion operation ownership is missing."));
             if (operation.getState() == KafkaExpansionState.CANCELLED_SAFE)
                 throw new IllegalStateException("This expansion was safely cancelled. Run a new readiness review.");
+        }
+        if (job.getType() == JobType.JAVA_UPGRADE) {
+            throw new IllegalStateException("Verify the host and Kafka state before submitting a new Java upgrade job.");
         }
         if (job.getStatus() != JobStatus.FAILED
                 && job.getStatus() != JobStatus.PARTIAL_SUCCESS

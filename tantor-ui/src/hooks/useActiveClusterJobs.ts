@@ -7,11 +7,12 @@ export function locksClusterView(job: ActiveClusterJob) {
   return isDeploymentJob(job) || job.type === 'ROLLING_RESTART' || job.type === 'EXTERNAL_ROLLING_RESTART'
     || job.type === 'EXTERNAL_SERVICES' || job.operation === 'ADD_SERVICE'
     || job.type === 'ROLLING_CONFIG_UPDATE' || job.type === 'TARGETED_CONFIG_CHANGE'
-    || job.type === 'CONFIG_CHANGE';
+    || job.type === 'CONFIG_CHANGE' || job.type === 'JAVA_UPGRADE';
 }
 
 export function clusterJobLabel(job: ActiveClusterJob) {
   if (isDeploymentJob(job)) return 'Deployment';
+  if (job.type === 'JAVA_UPGRADE') return 'Java upgrade';
   if (job.operation === 'ADD_SERVICE' || job.type === 'EXTERNAL_SERVICES') return 'Adding service';
   if (job.type === 'ROLLING_CONFIG_UPDATE') return 'Rolling config update';
   if (job.type === 'TARGETED_CONFIG_CHANGE' || job.type === 'CONFIG_CHANGE') return 'Configuration change';

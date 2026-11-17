@@ -13,6 +13,9 @@ public interface ClusterServiceAssignmentRepository extends JpaRepository<Cluste
     @Query("select service from ClusterServiceAssignment service join fetch service.cluster cluster where cluster.status is null or cluster.status <> 'DELETED'")
     List<ClusterServiceAssignment> findReservationsForLiveClusters();
 
+    @Query("select service from ClusterServiceAssignment service join fetch service.cluster cluster where service.hostId = :hostId and (cluster.status is null or cluster.status <> 'DELETED')")
+    List<ClusterServiceAssignment> findLiveAssignmentsForHost(@Param("hostId") String hostId);
+
     @Query("select service from ClusterServiceAssignment service where service.cluster.id = :clusterId")
     List<ClusterServiceAssignment> findByClusterId(@Param("clusterId") UUID clusterId);
 

@@ -35,7 +35,7 @@ public interface JobRepository extends JpaRepository<Job, UUID> {
 
     @org.springframework.data.jpa.repository.Query(value = """
             SELECT j.* FROM kf_jobs j
-            WHERE j.type IN ('ROLLING_RESTART', 'CLUSTER_DELETION', 'TARGETED_CONFIG_CHANGE', 'CONFIG_CHANGE', 'ROLLING_CONFIG_UPDATE')
+            WHERE j.type IN ('ROLLING_RESTART', 'CLUSTER_DELETION', 'TARGETED_CONFIG_CHANGE', 'CONFIG_CHANGE', 'ROLLING_CONFIG_UPDATE', 'JAVA_UPGRADE')
                 AND public.cluster_operation_has_unfinished_tasks(j.id)
             """, nativeQuery = true)
     List<Job> findWithUnfinishedRestartTasks();

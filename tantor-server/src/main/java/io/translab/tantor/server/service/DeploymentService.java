@@ -871,6 +871,8 @@ public class DeploymentService {
         return "broker.properties";
     }
     private void rejectBrokerAdditionTask(Task task) {
+        if ("JAVA_UPGRADE".equals(task.getCommand()))
+            throw new IllegalArgumentException("Review the Java upgrade job before scheduling another upgrade.");
         if(java.util.Set.of("INSPECT_QUORUM_RUNTIME","EXECUTE_QUORUM_CANDIDATE","EXECUTE_QUORUM_PARTICIPANT","VALIDATE_QUORUM_EXPANSION").contains(java.util.Objects.toString(task.getCommand(),"")))
             throw new IllegalArgumentException("Use the same quorum expansion operation to reconcile/resume; generic task retry, rollback and cleanup are disabled.");
         if ("INSPECT_ADD_NODE_PROCESS".equals(task.getCommand()))

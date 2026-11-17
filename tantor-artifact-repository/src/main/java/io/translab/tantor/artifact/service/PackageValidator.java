@@ -109,6 +109,8 @@ public class PackageValidator {
     private void validateStructureAndVersion(Path archivePath, ServiceType serviceType, String expectedVersion) {
         boolean isKafka = serviceType == ServiceType.KAFKA;
         boolean foundExpectedVersion = false;
+        String javaReleaseRoot = null;
+        java.util.Set<String> javaBinaryRoots = new java.util.HashSet<>();
         boolean extractionTestPassed = false;
 
         try (CountingInputStream fi = new CountingInputStream(Files.newInputStream(archivePath));
@@ -126,7 +128,7 @@ public class PackageValidator {
                 if (++entries > properties.getMaxArchiveEntries()) {
                     throw new PackageValidationException("Archive contains too many entries");
                 }
-                rejectUnsafeEntry(entry);
+                rejectUnsafeEntry(entry, serviceType);
                 if (entry.getSize() > properties.getMaxArchiveEntryBytes()) {
                     throw new PackageValidationException("Archive entry exceeds the configured size limit");
                 }
@@ -143,6 +145,31 @@ public class PackageValidator {
                 }
                 int read;
                 long entryBytes = 0;
+                if (serviceType == ServiceType.JAVA && entry.isFile()) {
+                    String relativeName = name.startsWith("./") ? name.substring(2) : name;
+                    String[] parts = relativeName.split("/");
+                    if (parts.length == 3 && parts[1].equals("bin") && parts[2].equals("java")) {
+                        if ((entry.getMode() & 0111) != 0 && entry.getSize() > 0) {
+                            javaBinaryRoots.add(parts[0]);
+                        }
+                    } else if (parts.length == 2 && parts[1].equals("release")) {
+                        if (javaReleaseRoot != null || entry.getSize() > 16384) {
+                            throw new PackageValidationException("Expected one JDK release metadata file.");
+                        }
+                        javaReleaseRoot = parts[0];
+                        var release = new java.util.Properties();
+                        release.load(new java.io.ByteArrayInputStream(ti.readNBytes((int) entry.getSize())));
+                        if (!("\"" + expectedVersion + "\"").equals(release.getProperty("JAVA_VERSION"))
+                                || !"\"Linux\"".equals(release.getProperty("OS_NAME"))
+                                || !java.util.Set.of("\"x86_64\"", "\"aarch64\"").contains(release.getProperty("OS_ARCH", ""))) {
+                            throw new PackageValidationException("JDK metadata must match the selected version and identify a supported Linux architecture.");
+                        }
+                        expanded += entry.getSize();
+                        if (expanded > properties.getMaxArchiveExpandedBytes()) {
+                            throw new PackageValidationException("Archive expands beyond the configured size limit");
+                        }
+                    }
+                }
                 boolean fileStream = entry.isFile() && Path.of(name).getFileName().toString().startsWith("connect-file-") && name.endsWith(".jar");
                 java.security.MessageDigest pluginHash = fileStream ? java.security.MessageDigest.getInstance("SHA-256") : null;
                 while ((read = ti.read(buffer)) != -1) {
@@ -177,6 +204,11 @@ public class PackageValidator {
             throw new PackageValidationException("Package is empty or corrupted.");
         }
 
+        if (serviceType == ServiceType.JAVA && (javaReleaseRoot == null
+                || !javaBinaryRoots.equals(java.util.Set.of(javaReleaseRoot)))) {
+            throw new PackageValidationException("Expected release metadata and executable bin/java in the same JDK directory.");
+        }
+
         if (isKafka && !foundExpectedVersion) {
             throw new PackageValidationException(
                     String.format("Kafka version detection failed. Expected version '%s' but could not find corresponding kafka jars in the package.", expectedVersion)
@@ -186,13 +218,21 @@ public class PackageValidator {
         log.info("Package structure and version validation passed for {}", archivePath);
     }
 
-    private void rejectUnsafeEntry(TarArchiveEntry entry) {
+    private void rejectUnsafeEntry(TarArchiveEntry entry, ServiceType serviceType) {
         String name = entry.getName();
         if (name == null || name.startsWith("/") || name.startsWith("\\") || name.contains("\\")
                 || name.equals("..") || name.startsWith("../") || name.contains("/../")
-                || entry.isSymbolicLink() || entry.isLink()) {
+                || entry.isLink()
+                || (entry.isSymbolicLink() && !isJdkLicenseLink(entry, serviceType))
+                || !(entry.isFile() || entry.isDirectory() || entry.isSymbolicLink())) {
             throw new PackageValidationException("Archive contains an unsafe entry: " + name);
         }
+    }
+
+    private boolean isJdkLicenseLink(TarArchiveEntry entry, ServiceType serviceType) {
+        return serviceType == ServiceType.JAVA
+                && entry.getName().matches("[A-Za-z0-9.+_-]+/legal/[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*")
+                && entry.getLinkName().matches("\\.\\./[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*");
     }
 
     private static final class CountingInputStream extends FilterInputStream {

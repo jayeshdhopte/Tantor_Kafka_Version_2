@@ -30,6 +30,7 @@ public class ParcelService {
     private final HostStatusService hostStatusService;
     private final AuditService auditService;
     private final ArtifactRepositoryProperties artifactRepositoryProperties;
+    private final AddNodeArtifactCatalog artifactCatalog;
 
     public List<HostParcel> listStates() {
         return hostParcelRepository.findLatestStates();
@@ -125,6 +126,10 @@ public class ParcelService {
     private List<HostParcel> scheduleAction(String command, UUID artifactId, ParcelActionRequest request) {
         validateRequest(command, request);
 
+        boolean javaParcel = "JAVA".equalsIgnoreCase(request.getServiceType());
+        AddNodeArtifactCatalog.Artifact approvedJdk = javaParcel && "DISTRIBUTE_PARCEL".equals(command)
+                ? artifactCatalog.resolveType("JAVA", request.getVersion(), artifactId.toString())
+                : null;
         List<HostParcel> scheduled = new ArrayList<>();
         for (String hostId : request.getHostIds()) {
             Host host = hostRepository.findById(hostId)
@@ -137,6 +142,12 @@ public class ParcelService {
             HostParcel previous = hostParcelRepository.findFirstByHostIdAndArtifactIdOrderByCreatedAtDescIdDesc(hostId, artifactId)
                     .orElse(null);
             boolean isNew = previous == null;
+            if (previous != null && javaParcel != "JAVA".equalsIgnoreCase(previous.getServiceType())) {
+                throw new IllegalArgumentException("The parcel service type cannot be changed.");
+            }
+            if (javaParcel && !"DISTRIBUTE_PARCEL".equals(command) && !"REMOVE_PARCEL".equals(command)) {
+                throw new IllegalArgumentException("Use the Java upgrade workflow to install a staged JDK.");
+            }
 
             if (!isNew && !canRun(command, previous)) {
                 throw new IllegalArgumentException("Parcel " + request.getVersion() + " on host " + hostId + " is in state " + previous.getStatus() + " and cannot run " + command + ".");
@@ -152,7 +163,7 @@ public class ParcelService {
             parcel.setServiceType(defaultString(request.getServiceType(), "KAFKA"));
             parcel.setVersion(required(request.getVersion(), "version"));
             parcel.setFileName(request.getFileName());
-            parcel.setChecksum(request.getChecksum());
+            parcel.setChecksum(approvedJdk == null ? request.getChecksum() : approvedJdk.checksum());
             parcel.setParcelDir(resolveParcelDir(command, request, previous, hostId));
             parcel.setAction(actionForCommand(command));
             String initiator = defaultString(auditService.currentActor(), "system");

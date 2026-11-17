@@ -19,6 +19,7 @@ interface ClusterInfo {
 }
 
 interface HostParcel {
+  artifactId: string;
   hostId: string;
   serviceType: string;
   version: string;
@@ -36,10 +37,14 @@ export function ClusterActions() {
   const [status, setStatus] = useState<string>(restartTaskFromUrl ? 'Loading restart progress...' : '');
   const [restartOpen, setRestartOpen] = useState(false);
   const activeJobs = useActiveClusterJobs();
-  const locked = activeJobs.some(job => job.clusterId === id && job.type === 'ROLLING_RESTART');
+  const locked = activeJobs.some(job => job.clusterId === id && ['ROLLING_RESTART', 'JAVA_UPGRADE'].includes(job.type));
   const [cluster, setCluster] = useState<ClusterInfo | null>(null);
   const [parcels, setParcels] = useState<HostParcel[]>([]);
   const [targetVersion, setTargetVersion] = useState('');
+  const [javaArtifactId, setJavaArtifactId] = useState('');
+  const [javaHostIds, setJavaHostIds] = useState<string[]>([]);
+  const [javaPending, setJavaPending] = useState(false);
+  const [javaError, setJavaError] = useState('');
   const [upgradeMsg, setUpgradeMsg] = useState('');
   const [upgradeLoading, setUpgradeLoading] = useState(false);
   const [monitoringHostId, setMonitoringHostId] = useState('');
@@ -69,6 +74,34 @@ export function ClusterActions() {
       .filter(p => p.serviceType === 'KAFKA' && p.active && p.status === 'ACTIVE' && p.version !== cluster?.kafkaVersion)
       .map(p => p.version)
   )).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).reverse();
+
+  const stagedJava = parcels.filter(parcel => parcel.serviceType === 'JAVA' && parcel.status === 'DISTRIBUTED'
+    && cluster?.hosts?.some(host => host.hostId === parcel.hostId));
+  const javaArtifacts = Array.from(new Map(stagedJava.map(parcel => [parcel.artifactId, parcel])).values());
+  const javaArtifact = javaArtifacts.find(artifact => artifact.artifactId === javaArtifactId);
+  const javaHosts = cluster?.hosts?.filter(host =>
+    stagedJava.some(parcel => parcel.artifactId === javaArtifactId && parcel.hostId === host.hostId)) || [];
+
+  const triggerJavaUpgrade = async () => {
+    if (!canManage || !id || !javaArtifact || javaHostIds.length === 0 || javaPending || locked) return;
+    if (!(await confirmAction(`Switch the VM's default Java to ${javaArtifact.version} on ${javaHostIds.length} selected host(s)? Running Kafka services will restart one host at a time.`))) return;
+    setJavaPending(true);
+    setJavaError('');
+    try {
+      const reply = await fetch(`/api/v1/ui/clusters/${id}/java-upgrade`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ artifactId: javaArtifactId, version: javaArtifact.version, hostIds: javaHostIds }),
+      });
+      const result = await reply.json().catch(() => ({}));
+      if (!reply.ok || !result.jobId) throw new Error(result.error || result.message || 'Could not start Java upgrade.');
+      navigate(`/jobs/${result.jobId}`);
+    } catch (error) {
+      setJavaError(error instanceof Error ? error.message : 'Could not start Java upgrade.');
+    } finally {
+      setJavaPending(false);
+    }
+  };
 
   const enableMonitoring = async () => {
     if (!canManage) return;
@@ -164,6 +197,37 @@ export function ClusterActions() {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1.5rem' }}>
+        {canManage && cluster?.mode?.toLowerCase() === 'kraft' && (
+          <section style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-lg)', padding: '24px 32px', background: 'var(--bg-surface)' }}>
+            <h3 className="cluster-section-heading">Upgrade Java</h3>
+            <p>Confirm the JDK is compatible with Kafka {cluster.kafkaVersion} and the selected hosts are dedicated Kafka VMs.</p>
+            <label htmlFor="java-upgrade-artifact">Distributed JDK</label>
+            <select id="java-upgrade-artifact" className="form-control" value={javaArtifactId} disabled={javaPending}
+              onChange={event => { setJavaArtifactId(event.target.value); setJavaHostIds([]); setJavaError(''); }}>
+              <option value="">Select a JDK</option>
+              {javaArtifacts.map(artifact => <option key={artifact.artifactId} value={artifact.artifactId}>Java {artifact.version}</option>)}
+            </select>
+            {javaArtifacts.length === 0 && <p>Distribute a JDK to these hosts from Artifacts first.</p>}
+            {javaHosts.length > 0 && (
+              <fieldset disabled={javaPending}>
+                <legend>Kafka hosts</legend>
+                {javaHosts.map(host => (
+                  <div key={host.hostId}>
+                    <label>
+                      <input type="checkbox" checked={javaHostIds.includes(host.hostId)}
+                        onChange={event => setJavaHostIds(current => event.target.checked
+                          ? [...current, host.hostId] : current.filter(id => id !== host.hostId))} />
+                      {host.hostname || host.hostId}
+                    </label>
+                  </div>
+                ))}
+              </fieldset>
+            )}
+            {javaError && <p role="alert">{javaError}</p>}
+            <button className="btn btn-primary" type="button" disabled={!javaArtifact || javaHostIds.length === 0 || javaPending || locked}
+              onClick={triggerJavaUpgrade}>{javaPending ? 'Queueing…' : 'Upgrade Java'}</button>
+          </section>
+        )}
         {canManage && cluster?.mode !== 'EXTERNAL' && (
         <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-lg)', padding: '24px 32px', background: "var(--bg-surface)" }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>

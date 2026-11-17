@@ -80,6 +80,25 @@ class ParcelServiceTest {
                 .hasMessageContaining("OFFLINE");
     }
 
+    @Test
+    void distributesJavaWithTheChecksumFromTheApprovedCatalog() {
+        Fixture fixture = new Fixture("OCCUPIED", "ONLINE");
+        var request = fixture.request();
+        request.setServiceType("JAVA");
+        request.setVersion("21.0.13");
+        String approvedChecksum = "a".repeat(64);
+        when(fixture.artifactCatalog.resolveType("JAVA", "21.0.13", fixture.artifactId.toString()))
+                .thenReturn(new AddNodeArtifactCatalog.Artifact(fixture.artifactId.toString(), "21.0.13", approvedChecksum));
+
+        var parcel = fixture.service.distribute(fixture.artifactId, request).getFirst();
+
+        var task = org.mockito.ArgumentCaptor.forClass(Task.class);
+        verify(fixture.taskRepository).save(task.capture());
+        assertThat(parcel.getChecksum()).isEqualTo(approvedChecksum);
+        assertThat(task.getValue().getCommand()).isEqualTo("DISTRIBUTE_PARCEL");
+        assertThat(task.getValue().getChecksum()).isEqualTo(approvedChecksum);
+    }
+
     private static final class Fixture {
         private final UUID artifactId = UUID.randomUUID();
         private final String hostId = "occupied-host";
@@ -88,6 +107,7 @@ class ParcelServiceTest {
         private final TaskRepository taskRepository = mock(TaskRepository.class);
         private final HostStatusService hostStatusService = mock(HostStatusService.class);
         private final AuditService auditService = mock(AuditService.class);
+        private final AddNodeArtifactCatalog artifactCatalog = mock(AddNodeArtifactCatalog.class);
         private final ParcelService service;
 
         private Fixture(String lifecycleStatus, String connectivityStatus) {
@@ -114,7 +134,8 @@ class ParcelServiceTest {
             when(auditService.currentActor()).thenReturn("admin");
 
             service = new ParcelService(hostParcelRepository, hostRepository, taskRepository,
-                    new ObjectMapper(), hostStatusService, auditService, artifactRepositoryProperties());
+                    new ObjectMapper(), hostStatusService, auditService, artifactRepositoryProperties(),
+                    artifactCatalog);
         }
 
         private io.translab.tantor.server.config.ArtifactRepositoryProperties artifactRepositoryProperties() {

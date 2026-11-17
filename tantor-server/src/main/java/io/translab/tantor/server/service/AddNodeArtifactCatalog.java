@@ -20,7 +20,7 @@ public class AddNodeArtifactCatalog {
         return resolveType("KAFKA",version,pinnedId);
     }
     public Artifact resolveType(String type,String version,String pinnedId) {
-        if(!Set.of("KAFKA","JMX_EXPORTER").contains(type))throw new IllegalArgumentException("Unsupported Add Node artifact type.");
+        if(!Set.of("KAFKA","JMX_EXPORTER","JAVA").contains(type))throw new IllegalArgumentException("Unsupported Add Node artifact type.");
         try {
             boolean pinned = pinnedId != null && !pinnedId.isBlank();
             String path = pinned ? "/api/v1/artifacts/" + UUID.fromString(pinnedId) : "/api/v1/artifacts?serviceType="+type+"&size=1000";
@@ -41,7 +41,7 @@ public class AddNodeArtifactCatalog {
                     matches.add(new Artifact(row.path("id").asText(), row.path("version").asText(), hash.toLowerCase(Locale.ROOT)));
                 }
             }
-            if (matches.size() != 1) throw new IllegalStateException("A unique available Kafka artifact with SHA-256 must match this cluster version; pin artifact_id when ambiguous.");
+            if (matches.size() != 1) throw new IllegalStateException("A unique available " + type + " artifact with SHA-256 must match the requested version.");
             return matches.getFirst();
         } catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new IllegalStateException("Artifact observation interrupted.", e); }
         catch (java.io.IOException e) { throw new IllegalStateException("Artifact metadata could not be read.", e); }

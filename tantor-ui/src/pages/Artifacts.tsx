@@ -116,6 +116,15 @@ const artifactServiceOptions = [
     helper: 'Upload a Connect distribution for managed cluster deployment.',
   },
   {
+    value: 'JAVA',
+    label: 'Java JDK',
+    versionPlaceholder: 'e.g. 21.0.13',
+    directoryPlaceholder: 'custom/java (under configured repository root)',
+    fileLabel: 'Linux JDK archive (.tar.gz)',
+    fileAccept: '.tgz,.tar.gz',
+    helper: 'Enter the exact Java version recorded in the JDK archive.',
+  },
+  {
     value: 'SCHEMA_REGISTRY',
     label: 'Schema Registry',
     versionPlaceholder: 'e.g. 7.6.0',
@@ -130,6 +139,7 @@ const artifactServiceLabels: Record<string, string> = {
   KAFKA: 'Kafka',
   KAFKA_EXPORTER: 'Kafka Exporter',
   JMX_EXPORTER: 'JMX Exporter',
+  JAVA: 'Java JDK',
   KAFKA_CONNECT: 'Kafka Connect',
   SCHEMA_REGISTRY: 'Schema Registry',
 };
@@ -530,6 +540,9 @@ export function Artifacts() {
         </>
       );
     }
+    if (ver.service_type === 'JAVA') {
+      return actionButton('remove', ver, host);
+    }
     if (status === 'ACTIVE') {
       return actionButton('deactivate', ver, host);
     }
@@ -614,8 +627,8 @@ export function Artifacts() {
           <h3 className="section-title">Artifact List</h3>
           <div className="versions-list">
             {versions.map(ver => {
-              const isKafkaArtifact = ver.service_type === 'KAFKA';
-              const isOpen = isKafkaArtifact && expanded === ver.id;
+              const canDistribute = ['KAFKA', 'JAVA'].includes(ver.service_type);
+              const isOpen = canDistribute && expanded === ver.id;
               const distributed = hostParcels.filter(p => p.artifactId === ver.id && p.status !== 'REMOVED').length;
               const active = hostParcels.filter(p => p.artifactId === ver.id && p.active).length;
               const deleteKey = `delete-artifact-${ver.id}`;
@@ -624,9 +637,9 @@ export function Artifacts() {
                 <div key={ver.id} className="version-card">
                   <div className="version-card-top">
                     <button
-                      className={`version-card-header ${isKafkaArtifact ? '' : 'non-expandable'}`}
+                      className={`version-card-header ${canDistribute ? '' : 'non-expandable'}`}
                       onClick={() => {
-                        if (isKafkaArtifact) setExpanded(isOpen ? null : ver.id);
+                        if (canDistribute) setExpanded(isOpen ? null : ver.id);
                       }}
                     >
                       <div className="status-dot-container">
@@ -683,7 +696,7 @@ export function Artifacts() {
                           </AnchoredMenu>
                         )}
                       </div>
-                      {isKafkaArtifact && (
+                      {canDistribute && (
                         <div className="chevron-box" onClick={() => setExpanded(isOpen ? null : ver.id)}>
                           <span className="chevron">{isOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</span>
                         </div>
@@ -691,7 +704,7 @@ export function Artifacts() {
                     </div>
                   </div>
 
-                  {isKafkaArtifact && isOpen && (
+                  {canDistribute && isOpen && (
                     <div className="version-card-body">
                       {canManage && (
                         <div className="parcel-distribution-controls">
@@ -709,10 +722,12 @@ export function Artifacts() {
                               {actingKey === `distribute-selected-${ver.id}` ? <Loader2 size={14} className="spin" /> : <DownloadCloud size={14} />}
                               Distribute Selected
                             </button>
-                            <button className="btn btn-distribute-all" onClick={() => distributeAll(ver)} disabled={actingKey !== null}>
-                              {actingKey === `distribute-all-${ver.id}` ? <Loader2 size={14} className="spin" /> : <DownloadCloud size={14} />}
-                              Distribute All
-                            </button>
+                            {ver.service_type === 'KAFKA' && (
+                              <button className="btn btn-distribute-all" onClick={() => distributeAll(ver)} disabled={actingKey !== null}>
+                                {actingKey === `distribute-all-${ver.id}` ? <Loader2 size={14} className="spin" /> : <DownloadCloud size={14} />}
+                                Distribute All
+                              </button>
+                            )}
                           </div>
                         </div>
                       )}
@@ -809,7 +824,7 @@ export function Artifacts() {
             <div className="modal-header upload-parcel-header">
               <div className="upload-parcel-heading">
                 <h2>Upload Parcel Binary</h2>
-                <p className="modal-subtitle">Upload a Kafka, Kafka Exporter, or JMX Exporter binary to the internal artifact repository.</p>
+                <p className="modal-subtitle">Upload a Kafka, Kafka Exporter, JMX Exporter, or Java JDK package to the internal artifact repository.</p>
               </div>
               <button className="modal-close" onClick={() => setShowUploadModal(false)}>
                 <X size={14} />
