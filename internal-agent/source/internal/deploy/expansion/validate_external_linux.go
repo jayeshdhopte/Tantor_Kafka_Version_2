@@ -23,7 +23,7 @@ func ValidateExternalController(ctx context.Context, hostID string, params map[s
 	if err != nil {
 		return "", err
 	}
-	if hostID != p.CandidateHostID || p.QuorumMode != "DYNAMIC" || p.Layout != "CONTROLLER" || p.DeploymentSettings == nil {
+	if hostID != p.CandidateHostID || p.QuorumMode != "DYNAMIC" || (p.Layout != "CONTROLLER" && p.Layout != "SEPARATE") || p.DeploymentSettings == nil {
 		return "", fmt.Errorf("external dynamic controller profile required")
 	}
 	bounded, cancel, err := dispatchContext(ctx, params)
@@ -35,8 +35,10 @@ func ValidateExternalController(ctx context.Context, hostID string, params map[s
 	if err = env.ValidateArtifact(bounded, p); err != nil {
 		return "", err
 	}
-	if err = env.ValidateFresh(bounded, p, p.Processes[0]); err != nil {
-		return "", err
+	for _, process := range p.Processes {
+		if err = env.ValidateFresh(bounded, p, process); err != nil {
+			return "", err
+		}
 	}
 	if err = VerifyExternalControllerMounts(bounded, p, exec); err != nil {
 		return "", err
@@ -48,32 +50,31 @@ func ValidateExternalController(ctx context.Context, hostID string, params map[s
 // VerifyExternalControllerMounts applies the supplied C19 mount/access policy to
 // the selected controller paths, independently of the unused broker profile.
 func VerifyExternalControllerMounts(ctx context.Context, p Plan, e executor.Executor) error {
-	c, err := p.Process("controller")
-	if err != nil {
-		return err
-	}
-	for _, path := range append(storagePaths(c), c.LogPath) {
-		parent := path
-		for {
-			if err = noLinks(parent); err == nil {
-				break
+	for _, c := range p.Processes {
+		for _, path := range append(storagePaths(c), c.LogPath) {
+			var err error
+			parent := path
+			for {
+				if err = noLinks(parent); err == nil {
+					break
+				}
+				if !os.IsNotExist(err) {
+					return err
+				}
+				next := filepath.Dir(parent)
+				if next == parent {
+					return fmt.Errorf("controller storage ancestor unavailable")
+				}
+				parent = next
 			}
-			if !os.IsNotExist(err) {
-				return err
+			output, _, err := e.Run(ctx, "/usr/bin/findmnt", "-n", "-o", "TARGET,FSTYPE,OPTIONS", "-T", parent)
+			if err != nil || !persistentControllerMount(output, path) {
+				return fmt.Errorf("controller storage/log path requires a non-root, writable persistent mount: %s", path)
 			}
-			next := filepath.Dir(parent)
-			if next == parent {
-				return fmt.Errorf("controller storage ancestor unavailable")
-			}
-			parent = next
-		}
-		output, _, err := e.Run(ctx, "/usr/bin/findmnt", "-n", "-o", "TARGET,FSTYPE,OPTIONS", "-T", parent)
-		if err != nil || !persistentControllerMount(output, path) {
-			return fmt.Errorf("controller storage/log path requires a non-root, writable persistent mount: %s", path)
-		}
-		for _, access := range []string{"-w", "-x"} {
-			if _, _, err = e.Run(ctx, "/usr/sbin/runuser", "-u", p.RuntimeUser, "--", "/usr/bin/test", access, parent); err != nil {
-				return fmt.Errorf("controller runtime user lacks required mount access: %s", path)
+			for _, access := range []string{"-w", "-x"} {
+				if _, _, err = e.Run(ctx, "/usr/sbin/runuser", "-u", p.RuntimeUser, "--", "/usr/bin/test", access, parent); err != nil {
+					return fmt.Errorf("controller runtime user lacks required mount access: %s", path)
+				}
 			}
 		}
 	}

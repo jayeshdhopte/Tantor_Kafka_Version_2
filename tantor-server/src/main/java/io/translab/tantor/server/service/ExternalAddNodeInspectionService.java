@@ -43,7 +43,41 @@ public class ExternalAddNodeInspectionService {
       int discoveredProcessCount,
       boolean executionEnabled,
       boolean brokerExecutionCapable,
-      boolean controllerExecutionCapable) {
+      boolean controllerExecutionCapable,
+      boolean separateExecutionCapable) {
+    public Observation(
+        String schemaVersion,
+        String agentId,
+        String agentVersion,
+        Instant observedAt,
+        List<String> addresses,
+        boolean root,
+        boolean inspectionEnabled,
+        boolean inventoryComplete,
+        int kafkaProcessCount,
+        int kafkaUnitCount,
+        int discoveredProcessCount,
+        boolean executionEnabled,
+        boolean brokerExecutionCapable,
+        boolean controllerExecutionCapable) {
+      this(
+          schemaVersion,
+          agentId,
+          agentVersion,
+          observedAt,
+          addresses,
+          root,
+          inspectionEnabled,
+          inventoryComplete,
+          kafkaProcessCount,
+          kafkaUnitCount,
+          discoveredProcessCount,
+          executionEnabled,
+          brokerExecutionCapable,
+          controllerExecutionCapable,
+          false);
+    }
+
     public Observation(
         String schemaVersion,
         String agentId,

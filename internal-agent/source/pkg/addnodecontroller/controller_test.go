@@ -85,3 +85,52 @@ func TestFailedPreviewDoesNotCreateOperationJournal(t *testing.T) {
 		t.Fatal("preview wrote its operation journal")
 	}
 }
+
+func TestSeparateFacadeNeedsExplicitOptInAndRejectsParticipantActions(t *testing.T) {
+	if runtime.GOOS != "linux" || os.Geteuid() != 0 {
+		t.Skip("Linux root adapter")
+	}
+	p := validExternalPlan(t)
+	source, err := os.ReadFile(filepath.Join("..", "..", "internal", "deploy", "expansion", "testdata", "separate-dynamic-v1.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var original map[string]any
+	json.Unmarshal(source, &original)
+	p["processes"] = original["processes"]
+	p["layout"] = "SEPARATE"
+	raw, _ := json.Marshal(p)
+	params := map[string]string{"expansion_plan": string(raw), "plan_digest": expansion.Digest(string(raw)), "role": "broker", "action": "PREPARE"}
+	if _, err := expansion.Decode(string(raw), params["plan_digest"], "candidate"); err != nil {
+		t.Fatal(err)
+	}
+	state := t.TempDir()
+	if _, err := Run(context.Background(), "PREPARE", "candidate", state, params, true, nil); err == nil {
+		t.Fatal("controller opt-in authorized separate processes")
+	}
+	if _, err := RunSeparate(context.Background(), "PREPARE", "candidate", state, params, false, nil); err == nil {
+		t.Fatal("separate default authorized mutation")
+	}
+	params["action"] = "STOP"
+	if _, err := RunSeparate(context.Background(), "STOP", "candidate", state, params, true, nil); err == nil {
+		t.Fatal("participant stop escaped scope")
+	}
+	entries, _ := os.ReadDir(state)
+	if len(entries) != 0 {
+		t.Fatal("rejected scope created candidate state")
+	}
+}
+
+func TestBrokerEmptyMetadataSettingUsesOnlyDataDirectoriesForRecovery(t *testing.T) {
+	path := t.TempDir()
+	p := expansion.Process{Role: "broker", DataPaths: []string{path}, MetadataPath: ""}
+	if !storageEmpty(p) {
+		t.Fatal("empty metadata setting was treated as a foreign storage path")
+	}
+	if err := os.WriteFile(filepath.Join(path, "meta.properties"), []byte("formatted"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if storageEmpty(p) {
+		t.Fatal("formatted data mistaken for empty storage")
+	}
+}

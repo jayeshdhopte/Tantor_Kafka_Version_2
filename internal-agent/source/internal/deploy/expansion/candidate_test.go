@@ -304,3 +304,36 @@ func TestCandidateCanceledContextCannotPerformAnyHostAction(t *testing.T) {
 		t.Fatal("canceled action mutated host")
 	}
 }
+
+func TestSeparateBrokerLostFormatPreservesRunningControllerAndNeverReformats(t *testing.T) {
+	p := fixture()
+	f := newCandidateFixture()
+	prepared(t, p, "broker", f)
+	startedController(t, p, f)
+	controllerBefore := f.receipts["controller"]
+	f.loseFormat = true
+	if _, err := runCandidate(p, "broker", "FORMAT", nil, f); err == nil {
+		t.Fatal("lost broker format result ignored")
+	}
+	if f.receipts["broker"].Phase != "FORMAT_INTENT" {
+		t.Fatal("broker format intent lost")
+	}
+	if _, err := runCandidate(p, "broker", "FORMAT", nil, f); err != nil {
+		t.Fatal(err)
+	}
+	if f.formats != 2 {
+		t.Fatal("broker formatter repeated")
+	}
+	if f.receipts["controller"].Phase != controllerBefore.Phase || !f.observation("controller").ServiceActive {
+		t.Fatal("controller was changed during broker recovery")
+	}
+	proof := controllerProof(p, f)
+	proof.ObserverCaughtUp = false
+	proof.VoterVerified = true
+	if _, err := runCandidate(p, "broker", "START", proof, f); err != nil {
+		t.Fatal(err)
+	}
+	if f.admissions != 0 {
+		t.Fatal("broker recovery repeated controller admission")
+	}
+}

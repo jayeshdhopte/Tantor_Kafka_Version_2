@@ -35,11 +35,12 @@ type addNodeHostObservation struct {
 	DiscoveredProcessCount     int       `json:"discoveredProcessCount"`
 	ExecutionEnabled           bool      `json:"executionEnabled"`
 	BrokerExecutionCapable     bool      `json:"brokerExecutionCapable"`
+	SeparateExecutionCapable   bool      `json:"separateExecutionCapable"`
 	ControllerExecutionCapable bool      `json:"controllerExecutionCapable"`
 }
 
 func validateAddNodeInspectionMode(cfg RuntimeConfig, uid int, goos string) error {
-	if (cfg.EnableAddNodeExecution || cfg.EnableControllerAddition) && !cfg.EnableAddNodeInspection {
+	if (cfg.EnableAddNodeExecution || cfg.EnableControllerAddition || cfg.EnableSeparateAddition) && !cfg.EnableAddNodeInspection {
 		return fmt.Errorf("broker execution requires explicit Add Node inspection")
 	}
 	if !cfg.EnableAddNodeInspection {
@@ -55,6 +56,7 @@ func observeAddNodeHost(cfg RuntimeConfig, records []DiscoveredCluster) addNodeH
 	r := addNodeHostObservation{SchemaVersion: externalAddNodeInspectionSchema, AgentID: cfg.HostID, AgentVersion: buildVersion, ObservedAt: time.Now().UTC(), Root: os.Geteuid() == 0, InspectionEnabled: cfg.EnableAddNodeInspection, DiscoveredProcessCount: len(records), Addresses: []string{}}
 	r.BrokerExecutionCapable = cfg.EnableAddNodeExecution
 	r.ControllerExecutionCapable = cfg.EnableControllerAddition
+	r.SeparateExecutionCapable = cfg.EnableSeparateAddition
 	addresses, err := net.InterfaceAddrs()
 	if err != nil {
 		return r

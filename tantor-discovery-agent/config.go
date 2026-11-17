@@ -48,6 +48,7 @@ type RuntimeConfig struct {
 	EnableAddNodeInspection  bool
 	EnableAddNodeExecution   bool
 	EnableControllerAddition bool
+	EnableSeparateAddition   bool
 	EnableServiceDeployment  bool
 	ServiceStateDir          string
 	AllowConfigWrite         bool
@@ -207,6 +208,7 @@ func LoadRuntimeConfig(args []string) (RuntimeConfig, error) {
 	enableTasks := fs.Bool("enable-tasks", envBool("TANTOR_AGENT_ENABLE_TASKS", false), "Enable server task polling")
 	enableAddNodeInspection := fs.Bool("enable-add-node-inspection", envBool("TANTOR_AGENT_ENABLE_ADD_NODE_INSPECTION", false), "Opt in to read-only Add Node host inspection; Kafka deployment is not enabled")
 	enableAddNodeExecution := fs.Bool("enable-add-node-execution", envBool("TANTOR_AGENT_ENABLE_ADD_NODE_EXECUTION", false), "Explicitly allow operation-owned broker addition; requires Add Node inspection")
+	enableSeparateAddition := fs.Bool("enable-separate-addition", envBool("TANTOR_AGENT_ENABLE_SEPARATE_ADDITION", false), "Explicitly allow one owned external broker/controller separate-process addition")
 	enableControllerAddition := fs.Bool("enable-controller-addition", envBool("TANTOR_AGENT_ENABLE_CONTROLLER_ADDITION", false), "Explicitly allow operation-owned external dynamic controller addition")
 	enableServices := fs.Bool("enable-service-deployment", envBool("TANTOR_AGENT_ENABLE_SERVICE_DEPLOYMENT", false), "Allow Schema Registry/Connect deployment as root")
 	serviceState := fs.String("service-state-dir", env("TANTOR_AGENT_SERVICE_STATE_DIR", "/var/lib/tantor-discovery-agent/services"), "Private service task journal and artifact cache")
@@ -259,6 +261,7 @@ func LoadRuntimeConfig(args []string) (RuntimeConfig, error) {
 		EnableAddNodeInspection:  *enableAddNodeInspection,
 		EnableAddNodeExecution:   *enableAddNodeExecution,
 		EnableControllerAddition: *enableControllerAddition,
+		EnableSeparateAddition:   *enableSeparateAddition,
 		ServiceStateDir:          *serviceState,
 		AllowConfigWrite:         *allowConfigWrite,
 		AllowServiceRestart:      *allowRestart,

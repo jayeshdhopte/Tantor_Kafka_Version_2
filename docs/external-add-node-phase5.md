@@ -2,6 +2,8 @@
 
 16 November 2026: implementation and automated validation. **Not deployed and not live-accepted.** A fresh read-only query on 194 found zero non-deleted external clusters. The user will provision Kafka; this development does not install Kafka or replace running agents. Earlier live phase acceptance remains pending.
 
+17 November update: the Phase 6 extension adds gated dynamic separate-process development. The Phase 5 account below is historical; its live acceptance is still pending. See [Phase 6](external-add-node-phase6.md).
+
 ## Scope and script alignment
 
 This phase adds the **external-agent** controller-only path for supported, explicitly PLAINTEXT, finalized **dynamic KRaft quorums**. It follows the supplied `Downloads/add_host/tasks/quorum_expand.yml`, `storage_format.yml` and `verify_controller.yml` observer/admission sequence:

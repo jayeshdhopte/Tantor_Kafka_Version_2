@@ -14,7 +14,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
   await context.route('**/api/**',async route=>{
    const r=route.request(),url=new URL(r.url());
    if(r.method()==='POST'&&url.pathname.endsWith('/add-node/readiness'))return route.fulfill({json:readiness});
-   if(r.method()==='POST'&&url.pathname.endsWith('/controller-previews')){checks++;assert.deepEqual(r.postDataJSON(),{commonPreviewId:readiness.id,controllerPort:9093,participantParcelDirs:{}});return mode==='STATIC'?route.fulfill({status:409,json:{message:'Static quorum cannot use dynamic controller addition — TEST DATA'}}):route.fulfill({json:preview()});}
+   if(r.method()==='POST'&&url.pathname.endsWith('/controller-previews')){checks++;assert.deepEqual(r.postDataJSON(),{commonPreviewId:readiness.id,controllerPort:9093,participantParcelDirs:{},separateProcesses:false});return mode==='STATIC'?route.fulfill({status:409,json:{message:'Static quorum cannot use dynamic controller addition — TEST DATA'}}):route.fulfill({json:preview()});}
    if(r.method()==='POST'&&url.pathname.endsWith('/controller-operations')){submissions++;submitted=r.postDataJSON();return route.fulfill({status:503,json:{message:'Simulated lost controller submission response — TEST DATA'}});}
    if(r.method()==='POST'&&url.pathname.endsWith('/controller-operations/controller-operation/resume')){resumes++;return route.fulfill({json:{operationId:'controller-operation',jobId:'controller-job',state:'RECONCILING'}});}
    assert.equal(r.method(),'GET','Unexpected mutation '+url.pathname);

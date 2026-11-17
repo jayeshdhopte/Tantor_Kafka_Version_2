@@ -33,6 +33,7 @@ class ExternalControllerPlanningTest {
   final KafkaExpansionPlan.Frozen base;
   final ExternalControllerPlanning planner;
   KafkaExpansionPlan.Frozen queued;
+  final Map<String, Object> previewRow;
 
   ExternalControllerPlanningTest() throws Exception {
     base = ExternalControllerRecoveryTest.frozen();
@@ -75,6 +76,7 @@ class ExternalControllerPlanningTest {
             jdbc,
             mapper);
     var row = new HashMap<String, Object>();
+    previewRow = row;
     row.put("id", p.operationId());
     row.put("cluster_id", p.clusterId());
     row.put("agent_id", p.candidateHostId());
@@ -263,6 +265,37 @@ class ExternalControllerPlanningTest {
             anyMap(),
             eq(0));
     verify(jobs, never()).createJob(any(), anyList());
+  }
+
+  @Test
+  void separateReviewFreezesTwoProfilesWithoutCreatingAJob() throws Exception {
+    previewRow.put(
+        "request",
+        mapper.writeValueAsString(
+            new ExternalControllerPlanning.Request(UUID.randomUUID(), 9093, Map.of(), true)));
+    var view = planner.get(base.plan().clusterId(), base.plan().operationId());
+    assertTrue(view.separateProcesses());
+    assertEquals(2, view.proposedBrokerId());
+    assertEquals(102, view.proposedControllerId());
+    assertEquals("broker.service", view.brokerServiceName());
+    assertEquals(KafkaExpansionWorkflow.Layout.SEPARATE, queued.plan().layout());
+    assertEquals(2, queued.plan().processes().size());
+    verify(jobs, never()).createJob(any(), anyList());
+  }
+
+  @Test
+  void separateCurrentScopeUsesOnlyItsOwnCandidateMutationOptIn() throws Exception {
+    var f = ExternalSeparateProcessTest.frozen();
+    var common =
+        mapper.readValue(
+            previewRow.get("common_request").toString(),
+            ExternalAddNodeReadinessService.Request.class);
+    planner.current(
+        new ExternalControllerPlanning.Frozen(
+            f, common, "b".repeat(64), Instant.now().plusSeconds(120)));
+    verify(ready).requireSeparateAgent(f.plan().candidateHostId(), true);
+    verify(ready).assertControllerScope(f.plan().clusterId(), f.plan().candidateHostId(), false);
+    verify(ready, never()).requireControllerAgent(anyString(), eq(true));
   }
 
   @Test

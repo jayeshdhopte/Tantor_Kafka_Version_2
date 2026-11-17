@@ -12,7 +12,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** One external parent owns candidate, sequential ID, task generations and publication. */
+/**
+ * One external parent owns the candidate, all process IDs, task generations and atomic publication.
+ */
 @Service
 @RequiredArgsConstructor
 public class ExternalControllerLedger {
@@ -34,7 +36,31 @@ public class ExternalControllerLedger {
       String state,
       int generation,
       String error,
-      boolean inventoryPublished) {}
+      boolean inventoryPublished,
+      Integer brokerNodeId) {
+    public Operation(
+        UUID id,
+        UUID clusterId,
+        String agentId,
+        int nodeId,
+        UUID jobId,
+        String state,
+        int generation,
+        String error,
+        boolean inventoryPublished) {
+      this(
+          id,
+          clusterId,
+          agentId,
+          nodeId,
+          jobId,
+          state,
+          generation,
+          error,
+          inventoryPublished,
+          null);
+    }
+  }
 
   public record Accepted(UUID operationId, UUID jobId, String state) {}
 
@@ -42,7 +68,16 @@ public class ExternalControllerLedger {
       UUID inspectionId,
       KafkaExpansionLiveVerifier.ControllerProof controller,
       String health,
-      Instant observedAt) {}
+      Instant observedAt,
+      UUID brokerInspectionId) {
+    public Sample(
+        UUID inspectionId,
+        KafkaExpansionLiveVerifier.ControllerProof controller,
+        String health,
+        Instant observedAt) {
+      this(inspectionId, controller, health, observedAt, null);
+    }
+  }
 
   public record Verified(String planDigest, List<Sample> samples, Instant verifiedAt) {}
 
@@ -127,16 +162,22 @@ public class ExternalControllerLedger {
                 "external",
                 true,
                 "layout",
-                "CONTROLLER")));
+                p.layout().name())));
     var steps = new ArrayList<JobStep>();
     for (String name :
         List.of(
-            "Repeat final external controller checks",
-            "Prepare controller observer",
+            p.layout() == KafkaExpansionWorkflow.Layout.SEPARATE
+                ? "Repeat final checks for both processes"
+                : "Repeat final external controller checks",
+            p.layout() == KafkaExpansionWorkflow.Layout.SEPARATE
+                ? "Prepare two isolated process layouts"
+                : "Prepare controller observer",
             "Format empty controller storage",
             "Start controller observer",
             "Verify catch-up and admit controller",
-            "Verify controller and publish membership")) {
+            p.layout() == KafkaExpansionWorkflow.Layout.SEPARATE
+                ? "Start and verify broker; publish both processes"
+                : "Verify controller and publish membership")) {
       var step = new JobStep();
       step.setStepOrder(steps.size() + 1);
       step.setName(name);
@@ -146,15 +187,16 @@ public class ExternalControllerLedger {
     job = jobs.createJob(job, steps);
     jdbc.update(
         "insert into"
-            + " kf_external_controller_operations(id,cluster_id,agent_id,node_id,job_id,request_key,request_digest)"
-            + " values(?,?,?,?,?,?,?)",
+            + " kf_external_controller_operations(id,cluster_id,agent_id,node_id,job_id,request_key,request_digest,broker_node_id)"
+            + " values(?,?,?,?,?,?,?,?)",
         preview,
         cluster,
         p.candidateHostId(),
         p.process("controller").nodeId(),
         job.getId().toString(),
         key,
-        requestDigest);
+        requestDigest,
+        p.layout() == KafkaExpansionWorkflow.Layout.SEPARATE ? p.process("broker").nodeId() : null);
     return accepted(get(preview));
   }
 
@@ -260,8 +302,8 @@ public class ExternalControllerLedger {
   public void failure(UUID id, int generation) {
     jdbc.update(
         "update kf_external_controller_operations set"
-            + " state='RECOVERY_REQUIRED',last_error='Controller execution interrupted. Retain"
-            + " storage, observer/voter identity and reservations; resume this operation to"
+            + " state='RECOVERY_REQUIRED',last_error='External Add Node execution interrupted."
+            + " Retain storage, process identities and all reservations; resume this operation to"
             + " reconcile actual state.',updated_at=clock_timestamp() where id=? and"
             + " resume_generation=? and state not in ('SUCCEEDED','CANCELLED_SAFE')",
         id,
@@ -353,6 +395,41 @@ public class ExternalControllerLedger {
         "select set_config('tantor.external_broker_operation',?,true)",
         String.class,
         id.toString());
+    UUID brokerNode = null;
+    if (p.layout() == KafkaExpansionWorkflow.Layout.SEPARATE) {
+      var b = p.process("broker");
+      brokerNode = UUID.nameUUIDFromBytes((id + ":broker").getBytes(StandardCharsets.UTF_8));
+      if (Boolean.TRUE.equals(
+          jdbc.queryForObject(
+              "select exists(select 1 from kf_external_cluster_nodes where cluster_id=? and"
+                  + " node_id=?)",
+              Boolean.class,
+              op.clusterId(),
+              b.nodeId())))
+        throw new IllegalStateException("Broker inventory conflicts with another publication.");
+      jdbc.update(
+          "insert into"
+              + " kf_external_cluster_nodes(id,cluster_id,host,agent_id,node_id,is_broker,is_controller,port,systemd_service,config_file,install_dir,data_dirs,log_dirs,jmx_exporter_port,can_manage_kafka,can_write_config,can_restart,last_seen)"
+              + " values(?,?,?,?,?,true,false,?,?,?,?,?,?,?,true,false,false,?)",
+          brokerNode,
+          op.clusterId(),
+          p.candidateIp(),
+          op.agentId(),
+          b.nodeId(),
+          b.port(),
+          "broker",
+          p.configPath("broker"),
+          p.deploymentSettings().installPath(),
+          String.join(",", b.dataPaths()),
+          b.logPath(),
+          b.runtime().jmxPort() > 0 ? b.runtime().jmxPort() : null,
+          Timestamp.from(proof.verifiedAt()));
+      jdbc.update(
+          "update kf_external_clusters set broker_count=(select count(*) from"
+              + " kf_external_cluster_nodes where cluster_id=? and is_broker=true) where id=?",
+          op.clusterId(),
+          op.clusterId());
+    }
     UUID node = UUID.nameUUIDFromBytes((id + ":controller").getBytes(StandardCharsets.UTF_8));
     jdbc.update(
         "insert into"
@@ -375,9 +452,10 @@ public class ExternalControllerLedger {
         "update kf_discovery_agents set cluster_id=? where id=?", op.clusterId(), op.agentId());
     jdbc.update(
         "update kf_external_controller_operations set"
-            + " state='SUCCEEDED',published_node_id=?,last_error=null,updated_at=clock_timestamp()"
+            + " state='SUCCEEDED',published_node_id=?,published_broker_node_id=?,last_error=null,updated_at=clock_timestamp()"
             + " where id=?",
         node,
+        brokerNode,
         id);
     // Broker count is unchanged by controller-only publication.
     jobs.completeStep(
@@ -429,6 +507,40 @@ public class ExternalControllerLedger {
       if (!"OBSERVER_STARTED".equals(ExternalControllerRecovery.checkpoint(nativeProof, true)))
         throw new IllegalStateException(
             "Controller tools or physical state are not stable for publication.");
+      if (!"candidate:controller".equals(nativeProof.target()))
+        throw new IllegalStateException("Controller publication needs a controller inspection.");
+      if (p.layout() == KafkaExpansionWorkflow.Layout.SEPARATE) {
+        var brokerTask =
+            jdbc.queryForMap(
+                "select * from kf_external_controller_tasks where id=? and operation_id=? and"
+                    + " resume_generation=? and command='INSPECT' and status='SUCCESS'",
+                sample.brokerInspectionId(),
+                op.id(),
+                op.generation());
+        var brokerProof =
+            tasks.candidate(
+                frozen.nativePlan(),
+                sample.brokerInspectionId(),
+                op.agentId(),
+                (String) brokerTask.get("parameters"),
+                tasks.report(sample.brokerInspectionId()));
+        if (!"candidate:broker".equals(brokerProof.target()))
+          throw new IllegalStateException("Broker publication needs a broker inspection.");
+        evidence.runningCandidate(brokerProof);
+        if (!"OBSERVER_STARTED".equals(ExternalControllerRecovery.checkpoint(brokerProof, true))
+            || brokerProof.observedAt().isBefore(sample.observedAt().minusSeconds(30)))
+          throw new IllegalStateException("Fresh owned broker runtime and mounts are required.");
+        var brokerDirectories = brokerProof.state().path("directoryIds").elements();
+        var controllerDirectories = new HashSet<String>();
+        nativeProof
+            .state()
+            .path("directoryIds")
+            .elements()
+            .forEachRemaining(v -> controllerDirectories.add(v.asText()));
+        while (brokerDirectories.hasNext())
+          if (controllerDirectories.contains(brokerDirectories.next().asText()))
+            throw new IllegalStateException("Candidate directory identities overlap.");
+      }
       var e = sample.controller();
       if (e == null
           || !e.voterVerified()
@@ -468,6 +580,17 @@ public class ExternalControllerLedger {
                 + " command in ('FORMAT','START','ADMIT') and claimed_at is not null)",
             Boolean.class,
             id));
+  }
+
+  public boolean claimedFormat(UUID id, String role) {
+    return Boolean.TRUE.equals(
+        jdbc.queryForObject(
+            "select exists(select 1 from kf_external_controller_tasks where operation_id=? and"
+                + " command in ('FORMAT','RECONCILE_FORMAT','START','ADMIT') and claimed_at is not"
+                + " null and parameters::jsonb->>'role'=?)",
+            Boolean.class,
+            id,
+            role));
   }
 
   private Operation lock(UUID id, int generation) {
@@ -530,7 +653,8 @@ public class ExternalControllerLedger {
         (String) r.get("state"),
         ((Number) r.get("resume_generation")).intValue(),
         (String) r.get("last_error"),
-        "SUCCEEDED".equals(r.get("state")));
+        "SUCCEEDED".equals(r.get("state")),
+        r.get("broker_node_id") == null ? null : ((Number) r.get("broker_node_id")).intValue());
   }
 
   private Accepted accepted(Operation op) {

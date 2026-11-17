@@ -36,8 +36,29 @@ public class ExternalControllerPlanning {
   private final ObjectMapper mapper;
 
   public record Request(
-      UUID commonPreviewId, int controllerPort, Map<String, String> participantParcelDirs) {
+      UUID commonPreviewId,
+      int controllerPort,
+      Map<String, String> participantParcelDirs,
+      boolean separateProcesses,
+      Integer controllerJmxPort,
+      Integer brokerJmxPort) {
+    public Request(
+        UUID commonPreviewId, int controllerPort, Map<String, String> participantParcelDirs) {
+      this(commonPreviewId, controllerPort, participantParcelDirs, false, null, null);
+    }
+
+    public Request(
+        UUID commonPreviewId,
+        int controllerPort,
+        Map<String, String> participantParcelDirs,
+        boolean separateProcesses) {
+      this(commonPreviewId, controllerPort, participantParcelDirs, separateProcesses, null, null);
+    }
+
     public Request {
+      for (var port : Arrays.asList(controllerJmxPort, brokerJmxPort))
+        if (port != null && (port < 0 || port > 65535))
+          throw new IllegalArgumentException("Monitoring port must be 0 or a valid port.");
       participantParcelDirs =
           participantParcelDirs == null ? Map.of() : Map.copyOf(participantParcelDirs);
     }
@@ -59,7 +80,24 @@ public class ExternalControllerPlanning {
       boolean executionEnabled,
       List<String> blockers,
       List<Participant> participants,
-      String planDigest) {}
+      String planDigest,
+      boolean separateProcesses,
+      Integer proposedBrokerId,
+      String brokerServiceName,
+      String brokerConfigPath,
+      List<ProcessProfile> processes) {}
+
+  public record ProcessProfile(
+      String role,
+      int nodeId,
+      String serviceName,
+      String configPath,
+      int port,
+      int jmxPort,
+      List<String> dataPaths,
+      String metadataPath,
+      String logPath,
+      String heapXmx) {}
 
   public record Frozen(
       KafkaExpansionPlan.Frozen nativePlan,
@@ -76,8 +114,12 @@ public class ExternalControllerPlanning {
         || request.participantParcelDirs().size() > 128)
       throw new IllegalArgumentException(
           "Current common checks and a controller listener are required.");
-    var common = readiness.controllerEvidence(clusterId, request.commonPreviewId());
+    var common =
+        request.separateProcesses()
+            ? readiness.executionEvidence(clusterId, request.commonPreviewId(), null)
+            : readiness.controllerEvidence(clusterId, request.commonPreviewId());
     var r = common.request();
+    if (request.separateProcesses()) readiness.requireSeparateAgent(r.agentId(), false);
     readiness.assertControllerScope(clusterId, r.agentId(), false);
     var members = nodes.findByClusterId(clusterId);
     if (members.isEmpty() || members.size() > 128)
@@ -89,7 +131,10 @@ public class ExternalControllerPlanning {
     if (!memberAgents.containsAll(request.participantParcelDirs().keySet()))
       throw new IllegalArgumentException(
           "Parcel mappings must refer to current participant agent IDs.");
-    for (var member : members) readiness.requireControllerAgent(member.getAgentId(), false);
+    for (var member : members) {
+      if (request.separateProcesses()) readiness.requireSeparateAgent(member.getAgentId(), false);
+      else readiness.requireControllerAgent(member.getAgentId(), false);
+    }
     var artifact =
         catalog.resolve(
             clusters.findById(clusterId).orElseThrow().getKafkaVersion(), r.artifactId());
@@ -295,18 +340,25 @@ public class ExternalControllerPlanning {
           row,
           "BLOCKED",
           List.of(
-              "Controller profile readiness failed. Resolve the candidate checks and request fresh"
-                  + " review."),
+              failureMessage(
+                  checks.getFirst(),
+                  "Selected profile readiness failed. Resolve the candidate checks and request"
+                      + " fresh review.")),
           participants,
           frozen.plan());
     var blockers = new ArrayList<String>();
-    if (!release.enabled())
+    boolean separate = frozen.plan().layout() == KafkaExpansionWorkflow.Layout.SEPARATE;
+    if (!release.enabled(separate))
       blockers.add(
-          "External controller release gate is held pending live broker/readiness acceptance.");
+          "External selected-layout release gate is held pending the required live acceptance.");
     try {
-      readiness.requireControllerAgent(common.agentId(), true);
+      if (separate) readiness.requireSeparateAgent(common.agentId(), true);
+      else readiness.requireControllerAgent(common.agentId(), true);
     } catch (RuntimeException disabled) {
-      blockers.add("The candidate needs the separate controller execution opt-in.");
+      blockers.add(
+          separate
+              ? "The candidate needs the explicit separate-process execution opt-in."
+              : "The candidate needs the separate controller execution opt-in.");
     }
     return view(row, "PASS", blockers, participants, frozen.plan());
   }
@@ -340,8 +392,10 @@ public class ExternalControllerPlanning {
 
   public void current(Frozen f) {
     var p = f.nativePlan().plan();
-    release.require();
-    readiness.assertControllerScope(p.clusterId(), p.candidateHostId(), true);
+    boolean separate = p.layout() == KafkaExpansionWorkflow.Layout.SEPARATE;
+    release.require(separate);
+    if (separate) readiness.requireSeparateAgent(p.candidateHostId(), true);
+    readiness.assertControllerScope(p.clusterId(), p.candidateHostId(), !separate);
     if (!f.binding().equals(readiness.executionBinding(p.clusterId(), f.common())))
       throw new IllegalStateException("Frozen external controller scope changed.");
     if (!p.artifactSha256()
@@ -358,6 +412,7 @@ public class ExternalControllerPlanning {
     var cluster = clusters.findById(clusterId).orElseThrow();
     var participants = new ArrayList<KafkaExpansionPlan.Participant>();
     Map<String, String> inherited = null;
+    Map<String, String> brokerInherited = null;
     var members = nodes.findByClusterId(clusterId);
     var grouped = new TreeMap<String, List<Map<String, Object>>>();
     for (var task : observations)
@@ -430,6 +485,12 @@ public class ExternalControllerPlanning {
               identity.pid(),
               identity.processStartTicks(),
               report.controllerPort()));
+      if (identity.role().contains("broker") && request.separateProcesses()) {
+        if (brokerInherited != null && !brokerInherited.equals(report.inherited()))
+          throw new IllegalStateException(
+              "Broker settings differ; resolve inheritance before addition.");
+        brokerInherited = report.inherited();
+      }
       if (identity.role().contains("controller")) {
         if (inherited != null && !inherited.equals(report.inherited()))
           throw new IllegalStateException(
@@ -477,11 +538,9 @@ public class ExternalControllerPlanning {
       throw new IllegalStateException("Controller identity space exhausted.");
     if (Boolean.TRUE.equals(
         jdbc.queryForObject(
-            "select exists(select 1 from kf_external_add_node_owners where cluster_id=? and"
-                + " node_id=? and state<>'CANCELLED_SAFE')",
+            "select exists(select 1 from kf_external_add_node_resources where resource_key=?)",
             Boolean.class,
-            clusterId,
-            (int) proposed)))
+            "node:" + clusterId + ":" + proposed)))
       throw new IllegalStateException(
           "Proposed sequential controller ID is retained by another operation.");
     var artifact = catalog.resolve(cluster.getKafkaVersion(), common.artifactId());
@@ -497,6 +556,11 @@ public class ExternalControllerPlanning {
         policy.getControllerJmxPort() > 0
             ? policy.getControllerJmxPort()
             : observedJmx.iterator().next();
+    if (request.controllerJmxPort() != null) {
+      if (jmxPort > 0 && request.controllerJmxPort() == 0)
+        throw new IllegalStateException("Inherited controller monitoring cannot be disabled.");
+      jmxPort = request.controllerJmxPort();
+    }
     KafkaExpansionPlan.Runtime monitoring;
     if (jmxPort == 0)
       monitoring = new KafkaExpansionPlan.Runtime(null, "", 0, deployment.getLimitNofile());
@@ -519,6 +583,67 @@ public class ExternalControllerPlanning {
             "",
             inherited,
             monitoring);
+    var processes = new ArrayList<KafkaExpansionPlan.Process>();
+    processes.add(process);
+    if (request.separateProcesses()) {
+      long brokerId =
+          1L
+              + participants.stream()
+                  .filter(m -> m.role().contains("broker"))
+                  .mapToInt(KafkaExpansionPlan.Participant::nodeId)
+                  .max()
+                  .orElseThrow();
+      if (brokerId > Integer.MAX_VALUE
+          || brokerId == proposed
+          || participants.stream().anyMatch(m -> m.nodeId() == brokerId))
+        throw new IllegalStateException(
+            "Sequential broker ID conflicts with a participant identity.");
+      if (Boolean.TRUE.equals(
+          jdbc.queryForObject(
+              "select exists(select 1 from kf_external_add_node_resources where resource_key=?)",
+              Boolean.class,
+              "node:" + clusterId + ":" + brokerId)))
+        throw new IllegalStateException("Sequential broker ID is retained by another operation.");
+      var brokerJmx =
+          members.stream()
+              .filter(m -> Boolean.TRUE.equals(m.getIsBroker()))
+              .map(m -> Objects.requireNonNullElse(m.getJmxExporterPort(), 0))
+              .collect(java.util.stream.Collectors.toSet());
+      if (brokerJmx.size() != 1 || brokerInherited == null)
+        throw new IllegalStateException("Complete consistent broker runtime policy is required.");
+      int brokerJmxPort =
+          policy.getBrokerJmxPort() > 0 ? policy.getBrokerJmxPort() : brokerJmx.iterator().next();
+      if (request.brokerJmxPort() != null) {
+        if (brokerJmxPort > 0 && request.brokerJmxPort() == 0)
+          throw new IllegalStateException("Inherited broker monitoring cannot be disabled.");
+        brokerJmxPort = request.brokerJmxPort();
+      }
+      KafkaExpansionPlan.Runtime brokerMonitoring;
+      if (brokerJmxPort == 0)
+        brokerMonitoring = new KafkaExpansionPlan.Runtime(null, "", 0, deployment.getLimitNofile());
+      else {
+        var jmx =
+            catalog.resolveType("JMX_EXPORTER", null, artifactPolicy.getJmxExporterArtifactId());
+        brokerMonitoring =
+            new KafkaExpansionPlan.Runtime(
+                UUID.fromString(jmx.id()),
+                jmx.checksum(),
+                brokerJmxPort,
+                deployment.getLimitNofile());
+      }
+      processes.add(
+          new KafkaExpansionPlan.Process(
+              "broker",
+              (int) brokerId,
+              common.brokerPort(),
+              settings.brokerDataPaths(),
+              settings.brokerMetadataPath(),
+              settings.brokerLogPath(),
+              settings.brokerHeapXmx(),
+              common.brokerRack(),
+              brokerInherited,
+              brokerMonitoring));
+    }
     var plan =
         new KafkaExpansionPlan(
             "add-quorum-expansion/v2",
@@ -530,14 +655,16 @@ public class ExternalControllerPlanning {
             cluster.getKafkaClusterId(),
             cluster.getKafkaVersion(),
             KafkaExpansionWorkflow.Mode.DYNAMIC,
-            KafkaExpansionWorkflow.Layout.CONTROLLER,
+            request.separateProcesses()
+                ? KafkaExpansionWorkflow.Layout.SEPARATE
+                : KafkaExpansionWorkflow.Layout.CONTROLLER,
             live.features(),
             UUID.fromString(artifact.id()),
             artifact.checksum(),
             common.parcelDir(),
             settings.javaHome(),
             settings.runtimeUser(),
-            List.of(process),
+            processes,
             participants,
             voters,
             scope.getExcludedHostIds(),
@@ -601,7 +728,32 @@ public class ExternalControllerPlanning {
         "PASS".equals(status) && blockers.isEmpty(),
         List.copyOf(blockers),
         List.copyOf(participants),
-        (String) r.get("plan_digest"));
+        (String) r.get("plan_digest"),
+        tasks.parse(r.get("request"), Request.class).separateProcesses(),
+        p != null && p.layout() == KafkaExpansionWorkflow.Layout.SEPARATE
+            ? p.process("broker").nodeId()
+            : null,
+        "broker.service",
+        p != null && p.layout() == KafkaExpansionWorkflow.Layout.SEPARATE
+            ? p.configPath("broker")
+            : "",
+        p == null
+            ? List.of()
+            : p.processes().stream()
+                .map(
+                    c ->
+                        new ProcessProfile(
+                            c.role(),
+                            c.nodeId(),
+                            p.unit(c.role()),
+                            p.configPath(c.role()),
+                            c.port(),
+                            c.runtime().jmxPort(),
+                            c.dataPaths(),
+                            c.metadataPath(),
+                            c.logPath(),
+                            c.heapXmx()))
+                .toList());
   }
 
   static String role(ExternalClusterNode n) {

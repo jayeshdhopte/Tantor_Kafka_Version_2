@@ -15,6 +15,9 @@ import (
 )
 
 func TestControllerTransportKeepsReadinessAndMutationOptInsSeparate(t *testing.T) {
+	if validateAddNodeInspectionMode(RuntimeConfig{EnableSeparateAddition: true}, 0, "linux") == nil {
+		t.Fatal("separate execution bypassed inspection opt-in")
+	}
 	if validateAddNodeInspectionMode(RuntimeConfig{EnableControllerAddition: true}, 0, "linux") == nil {
 		t.Fatal("controller execution bypassed inspection opt-in")
 	}
@@ -28,7 +31,7 @@ func TestControllerTransportKeepsReadinessAndMutationOptInsSeparate(t *testing.T
 		if strings.HasSuffix(r.URL.Path, "/claim") {
 			var claim map[string]bool
 			json.NewDecoder(r.Body).Decode(&claim)
-			if claim["executionEnabled"] {
+			if claim["executionEnabled"] || claim["separateExecutionEnabled"] {
 				t.Error("broker opt-in enabled controller execution")
 			}
 			json.NewEncoder(w).Encode(map[string]any{"id": "task", "command": "RUNTIME", "claimToken": "token", "parameters": map[string]string{"runtime_inspection_request": "{}"}, "expiresAt": time.Now().Add(time.Minute)})

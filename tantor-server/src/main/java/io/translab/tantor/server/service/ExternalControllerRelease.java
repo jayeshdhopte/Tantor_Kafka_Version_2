@@ -15,6 +15,23 @@ public class ExternalControllerRelease {
   @Value("${tantor.external-add-node.phase4-accepted:false}")
   private boolean brokerAccepted;
 
+  @Value("${tantor.external-add-node.separate-execution-enabled:false}")
+  private boolean separateEnabled;
+
+  @Value("${tantor.external-add-node.phase5-accepted:false}")
+  private boolean controllerAccepted;
+
+  public boolean enabled(boolean separate) {
+    return enabled() && (!separate || separateEnabled && controllerAccepted);
+  }
+
+  public void require(boolean separate) {
+    if (!enabled(separate))
+      throw new IllegalStateException(
+          "External selected-layout release is held pending live acceptance and explicit"
+              + " approval.");
+  }
+
   public boolean enabled() {
     return enabled && brokerAccepted && broker.released();
   }

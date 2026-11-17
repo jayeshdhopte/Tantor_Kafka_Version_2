@@ -25,7 +25,7 @@ func pollExternalControllerTask(ctx context.Context, client *APIClient, cfg Runt
 	}
 	endpoint := client.endpoint(externalControllerAPI + url.PathEscape(cfg.HostID))
 	var task externalBrokerTask
-	if _, err := client.DoJSON(ctx, http.MethodPost, endpoint+"/claim", nil, map[string]bool{"executionEnabled": cfg.EnableControllerAddition}, &task); err != nil {
+	if _, err := client.DoJSON(ctx, http.MethodPost, endpoint+"/claim", nil, map[string]bool{"executionEnabled": cfg.EnableControllerAddition, "separateExecutionEnabled": cfg.EnableSeparateAddition}, &task); err != nil {
 		return err
 	}
 	if task.ID == "" {
@@ -37,6 +37,12 @@ func pollExternalControllerTask(ctx context.Context, client *APIClient, cfg Runt
 				return "", fmt.Errorf("approved artifact ID required")
 			}
 			return (serviceDownloader{client: client, ctx: taskCtx}).DownloadArtifact(client.endpoint("/api/v1/artifacts/"+id+"/download"), dest)
+		}
+		var plan struct {
+			Layout string `json:"layout"`
+		}
+		if json.Unmarshal([]byte(task.Parameters["expansion_plan"]), &plan) == nil && plan.Layout == "SEPARATE" {
+			return addnodecontroller.RunSeparate(taskCtx, task.Command, cfg.HostID, "/var/lib/tantor-discovery-agent/add-node", task.Parameters, cfg.EnableSeparateAddition, download)
 		}
 		return addnodecontroller.Run(taskCtx, task.Command, cfg.HostID, "/var/lib/tantor-discovery-agent/add-node", task.Parameters, cfg.EnableControllerAddition, download)
 	})

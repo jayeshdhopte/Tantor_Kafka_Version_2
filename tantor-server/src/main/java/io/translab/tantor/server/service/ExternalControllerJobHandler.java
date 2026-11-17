@@ -35,13 +35,31 @@ public class ExternalControllerJobHandler implements JobHandler {
       throw new IllegalStateException("Incomplete external controller workflow.");
     try {
       planning.current(frozen);
+      boolean separate =
+          frozen.nativePlan().plan().layout() == KafkaExpansionWorkflow.Layout.SEPARATE;
+      String brokerCheckpoint = "ACCEPTED";
+      KafkaExpansionNativeEvidence.Observation brokerInspection = null;
       String checkpoint = "ACCEPTED";
       KafkaExpansionNativeEvidence.Observation inspection = null;
       if (!"ACCEPTED".equals(op.state())) {
         ledger.reconcile(op.id(), generation);
         inspection = inspect(op, generation, frozen, steps.get(5));
         checkpoint =
-            ExternalControllerRecovery.checkpoint(inspection, ledger.claimedFormat(op.id()));
+            ExternalControllerRecovery.checkpoint(
+                inspection, ledger.claimedFormat(op.id(), "controller"));
+      }
+      if (separate && !"ACCEPTED".equals(op.state())) {
+        brokerInspection = inspectRole(op, generation, frozen, steps.get(5), "broker");
+        brokerCheckpoint =
+            ExternalControllerRecovery.checkpoint(brokerInspection, claimedBrokerFormat(op.id()));
+        if ("OBSERVER_STARTED".equals(checkpoint)
+            && Set.of("ACCEPTED", "VALIDATING").contains(brokerCheckpoint))
+          throw new IllegalStateException(
+              "Controller is active without a proven prepared broker; retain both identities for"
+                  + " investigation.");
+        if (!"OBSERVER_STARTED".equals(checkpoint) && "OBSERVER_STARTED".equals(brokerCheckpoint))
+          throw new IllegalStateException(
+              "Broker is running without its verified controller; retain both processes.");
       }
       verifyParticipants(op, generation, frozen, steps.getFirst());
       if (!"OBSERVER_STARTED".equals(checkpoint)) live.baseline(frozen.nativePlan().plan());
@@ -68,6 +86,21 @@ public class ExternalControllerJobHandler implements JobHandler {
             "PREPARED",
             KafkaExpansionWorkflow.Kind.PREPARE);
         checkpoint = "PREPARED";
+      }
+      // Prepare both isolated layouts while the candidate is still fresh.
+      if (separate && Set.of("ACCEPTED", "VALIDATING").contains(brokerCheckpoint)) {
+        mutateRole(
+            op,
+            generation,
+            frozen,
+            steps.get(1),
+            "broker",
+            "PREPARE",
+            "PREPARING",
+            "PREPARED",
+            KafkaExpansionWorkflow.Kind.PREPARE,
+            null);
+        brokerCheckpoint = "PREPARED";
       }
       if ("PREPARED".equals(checkpoint)) {
         mutation(
@@ -134,6 +167,60 @@ public class ExternalControllerJobHandler implements JobHandler {
           "Exact controller ID/directory and expanded voter membership independently verified.");
       ledger.state(op.id(), generation, "VERIFYING");
       ledger.step(op.id(), generation, steps.get(5).getId(), JobStepStatus.IN_PROGRESS, "");
+      if (separate) {
+        if ("PREPARED".equals(brokerCheckpoint)) {
+          mutateRole(
+              op,
+              generation,
+              frozen,
+              steps.get(5),
+              "broker",
+              "FORMAT",
+              "FORMATTING",
+              "FORMATTED",
+              KafkaExpansionWorkflow.Kind.FORMAT,
+              null);
+          brokerCheckpoint = "FORMATTED";
+        } else if ("FORMATTED".equals(brokerCheckpoint)
+            && brokerInspection != null
+            && "FORMAT_INTENT".equals(brokerInspection.phase())) {
+          mutateRole(
+              op,
+              generation,
+              frozen,
+              steps.get(5),
+              "broker",
+              "RECONCILE_FORMAT",
+              "FORMATTING",
+              "FORMATTED",
+              KafkaExpansionWorkflow.Kind.FORMAT,
+              null);
+        }
+        if ("FORMATTED".equals(brokerCheckpoint)) {
+          var controllerProof = awaitController(op, generation, frozen, steps.get(5), true);
+          mutateRole(
+              op,
+              generation,
+              frozen,
+              steps.get(5),
+              "broker",
+              "START",
+              "STARTING",
+              "OBSERVER_STARTED",
+              KafkaExpansionWorkflow.Kind.START,
+              tasks.json(controllerProof));
+          brokerCheckpoint = "OBSERVER_STARTED";
+        }
+        if (!"OBSERVER_STARTED".equals(brokerCheckpoint))
+          throw new IllegalStateException("Owned broker checkpoint cannot continue.");
+        ledger.state(op.id(), generation, "VERIFYING");
+        ledger.step(
+            op.id(),
+            generation,
+            steps.get(5).getId(),
+            JobStepStatus.IN_PROGRESS,
+            "Verifying both processes before publication.");
+      }
       verifyParticipants(op, generation, frozen, steps.get(5));
       var samples = new ArrayList<ExternalControllerLedger.Sample>();
       Instant deadline =
@@ -145,8 +232,21 @@ public class ExternalControllerJobHandler implements JobHandler {
           var candidate = tasks.observation(frozen.nativePlan(), task);
           nativeEvidence.runningCandidate(candidate);
           var voter = live.controller(frozen.nativePlan(), candidate.metadataDirectoryId(), true);
-          String health = live.health(frozen.nativePlan().plan(), true);
-          samples.add(new ExternalControllerLedger.Sample(task, voter, health, Instant.now()));
+          UUID brokerTask = null;
+          if (separate) {
+            brokerTask =
+                dispatchRole(op, generation, frozen, steps.get(5), "broker", "INSPECT", null);
+            await(brokerTask);
+            var brokerProof = tasks.observation(frozen.nativePlan(), brokerTask);
+            nativeEvidence.runningCandidate(brokerProof);
+            ExternalControllerRecovery.checkpoint(brokerProof, true);
+          }
+          String health =
+              separate
+                  ? live.health(frozen.nativePlan().plan(), true, true)
+                  : live.health(frozen.nativePlan().plan(), true);
+          samples.add(
+              new ExternalControllerLedger.Sample(task, voter, health, Instant.now(), brokerTask));
         } catch (KafkaExpansionQuorum.NotReady waiting) {
           samples.clear();
           if (!Instant.now().isBefore(deadline)) throw waiting;
@@ -209,6 +309,70 @@ public class ExternalControllerJobHandler implements JobHandler {
         step.getId(),
         JobStepStatus.SUCCESS,
         "Owned " + completed + " controller checkpoint verified.");
+  }
+
+  private KafkaExpansionNativeEvidence.Observation inspectRole(
+      ExternalControllerLedger.Operation op,
+      int generation,
+      ExternalControllerPlanning.Frozen frozen,
+      JobStep step,
+      String role) {
+    UUID id = dispatchRole(op, generation, frozen, step, role, "INSPECT", null);
+    await(id);
+    return tasks.observation(frozen.nativePlan(), id);
+  }
+
+  private UUID dispatchRole(
+      ExternalControllerLedger.Operation op,
+      int generation,
+      ExternalControllerPlanning.Frozen frozen,
+      JobStep step,
+      String role,
+      String action,
+      String proof) {
+    planning.current(frozen);
+    return tasks.enqueue(
+        op.id(),
+        op.id(),
+        step.getId(),
+        op.agentId(),
+        action,
+        tasks.parameters(frozen.nativePlan(), action, proof, role),
+        generation);
+  }
+
+  private void mutateRole(
+      ExternalControllerLedger.Operation op,
+      int generation,
+      ExternalControllerPlanning.Frozen frozen,
+      JobStep step,
+      String role,
+      String action,
+      String intent,
+      String completed,
+      KafkaExpansionWorkflow.Kind kind,
+      String controllerProof) {
+    ledger.state(op.id(), generation, intent);
+    ledger.step(op.id(), generation, step.getId(), JobStepStatus.IN_PROGRESS, "");
+    UUID id = dispatchRole(op, generation, frozen, step, role, action, controllerProof);
+    await(id);
+    var proof = tasks.observation(frozen.nativePlan(), id);
+    nativeEvidence.completed(
+        frozen.nativePlan().plan(),
+        new KafkaExpansionWorkflow.Step(action, kind, "candidate:" + role, role),
+        proof,
+        false);
+    ledger.state(op.id(), generation, completed);
+    ledger.step(
+        op.id(),
+        generation,
+        step.getId(),
+        step.getStepOrder() == 6 ? JobStepStatus.IN_PROGRESS : JobStepStatus.SUCCESS,
+        "Owned " + role + " " + completed + " verified; final publication is still pending.");
+  }
+
+  private boolean claimedBrokerFormat(UUID id) {
+    return ledger.claimedFormat(id, "broker");
   }
 
   private KafkaExpansionLiveVerifier.ControllerProof awaitController(

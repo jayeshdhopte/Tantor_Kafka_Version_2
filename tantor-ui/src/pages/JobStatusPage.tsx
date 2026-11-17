@@ -10,7 +10,7 @@ import './JobStatusPage.css';
 type Job = {
   id: string;
   type: string;
-  payload?: string | { clusterName?: string; mode?: string; force?: boolean; clusterId?: string; operationId?: string };
+  payload?: string | { clusterName?: string; mode?: string; force?: boolean; clusterId?: string; operationId?: string; layout?: string };
   status: string;
   requestedBy: string;
   startTime: string;
@@ -21,6 +21,11 @@ type Job = {
   configRecoveryBlockedReason?: string | null;
   retryCount: number;
 };
+
+function isExternalSeparate(payload: Job['payload']): boolean {
+  try { return (typeof payload === 'string' ? JSON.parse(payload) : payload)?.layout === 'SEPARATE'; }
+  catch { return false; }
+}
 
 type JobStep = {
   id: string;
@@ -382,7 +387,7 @@ export function JobStatusPage() {
   return (
     <div className="job-status-page animate-fade-in">
       {deletionDetails && <div className="job-deletion-context"><strong>{deletionDetails.force ? 'Force deletion' : 'Cluster deletion'} · {deletionDetails.clusterName || 'Cluster'}</strong><span>{deletionDetails.mode === 'EXTERNAL' ? 'External registration removal' : 'Managed cluster cleanup'} · Requested by {job?.requestedBy || 'Not recorded'}</span></div>}
-      {job.type === 'EXTERNAL_CONTROLLER_ADDITION' && <div className="job-deletion-context" role="status"><strong>External dynamic controller addition</strong><span>Observer startup, catch-up and voter admission are separate checkpoints. Resume reconciles actual directory identity and live voter membership. An uncertain format or admission retains reservations; existing cluster services are not restarted.</span></div>}
+      {job.type === 'EXTERNAL_CONTROLLER_ADDITION' && <div className="job-deletion-context" role="status"><strong>{isExternalSeparate(job.payload) ? 'External broker and controller addition' : 'External dynamic controller addition'}</strong><span>{isExternalSeparate(job.payload) ? 'The controller must be verified as a voter before the broker starts. Both processes are published together after stable health checks. Resume preserves the admitted controller and both reserved IDs while reconciling incomplete broker work.' : 'Observer startup, catch-up and voter admission are separate checkpoints. Resume reconciles actual directory identity and live voter membership. An uncertain format or admission retains reservations; existing cluster services are not restarted.'}</span></div>}
       {job.type === 'EXTERNAL_BROKER_ADDITION' && <div className="job-deletion-context" role="status"><strong>External broker addition</strong><span>Startup and verified membership are separate checkpoints. This operation retains the host and node ID until verification completes. Resume inspects the saved receipt and storage before continuing incomplete work; an uncertain format outcome stays blocked for investigation.</span></div>}
       <div className="page-header-actions">
         <div className="back-nav" onClick={() => navigate('/jobs')} style={{ cursor: 'pointer' }}>

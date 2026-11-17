@@ -74,15 +74,17 @@ class ExternalBrokerAdditionDatabaseTest {
               } catch (Exception e) {
                 throw new RuntimeException(e);
               }
-              try (var migration =
-                  getClass()
-                      .getResourceAsStream(
-                          "/db/migration/V111__external_dynamic_controller_addition.sql")) {
-                jdbc.execute(
-                    new String(migration.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
-              } catch (Exception failure) {
-                throw new RuntimeException(failure);
-              }
+              for (String resource :
+                  java.util.List.of(
+                      "/db/migration/V111__external_dynamic_controller_addition.sql",
+                      "/db/migration/V112__external_separate_process_addition.sql"))
+                try (var migration = getClass().getResourceAsStream(resource)) {
+                  jdbc.execute(
+                      new String(
+                          migration.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
+                } catch (Exception failure) {
+                  throw new RuntimeException(failure);
+                }
               var planning = mock(ExternalBrokerAdditionPlanning.class);
               var readiness = mock(ExternalAddNodeReadinessService.class);
               var jobs = mock(JobService.class);

@@ -9,7 +9,6 @@ import io.translab.tantor.server.repository.ExternalClusterRepository;
 import java.sql.*;
 import java.time.Instant;
 import java.util.*;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.*;
@@ -19,13 +18,15 @@ import org.springframework.transaction.support.TransactionTemplate;
     named = "TANTOR_ADD_NODE_CHECK_URL",
     matches = "jdbc:postgresql://127\\.0\\.0\\.1:65440/.*")
 class ExternalControllerDatabaseTest {
-  @Test
-  void sharedReservationsLeasesAndAtomicControllerPublication() throws Exception {
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+  void sharedReservationsLeasesAndAtomicControllerPublication(boolean separate) throws Exception {
     var source =
         new DriverManagerDataSource(System.getenv("TANTOR_ADD_NODE_CHECK_URL"), "postgres", "");
     var jdbc = new JdbcTemplate(source);
     var mapper = new ObjectMapper().findAndRegisterModules();
-    var nativePlan = ExternalControllerRecoveryTest.frozen();
+    var nativePlan =
+        separate ? ExternalSeparateProcessTest.frozen() : ExternalControllerRecoveryTest.frozen();
     var p = nativePlan.plan();
     var common =
         new ExternalAddNodeReadinessService.Request(
@@ -70,7 +71,8 @@ class ExternalControllerDatabaseTest {
                     List.of(
                         "V109__external_broker_addition.sql",
                         "V110__external_broker_verification_recovery.sql",
-                        "V111__external_dynamic_controller_addition.sql"))
+                        "V111__external_dynamic_controller_addition.sql",
+                        "V112__external_separate_process_addition.sql"))
                   try (var stream = getClass().getResourceAsStream("/db/migration/" + migration)) {
                     assertNotNull(stream);
                     jdbc.execute(
@@ -132,14 +134,15 @@ class ExternalControllerDatabaseTest {
                     nativePlan.digest());
                 jdbc.update(
                     "insert into"
-                        + " kf_external_controller_operations(id,cluster_id,agent_id,node_id,job_id,request_key,request_digest,state)"
-                        + " values(?,?,?,?,?,'fixture-controller-request',?,'VERIFYING')",
+                        + " kf_external_controller_operations(id,cluster_id,agent_id,node_id,job_id,request_key,request_digest,state,broker_node_id)"
+                        + " values(?,?,?,?,?,'fixture-controller-request',?,'VERIFYING',?)",
                     id,
                     clusterId,
                     p.candidateHostId(),
                     p.process("controller").nodeId(),
                     jobId.toString(),
-                    "c".repeat(64));
+                    "c".repeat(64),
+                    separate ? p.process("broker").nodeId() : null);
                 var planning = mock(ExternalControllerPlanning.class);
                 var release = mock(ExternalControllerRelease.class);
                 var jobs = mock(JobService.class);
@@ -282,7 +285,7 @@ class ExternalControllerDatabaseTest {
                           "INSPECT",
                           tasks.parameters(nativePlan, "INSPECT", null),
                           1);
-                  var claim = tasks.claim(p.candidateHostId(), true);
+                  var claim = tasks.claim(p.candidateHostId(), true, separate);
                   assertEquals(task, claim.get("id"));
                   var report = ExternalControllerRecoveryTest.report(nativePlan);
                   Instant at = now.minusSeconds(offset);
@@ -309,9 +312,34 @@ class ExternalControllerDatabaseTest {
                           at,
                           false,
                           true);
+                  UUID brokerTask = null;
+                  if (separate) {
+                    brokerTask =
+                        tasks.enqueue(
+                            id,
+                            id,
+                            steps.get(5).getId(),
+                            p.candidateHostId(),
+                            "INSPECT",
+                            tasks.parameters(nativePlan, "INSPECT", null, "broker"),
+                            1);
+                    var brokerClaim = tasks.claim(p.candidateHostId(), false, true);
+                    assertEquals(brokerTask, brokerClaim.get("id"));
+                    var brokerReport = ExternalSeparateProcessTest.report(nativePlan, "broker");
+                    brokerReport.put("observedAt", at.toString());
+                    jdbc.update(
+                        "update kf_external_controller_tasks set claimed_at=? where id=?",
+                        Timestamp.from(at.minusSeconds(1)),
+                        brokerTask);
+                    tasks.complete(
+                        p.candidateHostId(),
+                        brokerTask,
+                        new ExternalControllerTasks.Result(
+                            (UUID) brokerClaim.get("claimToken"), "SUCCESS", brokerReport, null));
+                  }
                   samples.add(
                       new ExternalControllerLedger.Sample(
-                          task, proof, "full cluster and voter health verified", at));
+                          task, proof, "full cluster and voter health verified", at, brokerTask));
                 }
                 var verified =
                     new ExternalControllerLedger.Verified(
@@ -356,23 +384,24 @@ class ExternalControllerDatabaseTest {
                 assertEquals("SUCCEEDED", published.state());
                 assertEquals(published, ledger.publish(id, 1, steps.get(5).getId()));
                 assertEquals(
-                    3,
+                    separate ? 4 : 3,
                     jdbc.queryForObject(
                         "select count(*) from kf_external_cluster_nodes", Integer.class));
                 assertEquals(
-                    1,
+                    separate ? 2 : 1,
                     jdbc.queryForObject(
                         "select broker_count from kf_external_clusters", Integer.class));
                 assertEquals(
                     "controller",
                     jdbc.queryForObject(
-                        "select systemd_service from kf_external_cluster_nodes where agent_id=?",
+                        "select systemd_service from kf_external_cluster_nodes where agent_id=? and"
+                            + " is_controller=true",
                         String.class,
                         p.candidateHostId()));
                 assertFalse(
                     jdbc.queryForObject(
                         "select can_write_config or can_restart from kf_external_cluster_nodes"
-                            + " where agent_id=?",
+                            + " where agent_id=? and is_controller=true",
                         Boolean.class,
                         p.candidateHostId()));
                 assertEquals(
@@ -381,7 +410,7 @@ class ExternalControllerDatabaseTest {
                         "select status from kf_jobs where id=?", String.class, jobId.toString()));
                 assertFalse(guard.reservedAgent(p.candidateHostId()));
                 assertEquals(
-                    1,
+                    separate ? 2 : 1,
                     jdbc.queryForObject(
                         "select count(*) from kf_external_add_node_resources where permanent=true",
                         Integer.class));

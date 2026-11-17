@@ -98,6 +98,11 @@ public class ExternalControllerTasks {
 
   @Transactional
   public Map<String, Object> claim(String agent, boolean execution) {
+    return claim(agent, execution, false);
+  }
+
+  @Transactional
+  public Map<String, Object> claim(String agent, boolean execution, boolean separateExecution) {
     readiness.requireControllerAgent(agent, false);
     var rows =
         jdbc.queryForList(
@@ -113,11 +118,19 @@ public class ExternalControllerTasks {
     var r = rows.getFirst();
     UUID cluster = (UUID) r.get("cluster_id"), operation = (UUID) r.get("operation_id");
     String action = r.get("command").toString();
+    boolean separate =
+        r.get("plan") != null
+            && KafkaExpansionPlan.read(
+                        mapper, r.get("plan").toString(), r.get("plan_digest").toString())
+                    .plan()
+                    .layout()
+                == KafkaExpansionWorkflow.Layout.SEPARATE;
+    if (separate) readiness.requireSeparateAgent(agent, false);
     if (operation == null) {
       if (!instant(r.get("expires_at")).isAfter(Instant.now())) return Map.of();
       guard.assertMutable(cluster, null);
     } else {
-      release.require();
+      release.require(separate);
       var op =
           jdbc.queryForMap("select * from kf_external_controller_operations where id=?", operation);
       if (((Number) op.get("resume_generation")).intValue()
@@ -138,9 +151,11 @@ public class ExternalControllerTasks {
       if (!expected.equals(op.get("state"))) return Map.of();
     }
     boolean mutation = !Set.of("RUNTIME", "VALIDATE").contains(action);
-    if (mutation && (!execution || operation == null)) return Map.of();
+    if (mutation && (!(separate ? separateExecution : execution) || operation == null))
+      return Map.of();
     var common = parse(r.get("common_request"), ExternalAddNodeReadinessService.Request.class);
-    readiness.assertControllerScope(cluster, common.agentId(), mutation);
+    readiness.assertControllerScope(cluster, common.agentId(), mutation && !separate);
+    if (separate) readiness.requireSeparateAgent(common.agentId(), mutation);
     if (!Objects.equals(r.get("binding_hash"), readiness.executionBinding(cluster, common)))
       throw new IllegalStateException("Controller preview identity/connection binding changed.");
     Map<String, String> params = new TreeMap<>(parse(r.get("parameters"), Map.class));
@@ -165,12 +180,17 @@ public class ExternalControllerTasks {
                         && member.unit().equals(request.identity().serviceName())))
           throw new IllegalStateException("Runtime target is not a frozen participant.");
       }
-    } else if (!Objects.equals(params.get("plan_digest"), r.get("plan_digest"))
+    } else if (!agent.equals(common.agentId())
+        || !Objects.equals(params.get("plan_digest"), r.get("plan_digest"))
         || !Objects.equals(params.get("expansion_plan"), r.get("plan")))
       throw new IllegalStateException(
           "Controller task parameters differ from the frozen server plan.");
 
     if (!"RUNTIME".equals(action)) {
+      String role = params.get("role");
+      if (!("controller".equals(role) || separate && "broker".equals(role))
+          || "ADMIT".equals(action) && !"controller".equals(role))
+        throw new IllegalStateException("Unreviewed external process role.");
       var frozen =
           KafkaExpansionPlan.read(mapper, (String) r.get("plan"), (String) r.get("plan_digest"));
       if (!frozen
@@ -285,7 +305,8 @@ public class ExternalControllerTasks {
     done.setId(taskId);
     done.setStatus("SUCCESS");
     done.setLogOutput(report.toString());
-    return evidence.read(frozen, "candidate:controller", issued, done);
+    String role = parse(parameters, Map.class).get("role").toString();
+    return evidence.read(frozen, "candidate:" + role, issued, done);
   }
 
   public static void validateReady(KafkaExpansionPlan.Frozen frozen, JsonNode proof) {
@@ -321,6 +342,14 @@ public class ExternalControllerTasks {
     params.put("role", "controller");
     params.put("action", action);
     if (proof != null) params.put("controller_proof", proof);
+    return params;
+  }
+
+  public Map<String, String> parameters(
+      KafkaExpansionPlan.Frozen frozen, String action, String proof, String role) {
+    var params = new TreeMap<>(parameters(frozen, action, proof));
+    frozen.plan().process(role);
+    params.put("role", role);
     return params;
   }
 

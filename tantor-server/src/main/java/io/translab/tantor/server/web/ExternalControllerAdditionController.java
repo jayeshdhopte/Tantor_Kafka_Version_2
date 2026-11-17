@@ -17,7 +17,11 @@ public class ExternalControllerAdditionController {
 
   public record Accept(UUID previewId, String contextHash, String planDigest, String requestKey) {}
 
-  public record Claim(boolean executionEnabled) {}
+  public record Claim(boolean executionEnabled, boolean separateExecutionEnabled) {
+    public Claim(boolean executionEnabled) {
+      this(executionEnabled, false);
+    }
+  }
 
   private boolean allowed(String auth) {
     return permissions.canAccess(auth, RoleAuthenticationUtil.ADD_NODE);
@@ -99,7 +103,11 @@ public class ExternalControllerAdditionController {
       @PathVariable String agent,
       @RequestBody(required = false) Claim claim) {
     if (!allowed(auth)) return ResponseEntity.status(403).build();
-    return ResponseEntity.ok(tasks.claim(agent, claim != null && claim.executionEnabled()));
+    return ResponseEntity.ok(
+        tasks.claim(
+            agent,
+            claim != null && claim.executionEnabled(),
+            claim != null && claim.separateExecutionEnabled()));
   }
 
   @PostMapping("/api/v1/ui/external-clusters/discovery/controller-tasks/{agent}/{id}/result")

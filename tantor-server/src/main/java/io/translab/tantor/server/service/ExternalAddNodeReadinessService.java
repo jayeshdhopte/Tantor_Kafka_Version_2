@@ -702,7 +702,9 @@ public class ExternalAddNodeReadinessService {
             String.class,
             id);
     var report = parse(raw, ExternalAddNodeInspectionService.Observation.class);
-    if (!(candidate.getVersion().endsWith("-an.3") || candidate.getVersion().endsWith("-an.4"))
+    if (!(candidate.getVersion().endsWith("-an.3")
+            || candidate.getVersion().endsWith("-an.4")
+            || candidate.getVersion().endsWith("-an.5"))
         || !report.brokerExecutionCapable())
       throw conflict(
           "Install the compatible external broker-add adapter and explicitly enable broker"
@@ -741,7 +743,7 @@ public class ExternalAddNodeReadinessService {
     var a = agent(id);
     requireAgent(a);
     guardAgent(a);
-    if (!a.getVersion().endsWith("-an.4"))
+    if (!(a.getVersion().endsWith("-an.4") || a.getVersion().endsWith("-an.5")))
       throw conflict("A compatible external controller adapter (an.4) is required.");
     if (execution) {
       var raw =
@@ -753,6 +755,23 @@ public class ExternalAddNodeReadinessService {
           .controllerExecutionCapable())
         throw conflict(
             "Enable the separate external controller execution opt-in on this candidate.");
+    }
+  }
+
+  void requireSeparateAgent(String id, boolean execution) {
+    requireControllerAgent(id, false);
+    var a = agent(id);
+    if (!a.getVersion().endsWith("-an.5"))
+      throw conflict("A compatible external separate-process adapter (an.5) is required.");
+    if (execution) {
+      var raw =
+          jdbc.queryForObject(
+              "select report from kf_external_add_node_observations where agent_id=?",
+              String.class,
+              id);
+      if (!parse(raw, ExternalAddNodeInspectionService.Observation.class)
+          .separateExecutionCapable())
+        throw conflict("Enable the explicit external separate-process execution opt-in.");
     }
   }
 

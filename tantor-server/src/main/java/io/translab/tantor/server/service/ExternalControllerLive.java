@@ -64,6 +64,10 @@ public class ExternalControllerLive {
   }
 
   public String health(KafkaExpansionPlan p, boolean expanded) {
+    return health(p, expanded, false);
+  }
+
+  public String health(KafkaExpansionPlan p, boolean expanded, boolean brokerRequired) {
     var cluster = external.resolve(p.clusterId());
     cluster.setKafkaClusterId(p.kafkaClusterId());
     if (expanded) {
@@ -93,6 +97,32 @@ public class ExternalControllerLive {
           description.nodes().get(20, TimeUnit.SECONDS).stream()
               .map(org.apache.kafka.common.Node::id)
               .collect(java.util.stream.Collectors.toSet());
+      if (p.layout() == KafkaExpansionWorkflow.Layout.SEPARATE
+          && (brokerRequired || actual.contains(p.process("broker").nodeId()))) {
+        var b = p.process("broker");
+        var registered =
+            description.nodes().get(20, TimeUnit.SECONDS).stream()
+                .filter(n -> n.id() == b.nodeId())
+                .findFirst()
+                .orElseThrow(
+                    () ->
+                        new KafkaExpansionQuorum.NotReady(
+                            "New broker is not registered and unfenced."));
+        if (!registered.host().equals(p.candidateIp())
+            || registered.port() != b.port()
+            || !Objects.toString(registered.rack(), "").equals(b.brokerRack()))
+          throw new IllegalStateException(
+              "Broker advertised endpoint/rack differs from the frozen layout.");
+        expected.add(b.nodeId());
+        var services = new ArrayList<>(cluster.getServices());
+        var broker = new ClusterServiceAssignment();
+        broker.setCluster(cluster);
+        broker.setHostId("external-agent:" + p.candidateHostId());
+        broker.setNodeId(b.nodeId());
+        broker.setRole("broker");
+        services.add(broker);
+        cluster.setServices(services);
+      }
       if (!expected.equals(actual))
         throw new IllegalStateException(
             "Existing broker membership changed during controller addition.");

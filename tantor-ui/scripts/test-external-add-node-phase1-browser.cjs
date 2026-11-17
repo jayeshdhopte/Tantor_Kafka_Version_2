@@ -57,7 +57,7 @@ const fs = require('node:fs');
     await page.getByRole('button', { name: 'Continue to role', exact: true }).click();
     const radios = page.getByRole('radio'); assert.equal(await radios.count(), 3);
     assert.equal(await radios.nth(0).isChecked(), true);
-    assert.equal(await radios.nth(1).isDisabled(), false); assert.equal(await radios.nth(2).isDisabled(), true);
+    assert.equal(await radios.nth(1).isDisabled(), false); assert.equal(await radios.nth(2).isDisabled(), false);
     await capture('03-broker-only-test-data.png');
     await page.getByRole('button', { name: 'Review selected layout', exact: true }).click();
     await page.getByRole('heading', { name: 'Review selected layout', exact: true }).waitFor();

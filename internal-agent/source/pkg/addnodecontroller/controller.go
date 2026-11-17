@@ -1,4 +1,4 @@
-// Package addnodecontroller exposes only the external dynamic controller workflow.
+// Package addnodecontroller exposes scoped external dynamic controller and separate-process workflows.
 package addnodecontroller
 
 import (
@@ -18,6 +18,17 @@ func Run(ctx context.Context, action, hostID, stateDir string, params map[string
 	if runtime.GOOS != "linux" || os.Geteuid() != 0 {
 		return "", fmt.Errorf("Linux root required")
 	}
+	return run(ctx, action, hostID, stateDir, params, execution, false, download)
+}
+
+func RunSeparate(ctx context.Context, action, hostID, stateDir string, params map[string]string, execution bool, download func(string, string) (string, error)) (string, error) {
+	return run(ctx, action, hostID, stateDir, params, false, execution, download)
+}
+
+func run(ctx context.Context, action, hostID, stateDir string, params map[string]string, execution, separateExecution bool, download func(string, string) (string, error)) (string, error) {
+	if runtime.GOOS != "linux" || os.Geteuid() != 0 {
+		return "", fmt.Errorf("Linux root required")
+	}
 	exec := executor.New(executor.Options{PrivilegeMode: "direct"})
 	if action == "RUNTIME" {
 		return expansion.InspectRuntime(ctx, params["runtime_inspection_request"], hostID, exec)
@@ -26,13 +37,13 @@ func Run(ctx context.Context, action, hostID, stateDir string, params map[string
 	if err != nil {
 		return "", err
 	}
-	if hostID != p.CandidateHostID || p.QuorumMode != "DYNAMIC" || p.Layout != "CONTROLLER" || p.DeploymentSettings == nil {
+	if hostID != p.CandidateHostID || p.QuorumMode != "DYNAMIC" || (p.Layout != "CONTROLLER" && p.Layout != "SEPARATE") || p.DeploymentSettings == nil {
 		return "", fmt.Errorf("only a reviewed external dynamic controller is supported")
 	}
 	if action == "VALIDATE" {
 		return expansion.ValidateExternalController(ctx, hostID, params, exec)
 	}
-	if !execution {
+	if !(p.Layout == "SEPARATE" && separateExecution || p.Layout == "CONTROLLER" && execution) {
 		return "", fmt.Errorf("controller execution requires its separate opt-in")
 	}
 	switch action {
@@ -40,7 +51,8 @@ func Run(ctx context.Context, action, hostID, stateDir string, params map[string
 	default:
 		return "", fmt.Errorf("unsupported external controller action")
 	}
-	if params["role"] != "controller" || params["action"] != action {
+	role := params["role"]
+	if (role != "controller" && !(p.Layout == "SEPARATE" && role == "broker")) || action == "ADMIT" && role != "controller" || params["action"] != action {
 		return "", fmt.Errorf("controller action/role mismatch")
 	}
 	if action != "INSPECT" {
@@ -60,15 +72,28 @@ func Run(ctx context.Context, action, hostID, stateDir string, params map[string
 	if !ok {
 		return "", fmt.Errorf("missing controller observation")
 	}
-	complete, active := addnodebroker.ObserveFormatter(p.ConfigPath("controller"))
+	complete, active := addnodebroker.ObserveFormatter(p.ConfigPath(role))
 	observation["formatterObservationComplete"] = complete
 	observation["formatterActive"] = active
-	admissionComplete, admissionActive := addnodebroker.ObserveControllerAdmission(p.ConfigPath("controller"))
+	admissionComplete, admissionActive := addnodebroker.ObserveControllerAdmission(p.ConfigPath(role))
 	observation["admissionObservationComplete"] = admissionComplete
 	observation["admissionActive"] = admissionActive
-	process := p.Processes[0]
+	process, err := p.Process(role)
+	if err != nil {
+		return "", err
+	}
+	observation["storageEmpty"] = storageEmpty(process)
+	observation["mountsVerified"] = expansion.VerifyExternalControllerMounts(ctx, p, exec) == nil
+	report["observedAt"] = time.Now().UTC()
+	encoded, err := json.Marshal(report)
+	return string(encoded), err
+}
+
+func storageEmpty(process expansion.Process) bool {
 	paths := append([]string{}, process.DataPaths...)
-	paths = append(paths, process.MetadataPath)
+	if process.MetadataPath != "" {
+		paths = append(paths, process.MetadataPath)
+	}
 	empty := true
 	for _, path := range paths {
 		if layout.CheckDirectory(path) != nil {
@@ -83,9 +108,5 @@ func Run(ctx context.Context, action, hostID, stateDir string, params map[string
 			empty = false
 		}
 	}
-	observation["mountsVerified"] = expansion.VerifyExternalControllerMounts(ctx, p, exec) == nil
-	observation["storageEmpty"] = empty
-	report["observedAt"] = time.Now().UTC()
-	encoded, err := json.Marshal(report)
-	return string(encoded), err
+	return empty
 }
