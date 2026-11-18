@@ -47,10 +47,10 @@ with tarfile.open(fileobj=io.BytesIO(raw)) as archive:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(archive.extractfile(member).read())
 match = re.search(r'const Version = "([^"]+)"', (source / 'pkg/buildinfo/version.go').read_text())
-if not match or not re.search(r'-addnode\.\d+$', match.group(1)):
+if not match or not re.search(r'-addnode\.\d+(?:\.java-upgrade\.\d+)?$', match.group(1)):
     raise SystemExit('The source must identify an Add Node release.')
 version = match.group(1)
-suffix = re.search(r'addnode\.\d+$', version).group(0)
+suffix = re.search(r'addnode\.\d+(?:\.java-upgrade\.\d+)?$', version).group(0)
 stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 flags = '-s -w -X main.commit=' + commit + ' -X main.buildDate=' + stamp
 checksums = {}
@@ -74,6 +74,6 @@ with tarfile.open(archive_path, 'w:gz') as archive:
 checksums[archive_path.name] = hashlib.sha256(archive_path.read_bytes()).hexdigest()
 (kit / 'SHA256SUMS').write_text(''.join(digest + '  ' + name + '\n' for name, digest in checksums.items()), encoding='ascii', newline='\n')
 manifest = {'version': version, 'source_commit': commit, 'build_date_utc': stamp, 'go_version': subprocess.check_output([args.go, 'version'], text=True).strip(), 'checksums': checksums,
-            'deployment_status': 'HELD_NOT_INSTALLED', 'new_commands': ['INSPECT_ADD_NODE_PROCESS', 'INSPECT_QUORUM_RUNTIME', 'VALIDATE_QUORUM_EXPANSION', 'EXECUTE_QUORUM_CANDIDATE', 'EXECUTE_QUORUM_PARTICIPANT'], 'controller_execution_enabled': False, 'separate_process_execution_enabled': False}
+            'deployment_status': 'HELD_NOT_INSTALLED', 'new_commands': ['INSPECT_ADD_NODE_PROCESS', 'INSPECT_QUORUM_RUNTIME', 'VALIDATE_QUORUM_EXPANSION', 'EXECUTE_QUORUM_CANDIDATE', 'EXECUTE_QUORUM_PARTICIPANT', 'JAVA_UPGRADE'], 'controller_execution_enabled': False, 'separate_process_execution_enabled': False}
 (kit / 'BUILD-ADD-NODE.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8', newline='\n')
 print(json.dumps(manifest))

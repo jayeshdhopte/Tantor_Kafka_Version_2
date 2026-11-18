@@ -119,6 +119,8 @@ func (e *Engine) Execute(ctx context.Context, t *api.Task) (*api.TaskResult, err
 		return &api.TaskResult{TaskID: t.TaskID, HostID: e.cfg.Agent.HostID, Status: "SUCCESS", LogOutput: string(encoded)}, nil
 	case "INSTALL_KAFKA":
 		return e.installKafka(ctx, t)
+	case "JAVA_UPGRADE":
+		return e.upgradeJava(ctx, t)
 	case "UPGRADE_KAFKA":
 		return e.upgradeKafka(ctx, t)
 	case "INSTALL_CONNECT":

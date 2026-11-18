@@ -57,13 +57,17 @@ func (d *Deployer) Distribute(ctx context.Context, t *api.Task) (output string, 
 		}
 	}()
 	downloadPath := filepath.Join(workspace.Dir(), fmt.Sprintf("parcel_%s_%s.tgz", meta.ServiceType, meta.Version))
-	log("Downloading parcel from %s to %s", t.ArtifactURL, downloadPath)
+	log("Downloading parcel %s to %s", meta.ArtifactID, downloadPath)
 	downloadedChecksum, err := d.client.DownloadArtifact(t.ArtifactURL, downloadPath)
 	if err != nil {
 		return logs.String(), fmt.Errorf("failed to download parcel: %w", err)
 	}
 
-	expectedChecksum := firstNonEmpty(t.Checksum, t.Parameters["checksum"], downloadedChecksum)
+	expectedChecksum := firstNonEmpty(t.Checksum, t.Parameters["checksum"])
+	if meta.ServiceType == "java" && expectedChecksum == "" {
+		return logs.String(), fmt.Errorf("an approved SHA-256 checksum is required for JDK distribution")
+	}
+	expectedChecksum = firstNonEmpty(expectedChecksum, downloadedChecksum)
 	if expectedChecksum != "" {
 		if err := checksum.VerifySHA256(downloadPath, expectedChecksum); err != nil {
 			return logs.String(), fmt.Errorf("checksum verification failed: %w", err)
@@ -73,6 +77,15 @@ func (d *Deployer) Distribute(ctx context.Context, t *api.Task) (output string, 
 
 	if err := d.prepareBaseDirs(ctx, meta); err != nil {
 		return logs.String(), err
+	}
+
+	if meta.ServiceType == "java" {
+		destination := meta.javaArchivePath()
+		if _, stderr, err := d.exec.RunSudo(ctx, "install", "-m", "0644", "--", downloadPath, destination); err != nil {
+			return logs.String(), fmt.Errorf("failed to stage JDK archive: %w: %s", err, stderr)
+		}
+		log("JDK archive staged at %s", destination)
+		return logs.String(), nil
 	}
 
 	tmpDir := filepath.Join(meta.BaseDir, ".tmp", t.TaskID)
@@ -113,6 +126,9 @@ func (d *Deployer) Activate(ctx context.Context, t *api.Task) (string, error) {
 	}
 
 	meta := parcelMeta(t)
+	if meta.ServiceType == "java" {
+		return logs.String(), fmt.Errorf("use JAVA_UPGRADE to install a staged JDK")
+	}
 	if err := validateParcelMeta(&meta); err != nil {
 		return logs.String(), err
 	}
@@ -165,6 +181,9 @@ func (d *Deployer) Deactivate(ctx context.Context, t *api.Task) (string, error) 
 	}
 
 	meta := parcelMeta(t)
+	if meta.ServiceType == "java" {
+		return logs.String(), fmt.Errorf("use JAVA_UPGRADE to install a staged JDK")
+	}
 	if err := validateParcelMeta(&meta); err != nil {
 		return logs.String(), err
 	}
@@ -190,6 +209,12 @@ func (d *Deployer) Remove(ctx context.Context, t *api.Task) (string, error) {
 	}
 	target := meta.InstallDir()
 	link := meta.ActiveLink()
+	if meta.ServiceType == "java" {
+		if _, stderr, err := d.exec.RunSudo(ctx, "rm", "-f", "--", meta.javaArchivePath()); err != nil {
+			return logs.String(), fmt.Errorf("failed to remove staged JDK archive: %w: %s", err, stderr)
+		}
+		return "Removed staged JDK archive " + meta.ArtifactID, nil
+	}
 	archive := filepath.Join(meta.BaseDir, ".downloads", fmt.Sprintf("parcel_%s_%s.tgz", meta.ServiceType, meta.Version))
 	linkTarget, _, linkErr := d.exec.RunSudo(ctx, "readlink", "-f", "--", link)
 	targetPath, _, targetErr := d.exec.RunSudo(ctx, "readlink", "-f", "--", target)
@@ -232,6 +257,10 @@ type parcelMetadata struct {
 
 func (m parcelMetadata) InstallDir() string {
 	return filepath.Join(m.BaseDir, m.ServiceType, m.Version)
+}
+
+func (m parcelMetadata) javaArchivePath() string {
+	return filepath.Join(m.BaseDir, ".downloads", "java-"+m.ArtifactID+".tar.gz")
 }
 
 func (m parcelMetadata) ActiveLink() string {
