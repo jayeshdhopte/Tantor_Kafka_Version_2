@@ -1,3 +1,3 @@
-0b99384f075f1858ffb0912ad34a564a5057edda3a0c339e9326cc99b3079da1  bin/tantor-agent-linux-amd64
-5c549c6f46fa62868996743774c44306ea7387dbf76c05ed8fcae2c0b8132d4d  bin/tantor-agent-linux-arm64
-6e32ff1bf0d20d165ff1ab7a2970764a54f65ab89bfbfa4c121ece676aeca0c1  source-addnode.9.tar.gz
+e7d6235e3119fc01dd87a00852d1b2a29e90870e142f9087e91c9a71bb9afb4d  bin/tantor-agent-linux-amd64
+fcd5c2fa7cbb4b0cdd29a3686c41cfe47fb71ac9a6853bc4ec6837b300f42c59  bin/tantor-agent-linux-arm64
+50bccb20fee7f5c5b12eef74870592334dd61d7265f2f4c3a72719ad4a2fb4ae  source-addnode.10.java-upgrade.1.tar.gz
