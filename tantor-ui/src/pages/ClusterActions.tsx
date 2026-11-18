@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Activity, ArrowUpCircle, RefreshCw, CheckCircle2, XCircle } from 'lucide-react';
+import { Activity, ArrowUpCircle, RefreshCw, CheckCircle2, XCircle, Coffee, Info, SlidersHorizontal, Server } from 'lucide-react';
+import './ClusterActions.css';
 import { usePermissions } from '../hooks/usePermissions';
 import { confirmAction, notifyAction } from '../components/confirmUtils';
 
@@ -188,339 +189,107 @@ export function ClusterActions() {
   }, [taskId, id]);
 
   return (
-    <div className="topics-tab" style={{ width: '100%' }}>
-      <div className="topics-header" style={{ marginBottom: '1.5rem' }}>
-        <div>
-          <h2 className="cluster-section-heading">Cluster Actions</h2>
-          <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>Perform disruptive day-two operations on your cluster.</p>
-        </div>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1.5rem' }}>
+    <div className="cluster-actions-page">
+      <header className="cluster-actions-header">
+        <SlidersHorizontal size={25} aria-hidden="true" />
+        <div><h2>Cluster Actions</h2><p>Perform disruptive day-two operations on your cluster.</p></div>
+        {locked && <span className="cluster-actions-lock">Operation in progress</span>}
+      </header>
+      <div className="cluster-actions-cards">
         {canManage && cluster?.mode?.toLowerCase() === 'kraft' && (
-          <section style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-lg)', padding: '24px 32px', background: 'var(--bg-surface)' }}>
-            <h3 className="cluster-section-heading">Upgrade Java</h3>
-            <p>Confirm the JDK is compatible with Kafka {cluster.kafkaVersion} and the selected hosts are dedicated Kafka VMs.</p>
-            <label htmlFor="java-upgrade-artifact">Distributed JDK</label>
-            <select id="java-upgrade-artifact" className="form-control" value={javaArtifactId} disabled={javaPending}
-              onChange={event => { setJavaArtifactId(event.target.value); setJavaHostIds([]); setJavaError(''); }}>
-              <option value="">Select a JDK</option>
-              {javaArtifacts.map(artifact => <option key={artifact.artifactId} value={artifact.artifactId}>Java {artifact.version}</option>)}
-            </select>
-            {javaArtifacts.length === 0 && <p>Distribute a JDK to these hosts from Artifacts first.</p>}
-            {javaHosts.length > 0 && (
-              <fieldset disabled={javaPending}>
-                <legend>Kafka hosts</legend>
-                {javaHosts.map(host => (
-                  <div key={host.hostId}>
-                    <label>
-                      <input type="checkbox" checked={javaHostIds.includes(host.hostId)}
-                        onChange={event => setJavaHostIds(current => event.target.checked
-                          ? [...current, host.hostId] : current.filter(id => id !== host.hostId))} />
-                      {host.hostname || host.hostId}
-                    </label>
+          <section className="cluster-action-card" aria-labelledby="java-action-title">
+            <div className="cluster-action-heading"><span className="cluster-action-icon"><Coffee size={21} aria-hidden="true" /></span>
+              <div><h3 id="java-action-title">Upgrade Java</h3><p>Upgrade the Java runtime on your selected Kafka hosts.</p></div>
+            </div>
+            <p className="cluster-action-note"><Info size={16} aria-hidden="true" /><span>Confirm the JDK is compatible with Kafka {cluster.kafkaVersion} and the selected hosts are dedicated Kafka VMs.</span></p>
+            <div className="cluster-action-form">
+              <label className="cluster-action-field" htmlFor="java-upgrade-artifact">Distributed JDK
+                <select id="java-upgrade-artifact" value={javaArtifactId} disabled={javaPending}
+                  onChange={event => { setJavaArtifactId(event.target.value); setJavaHostIds([]); setJavaError(''); }}>
+                  <option value="">Select a JDK</option>
+                  {javaArtifacts.map(artifact => <option key={artifact.artifactId} value={artifact.artifactId}>Java {artifact.version}</option>)}
+                </select>
+              </label>
+              {javaArtifacts.length === 0 && <p className="cluster-action-hint">Distribute a JDK to these hosts from Artifacts first.</p>}
+              {javaHosts.length > 0 && (
+                <fieldset className="cluster-action-hosts" disabled={javaPending}>
+                  <legend>Kafka hosts <span>{javaHostIds.length} selected</span></legend>
+                  <div className="cluster-action-host-grid">
+                    {javaHosts.map(host => (
+                      <label className="cluster-action-host" key={host.hostId} data-selected={javaHostIds.includes(host.hostId)}>
+                        <input type="checkbox" checked={javaHostIds.includes(host.hostId)}
+                          onChange={event => setJavaHostIds(current => event.target.checked
+                            ? [...current, host.hostId] : current.filter(id => id !== host.hostId))} />
+                        <Server size={18} aria-hidden="true" /><span><strong>{host.hostname || host.hostId}</strong>{host.ipAddress && <small>{host.ipAddress}</small>}</span>
+                      </label>
+                    ))}
                   </div>
-                ))}
-              </fieldset>
-            )}
-            {javaError && <p role="alert">{javaError}</p>}
-            <button className="btn btn-primary" type="button" disabled={!javaArtifact || javaHostIds.length === 0 || javaPending || locked}
-              onClick={triggerJavaUpgrade}>{javaPending ? 'Queueing…' : 'Upgrade Java'}</button>
+                </fieldset>
+              )}
+            </div>
+            {javaError && <p className="cluster-action-error" role="alert">{javaError}</p>}
+            <div className="cluster-action-footer"><button className="cluster-action-primary" type="button" disabled={!javaArtifact || javaHostIds.length === 0 || javaPending || locked}
+              onClick={triggerJavaUpgrade}>{javaPending ? <RefreshCw size={16} className="spin" aria-hidden="true" /> : <ArrowUpCircle size={16} aria-hidden="true" />}{javaPending ? 'Queueing…' : 'Upgrade Java'}</button></div>
           </section>
         )}
         {canManage && cluster?.mode !== 'EXTERNAL' && (
-        <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-lg)', padding: '24px 32px', background: "var(--bg-surface)" }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '32px',
-              height: '32px',
-              borderRadius: '50%',
-              border: '1px solid #94a3b8',
-              color: 'var(--text-muted)',
-              flexShrink: 0
-            }}>
-              <ArrowUpCircle size={18} aria-hidden="true" />
+          <section className="cluster-action-card" aria-labelledby="kafka-action-title">
+            <div className="cluster-action-heading"><span className="cluster-action-icon"><ArrowUpCircle size={21} aria-hidden="true" /></span>
+              <div><h3 id="kafka-action-title">Upgrade Kafka Version</h3><p>Apply an active parcel version to this running cluster.</p></div>
             </div>
-            <div style={{ flex: 1 }}>
-              <h3 style={{ fontWeight: 'var(--font-semibold)', color: 'var(--text-primary)', margin: '0 0 4px 0', fontSize: 'var(--text-md)' }}>Upgrade Kafka Version</h3>
-              <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', margin: 0 }}>
-                Apply an active parcel version to this running cluster.
-              </p>
+            <p className="cluster-action-description">Choose a new active parcel, then Tantor stages the target binaries into the versioned install directory, switches the stable Kafka symlink, validates the service, and automatically rolls back to the previous symlink target if validation fails.</p>
+            <div className="cluster-action-form cluster-action-inline">
+              <label className="cluster-action-field">Target Kafka version
+                <select value={targetVersion} onChange={e => setTargetVersion(e.target.value)} disabled={upgradeLoading || locked}>
+                  {activeUpgradeVersions.length === 0 ? <option value="">No active upgrade parcel</option>
+                    : activeUpgradeVersions.map(version => <option key={version} value={version}>Kafka {version}</option>)}
+                </select>
+              </label>
+              <button className="cluster-action-primary" onClick={triggerUpgrade} disabled={upgradeLoading || locked}>
+                {upgradeLoading ? <RefreshCw size={16} className="spin" aria-hidden="true" /> : <ArrowUpCircle size={16} aria-hidden="true" />}Upgrade Kafka
+              </button>
             </div>
-          </div>
-
-          <p style={{ fontSize: 'var(--text-sm)', color: '#475569', marginTop: '1.25rem', marginBottom: '1.25rem', lineHeight: 1.6 }}>
-            Choose a new active parcel, then Tantor stages the target binaries into the versioned install directory, switches the stable Kafka symlink, validates the service, and automatically rolls back to the previous symlink target if validation fails.
-          </p>
-
-          <div style={{
-            background: '#f8fafc',
-            border: '1px solid #f1f5f9',
-            borderRadius: 'var(--radius-lg)',
-            padding: 'var(--space-4)',
-            display: 'grid',
-            gridTemplateColumns: '1fr auto',
-            gap: '12px',
-            alignItems: 'center'
-          }}>
-            <select
-              value={targetVersion}
-              onChange={e => setTargetVersion(e.target.value)}
-              disabled={upgradeLoading || locked}
-              style={{
-                width: '100%',
-                padding: '10px 12px',
-                borderRadius: 'var(--radius-md)',
-                border: '1px solid var(--border-subtle)',
-                fontSize: 'var(--text-base)',
-                background: "var(--bg-surface)",
-                outline: 'none',
-                color: 'var(--button-primary-active)'
-              }}
-            >
-              {activeUpgradeVersions.length === 0 ? (
-                <option value="">No active upgrade parcel</option>
-              ) : activeUpgradeVersions.map(version => (
-                <option key={version} value={version}>Kafka {version}</option>
-              ))}
-            </select>
-            <button
-              onClick={triggerUpgrade}
-              disabled={upgradeLoading || locked}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 'var(--space-2)',
-                height: '42px',
-                padding: '0 20px',
-                borderRadius: 'var(--radius-md)',
-                background: 'var(--button-primary)',
-                color: "var(--text-light)",
-                fontWeight: 'var(--font-medium)',
-                fontSize: 'var(--text-base)',
-                border: 'none',
-                cursor: 'pointer',
-                transition: 'all 0.2s'
-              }}
-            >
-              {upgradeLoading ? <RefreshCw size={16} className="spin" /> : null}
-              Upgrade Kafka
-            </button>
-          </div>
-
-          {upgradeMsg && (
-            <p style={{ margin: '1rem 0 0', fontSize: '0.875rem', color: upgradeMsg.startsWith('Failed') ? '#b91c1c' : '#166534' }}>
-              {upgradeMsg}
-            </p>
-          )}
-        </div>
+            {upgradeMsg && <p className={upgradeMsg.startsWith('Failed') ? 'cluster-action-error' : 'cluster-action-result'} role="status">{upgradeMsg}</p>}
+          </section>
         )}
-        
         {canManage && (
-          <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-lg)', padding: '24px 32px', background: "var(--bg-surface)" }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: '32px',
-                height: '32px',
-                borderRadius: '50%',
-                border: '1px solid #94a3b8',
-                color: 'var(--text-muted)',
-                flexShrink: 0
-              }}>
-                <Activity size={18} aria-hidden="true" />
-              </div>
-              <div style={{ flex: 1 }}>
-                <h3 style={{ fontWeight: 'var(--font-semibold)', color: 'var(--text-primary)', margin: '0 0 4px 0', fontSize: 'var(--text-md)' }}>Monitoring Enablement</h3>
-                <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', margin: 0 }}>Deploy Prometheus and Grafana through a tracked job.</p>
-              </div>
+          <section className="cluster-action-card" aria-labelledby="monitoring-action-title">
+            <div className="cluster-action-heading"><span className="cluster-action-icon"><Activity size={21} aria-hidden="true" /></span>
+              <div><h3 id="monitoring-action-title">Monitoring Enablement</h3><p>Deploy Prometheus and Grafana through a tracked job.</p></div>
             </div>
-
-            <p style={{ fontSize: 'var(--text-sm)', color: '#475569', marginTop: '1.25rem', marginBottom: '1.25rem', lineHeight: 1.6 }}>
-              Choose a new active parcel, then Tantor stages the target binaries into the versioned install directory, switches the stable Kafka symlink, validates the service, and automatically rolls back to the previous symlink target if validation fails.
-            </p>
-
-            <div style={{
-              background: '#f8fafc',
-              border: '1px solid #f1f5f9',
-              borderRadius: 'var(--radius-lg)',
-              padding: 'var(--space-4)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '12px'
-            }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <select 
-                  value={monitoringHostId} 
-                  onChange={event => setMonitoringHostId(event.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    borderRadius: 'var(--radius-md)',
-                    border: '1px solid var(--border-subtle)',
-                    fontSize: 'var(--text-base)',
-                    background: "var(--bg-surface)",
-                    outline: 'none',
-                    color: 'var(--button-primary-active)'
-                  }}
-                >
+            <p className="cluster-action-description">Select the target host and provide the Prometheus and Grafana artifact URLs.</p>
+            <div className="cluster-action-form cluster-action-monitoring">
+              <label className="cluster-action-field">Target host
+                <select value={monitoringHostId} onChange={event => setMonitoringHostId(event.target.value)}>
                   {(cluster?.hosts || []).map(host => <option key={host.hostId} value={host.hostId}>{host.hostname || host.ipAddress || 'Unnamed host'}{host.hostname && host.ipAddress ? ` | ${host.ipAddress}` : ''}</option>)}
                 </select>
-                <input 
-                  value={prometheusUrl} 
-                  onChange={event => setPrometheusUrl(event.target.value)} 
-                  placeholder="Prometheus Artifact URL" 
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    borderRadius: 'var(--radius-md)',
-                    border: '1px solid var(--border-subtle)',
-                    fontSize: 'var(--text-base)',
-                    background: "var(--bg-surface)",
-                    outline: 'none',
-                    color: 'var(--button-primary-active)'
-                  }}
-                />
-              </div>
-              <div style={{ display: 'flex', gap: '12px' }}>
-                <input 
-                  value={grafanaUrl} 
-                  onChange={event => setGrafanaUrl(event.target.value)} 
-                  placeholder="Grafana Artifact URL" 
-                  style={{
-                    flex: 1,
-                    padding: '10px 12px',
-                    borderRadius: 'var(--radius-md)',
-                    border: '1px solid var(--border-subtle)',
-                    fontSize: 'var(--text-base)',
-                    background: "var(--bg-surface)",
-                    outline: 'none',
-                    color: 'var(--button-primary-active)'
-                  }}
-                />
-                <button 
-                  onClick={enableMonitoring} 
-                  disabled={monitoringLoading || locked}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 'var(--space-2)',
-                    height: '42px',
-                    padding: '0 20px',
-                    borderRadius: 'var(--radius-md)',
-                    background: 'var(--button-primary)',
-                    color: "var(--text-light)",
-                    fontWeight: 'var(--font-medium)',
-                    fontSize: 'var(--text-base)',
-                    border: 'none',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  {monitoringLoading ? <RefreshCw size={16} className="spin" /> : null} 
-                  Enable Monitoring
-                </button>
-              </div>
+              </label>
+              <label className="cluster-action-field">Prometheus artifact URL<input value={prometheusUrl} onChange={event => setPrometheusUrl(event.target.value)} placeholder="Prometheus Artifact URL" /></label>
+              <label className="cluster-action-field">Grafana artifact URL<input value={grafanaUrl} onChange={event => setGrafanaUrl(event.target.value)} placeholder="Grafana Artifact URL" /></label>
             </div>
-          </div>
+            <div className="cluster-action-footer"><button className="cluster-action-primary" onClick={enableMonitoring} disabled={monitoringLoading || locked}>
+              {monitoringLoading ? <RefreshCw size={16} className="spin" aria-hidden="true" /> : <Activity size={16} aria-hidden="true" />}Enable Monitoring
+            </button></div>
+          </section>
         )}
-
-        {/* Rolling Restart Card */}
         {canManage && cluster?.mode !== 'EXTERNAL' && (
-        <div style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-lg)', padding: '24px 32px', background: "var(--bg-surface)" }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '32px',
-              height: '32px',
-              borderRadius: '50%',
-              border: '1px solid #94a3b8',
-              color: 'var(--text-muted)',
-              flexShrink: 0
-            }}>
-              <RefreshCw size={18} aria-hidden="true" />
+          <section className="cluster-action-card" aria-labelledby="restart-action-title">
+            <div className="cluster-action-heading"><span className="cluster-action-icon"><RefreshCw size={21} aria-hidden="true" /></span>
+              <div><h3 id="restart-action-title">Rolling Restart</h3><p>Restart quorum services and brokers one at a time.</p></div>
             </div>
-            <div style={{ flex: 1 }}>
-              <h3 style={{ fontWeight: 'var(--font-semibold)', color: 'var(--text-primary)', margin: '0 0 4px 0', fontSize: 'var(--text-md)' }}>Rolling Restart</h3>
-              <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', margin: 0 }}>
-                Restart quorum services and brokers one at a time.
-              </p>
-            </div>
-          </div>
-          <p style={{ fontSize: 'var(--text-sm)', color: '#475569', marginTop: '1.25rem', marginBottom: '1.5rem', lineHeight: 1.6 }}>
-            Choose brokers, controllers, all Kafka processes or selected processes. Combined roles restart together. Health gates stop the sequence on failure; Retry / Resume preserves completed nodes.
-          </p>
-          <div style={{
-            background: '#f8fafc',
-            border: '1px solid #f1f5f9',
-            borderRadius: 'var(--radius-lg)',
-            padding: 'var(--space-4)',
-            display: 'flex',
-            justifyContent: 'flex-end'
-          }}>
-            <button 
-              onClick={() => setRestartOpen(true)}
-              disabled={activeJobs.some(job => job.clusterId === id)}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 'var(--space-2)',
-                height: '42px',
-                padding: '0 20px',
-                borderRadius: 'var(--radius-md)',
-                background: 'var(--button-primary)',
-                color: "var(--text-light)",
-                fontWeight: 'var(--font-medium)',
-                fontSize: 'var(--text-base)',
-                border: 'none',
-                cursor: 'pointer',
-                transition: 'all 0.2s'
-              }}
-            >
-              Start Rolling Restart
-            </button>
-          </div>
-
-          {/* Progress Tracker */}
-          {taskId && (
-            <div style={{ backgroundColor: '#f9fafb', padding: '1.5rem', marginTop: '1.5rem', borderRadius: 'var(--radius-md)' }}>
-              <h4 style={{ fontSize: '0.875rem', fontWeight: 'var(--font-medium)', color: 'var(--text-primary)', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: '0 0 0.75rem 0' }}>
-                <Activity size={16} color="#3b82f6" /> Live Task Status
-              </h4>
-              <div style={{ backgroundColor: '#111827', borderRadius: '0.5rem', padding: '1rem', fontFamily: 'monospace', fontSize: '0.875rem', boxShadow: 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.06)', position: 'relative', overflow: 'hidden' }}>
-                {!status.startsWith('COMPLETED') && !status.startsWith('FAILED') && !status.startsWith('PAUSED') && (
-                  <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '4px' }}>
-                    <div style={{ height: '100%', backgroundColor: '#3b82f6', width: '33%', animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite' }}></div>
-                  </div>
-                )}
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
-                  {status.startsWith('COMPLETED') ? (
-                    <CheckCircle2 size={18} color="#34d399" style={{ flexShrink: 0, marginTop: '2px' }} />
-                  ) : status.startsWith('FAILED') || status.startsWith('PAUSED') ? (
-                    <XCircle size={18} color="#f87171" style={{ flexShrink: 0, marginTop: '2px' }} />
-                  ) : (
-                    <RefreshCw size={18} color="#60a5fa" className="spin" style={{ flexShrink: 0, marginTop: '2px' }} />
-                  )}
-                  <span style={{ wordBreak: 'break-all', color: status.startsWith('FAILED') || status.startsWith('PAUSED') ? '#fca5a5' : '#d1d5db' }}>
-                    {status}
-                  </span>
-                </div>
+            <p className="cluster-action-description">Choose brokers, controllers, all Kafka processes or selected processes. Combined roles restart together. Health gates stop the sequence on failure; Retry / Resume preserves completed nodes.</p>
+            <div className="cluster-action-footer"><button className="cluster-action-primary" onClick={() => setRestartOpen(true)} disabled={activeJobs.some(job => job.clusterId === id)}>
+              <RefreshCw size={16} aria-hidden="true" />Start Rolling Restart
+            </button></div>
+            {taskId && <div className="cluster-action-progress" role="status"><h4><Activity size={16} aria-hidden="true" />Live Task Status</h4>
+              <div className="cluster-action-status" data-failed={status.startsWith('FAILED') || status.startsWith('PAUSED')}>
+                {status.startsWith('COMPLETED') ? <CheckCircle2 size={18} aria-hidden="true" />
+                  : status.startsWith('FAILED') || status.startsWith('PAUSED') ? <XCircle size={18} aria-hidden="true" />
+                    : <RefreshCw size={18} className="spin" aria-hidden="true" />}<span>{status}</span>
               </div>
-            </div>
-          )}
-        </div>
+            </div>}
+          </section>
         )}
-
       </div>
       {restartOpen && cluster && <RollingRestartModal cluster={cluster} onClose={() => setRestartOpen(false)} onStarted={jobId => { setRestartOpen(false); navigate(`/jobs/${jobId}`); }} />}
     </div>

@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
+import { ArrowDownToLine, Download, Filter, Pause, Play, RefreshCw, Server, Terminal } from 'lucide-react';
+import { RefreshButton } from '../components/RefreshButton';
+import { LogDateTimePicker } from '../components/LogDateTimePicker';
 import { formatIstDateTime } from '../utils/istLogTime';
 import { getValidToken } from '../services/KeycloakService';
 import './ClusterLiveLogs.css';
@@ -139,15 +142,21 @@ export function ClusterLiveLogs() {
   }
 
   return <section className="cluster-live-logs">
-    <header><div><h2>Service Logs</h2><p>Read the latest 200 journal entries for a managed service.</p></div>
+    <header className="cluster-live-header"><div className="cluster-live-heading"><Terminal size={25} aria-hidden="true" /><div><h2>Service Logs</h2><p>Read the latest 200 journal entries for a managed service.</p></div></div>
       <div className="cluster-live-actions">
-        <button disabled={!filtered.length} onClick={download}>Download</button>
-        <button disabled={!source || !valid} onClick={() => setRefresh(value => value + 1)}>Refresh</button>
-        <label>Refresh interval <select value={interval} onChange={event => setIntervalSeconds(Number(event.target.value))}>
+        <button className="cluster-live-download" disabled={!filtered.length} onClick={download}><Download size={16} aria-hidden="true" />Download</button>
+        <RefreshButton disabled={!source || !valid} onClick={() => setRefresh(value => value + 1)}><RefreshCw size={16} aria-hidden="true" />Refresh</RefreshButton>
+        <label className="cluster-live-interval">Refresh interval <select value={interval} onChange={event => setIntervalSeconds(Number(event.target.value))}>
           {[5, 15, 30].map(value => <option value={value} key={value}>{value} seconds</option>)}
         </select></label>
-        <button disabled={custom || !source} aria-pressed={following} onClick={() => setFollowing(value => !value)}>
-          {following ? 'Pause' : 'Follow live'}
+        <button type="button" className="cluster-live-auto-refresh" role="switch" aria-label="Auto refresh"
+          aria-checked={following} disabled={custom || !source} onClick={() => setFollowing(value => !value)}
+          title={custom ? 'Choose a relative time range to enable auto refresh.' : !source ? 'Select an available log source to enable auto refresh.' : undefined}>
+          <span>Auto refresh</span><span className="cluster-live-switch-track" aria-hidden="true"><span /></span>
+          <span className="cluster-live-switch-state" aria-hidden="true">{following ? 'On' : 'Off'}</span>
+        </button>
+        <button className="cluster-live-follow" disabled={custom || !source} aria-pressed={following} onClick={() => setFollowing(value => !value)}>
+          {following ? <Pause size={16} aria-hidden="true" /> : <Play size={16} aria-hidden="true" />}{following ? 'Pause' : 'Follow live'}
         </button>
       </div>
     </header>
@@ -157,11 +166,13 @@ export function ClusterLiveLogs() {
         return <button key={item.label} disabled={!nodes.length} aria-pressed={index === group} onClick={() => {
           setGroup(index);
           setSource(nodes[0]?.id || '');
-        }}>{item.label}</button>;
+        }}><Server size={17} aria-hidden="true" /><span>{item.label}</span><span className="cluster-live-service-count">{nodes.length}</span></button>;
       })}
     </div>
+    <div className="cluster-live-filter-panel">
+      <div className="cluster-live-filter-title"><Filter size={16} aria-hidden="true" /><h3>Filter logs</h3><span>All times in IST</span></div>
     <div className="cluster-live-filters">
-      <label>Node<select value={source} onChange={event => setSource(event.target.value)}>
+      <label className="cluster-live-node">Node<select value={source} onChange={event => setSource(event.target.value)}>
         {!sources.length && <option value="">No sources</option>}
         {sources.filter(item => serviceGroups[group].roles.includes(item.role)).map(item => <option key={item.id} value={item.id}>
           {item.hostname || item.hostId} · {roles[item.role]}{item.nodeId == null ? '' : ` #${item.nodeId}`}
@@ -178,30 +189,33 @@ export function ClusterLiveLogs() {
         <option value="1">Last hour</option><option value="6">Last 6 hours</option>
         <option value="12">Last 12 hours</option><option value="24">Last 24 hours</option><option value="custom">Custom range</option>
       </select></label>
-      <label>From (IST)<input type="datetime-local" value={from} max={to || undefined} onChange={event => {
-        setFrom(event.target.value);
+      <LogDateTimePicker label="From (IST)" value={from} max={to} onApply={value => {
+        setFrom(value);
         setHours('custom');
         setFollowing(false);
-      }} /></label>
-      <label>To (IST)<input type="datetime-local" value={to} min={from || undefined} onChange={event => {
-        setTo(event.target.value);
+      }} />
+      <LogDateTimePicker label="To (IST)" value={to} min={from} onApply={value => {
+        setTo(value);
         setHours('custom');
         setFollowing(false);
-      }} /></label>
-      <label>Search messages<input type="search" value={search} onChange={event => setSearch(event.target.value)} /></label>
+      }} />
+      <label className="cluster-live-search">Search messages<input placeholder="Search log messages…" type="search" value={search} onChange={event => setSearch(event.target.value)} /></label>
     </div>
-    {(inventoryError || error) && <p role="alert">{inventoryError || error}</p>}
+    </div>
+    {(inventoryError || error) && <p className="cluster-live-notice" role="alert">{inventoryError || error}</p>}
+    <div className="cluster-live-viewer">
     <div className="cluster-live-toolbar">
-      <span>{filtered.length} of {rows?.length ?? 0} entries</span>
-      <button disabled={!filtered.length} onClick={goToLatest}>Go to latest</button>
+      <div className="cluster-live-console-title"><Terminal size={17} aria-hidden="true" /><h3>Service journal</h3><span className="cluster-live-entry-count">{filtered.length} of {rows?.length ?? 0} entries</span></div>
+      <div className="cluster-live-console-actions"><span className="cluster-live-mode" data-live={following}>{following ? 'Following live' : 'Snapshot'}</span><button disabled={!filtered.length} onClick={goToLatest}><ArrowDownToLine size={15} aria-hidden="true" />Go to latest</button></div>
     </div>
     <div className="cluster-live-console" ref={consoleRef} tabIndex={0} aria-label="Service journal">
-      {!valid ? <p>Choose a start and end time in IST.</p> : !rows ? <p>{source && !error ? 'Reading journal…' : 'No journal loaded.'}</p>
-        : filtered.length === 0 ? <p>No entries match the current filters.</p>
+      {!valid ? <div className="cluster-live-empty"><Filter size={30} aria-hidden="true" /><p>Choose a start and end time in IST.</p></div> : !rows ? <div className="cluster-live-empty"><Terminal size={32} aria-hidden="true" /><p>{source && !error ? 'Reading journal…' : 'No journal loaded.'}</p><span>{source ? 'Journal entries will appear here when available.' : 'Select an available managed service to view its journal.'}</span></div>
+        : filtered.length === 0 ? <div className="cluster-live-empty"><Filter size={30} aria-hidden="true" /><p>No entries match the current filters.</p><span>Try a different level, time range or search.</span></div>
           : filtered.map(row => <div key={row.id} className="cluster-live-entry">
             <time dateTime={row.time}>{formatIstDateTime(row.time)}</time>
             <span data-level={row.level}>{row.level}</span><span>{row.message}</span>
           </div>)}
+    </div>
     </div>
   </section>;
 }

@@ -1,0 +1,37 @@
+.log-date-field { display: grid; gap: 8px; min-width: 0; color: #59647d; font-size: 12px; font-weight: 600; }
+.cluster-live-logs .log-date-trigger { width: 100%; justify-content: space-between; min-height: 42px; border-color: #dcdde7; color: #30384f; font-size: 13px; font-weight: 400; text-align: left; }
+.log-date-trigger > span { min-width: 0; overflow-wrap: anywhere; }
+.log-date-trigger > svg { color: #795895; }
+.log-date-popup { position: fixed; z-index: 10000; width: min(440px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow-y: auto; background: #fff; color: #30384f; border: 1px solid #e5daee; border-radius: 16px; box-shadow: 0 14px 48px #2c10452b, 0 3px 10px #2c104510; font-family: inherit; box-sizing: border-box; }
+.log-date-popup * { box-sizing: border-box; }
+.log-date-popup button { display: inline-flex; align-items: center; justify-content: center; border: 1px solid transparent; background: transparent; color: #4b3c5d; cursor: pointer; font: inherit; border-radius: 7px; padding: 0; }
+.log-date-popup button:hover:not(:disabled) { background: #f1e9f8; color: #401566; }
+.log-date-popup button:focus-visible { outline: 2px solid #8154a5; outline-offset: 1px; }
+.log-date-popup button:disabled { opacity: .3; cursor: not-allowed; }
+.log-date-popup-heading { display: flex; align-items: center; gap: 8px; padding: 16px 18px; background: #f8f4fc; border-bottom: 1px solid #ece3f3; color: #401566; font-size: 13px; }
+.log-date-popup-heading > span { margin-left: auto; color: #81718f; font-size: 10px; font-weight: 500; }
+.log-date-popup-body { display: grid; grid-template-columns: minmax(0, 1fr) 118px; padding: 16px; gap: 16px; }
+.log-date-calendar { min-width: 0; }
+.log-date-month { display: flex; align-items: center; gap: 4px; margin-bottom: 14px; font-size: 12px; }
+.log-date-month > strong { flex: 1; }
+.log-date-month button { width: 26px; height: 26px; }
+.log-date-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+.log-date-days > span { font-size: 10px; color: #8b8097; text-align: center; padding-bottom: 8px; }
+.log-date-days > button { min-width: 0; height: 30px; font-size: 11px; }
+.log-date-days > button[data-outside="true"] { color: #b5abbf; }
+.log-date-days > button[data-today="true"] { border-color: #cbb5dd; }
+.log-date-popup .log-date-days > button[data-day-selected="true"] { background: #401566; color: #fff; font-weight: 650; box-shadow: 0 2px 5px #40156620; }
+.log-date-popup .log-date-today { margin-top: 12px; font-size: 11px; padding: 5px 8px; color: #603481; }
+.log-date-time { border-left: 1px solid #eee7f3; padding-left: 14px; }
+.log-date-time-heading { display: flex; align-items: center; gap: 6px; color: #603481; font-size: 12px; height: 26px; margin-bottom: 10px; }
+.log-date-time-labels { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; text-align: center; font-size: 10px; color: #8b8097; margin-bottom: 6px; }
+.log-date-wheels { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.log-date-wheel { position: relative; overflow-y: auto; height: 211px; scrollbar-width: thin; scrollbar-color: #d6c4e4 transparent; scroll-snap-type: y proximity; overscroll-behavior: contain; border: 1px solid #f0e9f5; border-radius: 8px; background: #fcfafd; padding: 3px; }
+.log-date-wheel > button { width: 100%; height: 32px; margin-bottom: 3px; scroll-snap-align: center; font-size: 12px; }
+.log-date-popup .log-date-wheel > button[data-time-selected="true"] { background: #401566; color: #fff; font-weight: 650; }
+.log-date-preview { margin: 0 16px 12px; border-radius: 7px; background: #f7f3fb; padding: 9px 12px; text-align: center; color: #6c4d84; font-size: 11px; }
+.log-date-footer { display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid #eee7f3; padding: 12px 16px; }
+.log-date-footer > button { min-width: 76px; min-height: 34px; border-color: #ded3e8; font-size: 12px; }
+.log-date-popup .log-date-confirm { background: #401566; border-color: #401566; color: #fff; font-weight: 600; }
+.log-date-popup .log-date-confirm:hover:not(:disabled) { background: #572580; color: #fff; }
+@media (max-width: 380px) { .log-date-popup-body { gap: 10px; padding: 12px; grid-template-columns: minmax(0, 1fr) 102px; } .log-date-time { padding-left: 9px; } }
