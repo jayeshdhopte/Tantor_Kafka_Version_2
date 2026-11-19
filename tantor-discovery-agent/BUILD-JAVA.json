@@ -1,0 +1,16 @@
+{
+  "version": "3.4.0-dataservices.2-configchange.10-backupintegrity.1-rollingrestart.4.java-upgrade.1-cleanup.1-plugins.2-schema.1-an.5",
+  "source_commit": "54e49ff25873ea18061720cafc9b3d68ef183b47",
+  "source_tree_sha256": "b796312778097db737d5ad72cd575cfcaac6f2ade10171e67d94c98f7f1d4781",
+  "source_tree_hash_format": "SHA256 of sorted repository path + NUL + committed file bytes + NUL",
+  "build_identity": "54e49ff",
+  "deployment_status": "LOCAL_LAB_VERIFIED_NOT_PRODUCTION",
+  "built_utc": "2026-11-19T09:17:24.087664+00:00",
+  "verification": "JAVA_UPGRADE_VERIFICATION.md",
+  "checksums": {
+    "tantor-discovery-agent-linux-amd64": "efa24bdb43960d94938ab188339f7e2369c2d483982f7b3623a2be93504cb4ef",
+    "tantor-discovery-agent-linux-arm64": "58a34e3d3922f67ab3b4e9399703969d77d53ce0ccdea85384f2aef8e80fd0fe",
+    "source-java-upgrade.1.tar.gz": "3a3481ef58269c559a17e1f86cf76a77fc6737dc3c64d5051446ce84296db9a1"
+  },
+  "built_from_bundled_source": true
+}
