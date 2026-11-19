@@ -17,6 +17,8 @@ public interface ExternalClusterNodeRepository extends JpaRepository<ExternalClu
 
     List<ExternalClusterNode> findByClusterId(UUID clusterId);
 
+    List<ExternalClusterNode> findByAgentId(String agentId);
+
     Optional<ExternalClusterNode> findByClusterIdAndNodeId(UUID clusterId, Integer nodeId);
 
     @Modifying

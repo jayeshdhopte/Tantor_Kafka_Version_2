@@ -50,10 +50,11 @@ public class ExternalKafkaManagement {
   if(restart&&!Boolean.TRUE.equals(n.getCanRestart()))throw new IllegalStateException("Enable service restarts and allowlist the discovered service on "+n.getHost());
  }
  @Transactional public UUID enqueue(UUID cluster,String target,String command,Map<String,Object> parameters){
-  boolean write=Set.of("PATCH_KAFKA_CONFIG","BACKUP_KAFKA_CONFIG").contains(command);boolean restart="RESTART_SERVICE".equals(command)||"true".equals(parameters.get("restart"));require(target,write,restart);
+  boolean write=Set.of("PATCH_KAFKA_CONFIG","BACKUP_KAFKA_CONFIG","STAGE_JAVA","REMOVE_JAVA","JAVA_UPGRADE").contains(command);boolean restart="JAVA_UPGRADE".equals(command)||"RESTART_SERVICE".equals(command)||"true".equals(parameters.get("restart"));require(target,write,restart);
   var n=node(target);if(!cluster.equals(n.getClusterId()))throw new IllegalArgumentException("Node belongs to another cluster");
-  if(!Set.of("READ_KAFKA_PROPERTY","READ_KAFKA_PROPERTIES","PATCH_KAFKA_CONFIG","BACKUP_KAFKA_CONFIG","RESTART_SERVICE","VERIFY_KAFKA_SERVICE").contains(command))throw new IllegalArgumentException("Unsupported external Kafka task");
-  var p=new LinkedHashMap<String,Object>(parameters);p.put("kafka_cluster_id",Objects.toString(clusters.findById(cluster).orElseThrow().getKafkaClusterId(),""));
+  if(!Set.of("READ_KAFKA_PROPERTY","READ_KAFKA_PROPERTIES","PATCH_KAFKA_CONFIG","BACKUP_KAFKA_CONFIG","RESTART_SERVICE","VERIFY_KAFKA_SERVICE","STAGE_JAVA","REMOVE_JAVA","JAVA_UPGRADE").contains(command))throw new IllegalArgumentException("Unsupported external Kafka task");
+  if(Set.of("STAGE_JAVA","REMOVE_JAVA","JAVA_UPGRADE").contains(command) && !Objects.toString(agentVersion(target),"").contains(".java-upgrade.1")) throw new IllegalStateException("Install the Java-upgrade capable discovery agent first.");
+  var p=new LinkedHashMap<String,Object>(parameters);p.put("agent_id",n.getAgentId());p.put("kafka_cluster_id",Objects.toString(clusters.findById(cluster).orElseThrow().getKafkaClusterId(),""));
   p.put("node_id",n.getNodeId().toString());p.put("config_path",n.getConfigFile());p.put("service_name",n.getSystemdService());
   UUID id=UUID.randomUUID();jdbc.update("insert into kf_external_kafka_tasks(id,cluster_id,agent_id,command,parameters,deadline) values(?,?,?,?,?,?)",id,cluster,n.getAgentId(),command,json(p),java.sql.Timestamp.from(Instant.now().plusSeconds(900)));return id;
  }

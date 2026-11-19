@@ -38,6 +38,7 @@ interface ArtifactVersion {
 }
 
 interface Host {
+  external?: boolean;
   id: string;
   hostname: string;
   status: string;
@@ -211,9 +212,11 @@ export function Artifacts() {
   }, []);
 
   const fetchHosts = useCallback(async () => {
-    const res = await fetch('/api/v1/ui/hosts');
+    const [res, external] = await Promise.all([fetch('/api/v1/ui/hosts'), fetch('/api/v1/ui/external-java/hosts')]);
     if (!res.ok) return;
-    setHosts(await res.json());
+    const internalHosts: Host[] = await res.json();
+    const externalHosts: Host[] = external.ok ? (await external.json()).map((host: Host) => ({ ...host, external: true })) : [];
+    setHosts([...internalHosts, ...externalHosts]);
   }, []);
 
   const fetchParcelState = useCallback(async () => {
@@ -278,6 +281,8 @@ export function Artifacts() {
     }
   };
 
+  const hostsForArtifact = (ver: ArtifactVersion) => hosts.filter(host => !host.external || ver.service_type === 'JAVA');
+
   const getHostParcel = (artifactId: string, hostId: string) =>
     hostParcels.find(p => p.artifactId === artifactId && p.hostId === hostId);
 
@@ -320,7 +325,7 @@ export function Artifacts() {
 
   const distributeAll = async (ver: ArtifactVersion) => {
     if (!canManage) return;
-    const eligible = hosts.filter(host =>
+    const eligible = hostsForArtifact(ver).filter(host =>
       isHostOnline(host)
       && (() => {
         const state = getHostParcel(ver.id, host.id);
@@ -366,7 +371,7 @@ export function Artifacts() {
   const distributeSelected = async (ver: ArtifactVersion) => {
     if (!canManage) return;
     const ids = selectedHosts[ver.id] || [];
-    const targets = hosts.filter(host => ids.includes(host.id));
+    const targets = hostsForArtifact(ver).filter(host => ids.includes(host.id));
     if (!targets.length) {
       setUploadMsg({ text: 'Select at least one host.', ok: false });
       return;
@@ -629,6 +634,7 @@ export function Artifacts() {
             {versions.map(ver => {
               const canDistribute = ['KAFKA', 'JAVA'].includes(ver.service_type);
               const isOpen = canDistribute && expanded === ver.id;
+              const artifactHosts = hostsForArtifact(ver);
               const distributed = hostParcels.filter(p => p.artifactId === ver.id && p.status !== 'REMOVED').length;
               const active = hostParcels.filter(p => p.artifactId === ver.id && p.active).length;
               const deleteKey = `delete-artifact-${ver.id}`;
@@ -731,7 +737,7 @@ export function Artifacts() {
                           </div>
                         </div>
                       )}
-                      {hosts.length === 0 ? (
+                      {artifactHosts.length === 0 ? (
                         <div className="parcel-empty-hosts">
                           <Server size={18} />
                           No hosts are registered yet.
@@ -743,10 +749,10 @@ export function Artifacts() {
                               {canManage && (
                                 <input
                                   type="checkbox"
-                                  checked={hosts.length > 0 && (selectedHosts[ver.id]?.length || 0) === hosts.length}
+                                  checked={artifactHosts.length > 0 && (selectedHosts[ver.id]?.length || 0) === artifactHosts.length}
                                   onChange={event => setSelectedHosts(current => ({
                                     ...current,
-                                    [ver.id]: event.target.checked ? hosts.map(host => host.id) : [],
+                                    [ver.id]: event.target.checked ? artifactHosts.map(host => host.id) : [],
                                   }))}
                                 />
                               )}
@@ -756,7 +762,7 @@ export function Artifacts() {
                             <span>Destination Path</span>
                             <span>Action</span>
                           </div>
-                          {hosts.map(host => {
+                          {artifactHosts.map(host => {
                             const state = getHostParcel(ver.id, host.id);
                             const status = state?.status || 'AVAILABLE';
                             return (

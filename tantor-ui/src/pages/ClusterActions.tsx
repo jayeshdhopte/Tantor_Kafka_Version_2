@@ -41,6 +41,7 @@ export function ClusterActions() {
   const locked = activeJobs.some(job => job.clusterId === id && ['ROLLING_RESTART', 'JAVA_UPGRADE'].includes(job.type));
   const [cluster, setCluster] = useState<ClusterInfo | null>(null);
   const [parcels, setParcels] = useState<HostParcel[]>([]);
+  const [javaClusterHosts, setJavaClusterHosts] = useState<Array<{hostId: string; hostname: string; ipAddress: string}>>([]);
   const [targetVersion, setTargetVersion] = useState('');
   const [javaArtifactId, setJavaArtifactId] = useState('');
   const [javaHostIds, setJavaHostIds] = useState<string[]>([]);
@@ -62,6 +63,10 @@ export function ClusterActions() {
       if (clusterRes.ok) {
         const loaded = await clusterRes.json();
         setCluster(loaded);
+        if (loaded.mode === 'EXTERNAL') {
+          const externalHosts = await fetch(`/api/v1/ui/external-java/hosts?clusterId=${id}`);
+          setJavaClusterHosts(externalHosts.ok ? await externalHosts.json() : []);
+        } else setJavaClusterHosts(loaded.hosts || []);
         setMonitoringHostId(current => current || loaded.hosts?.[0]?.hostId || '');
       }
       if (parcelsRes.ok) setParcels(await parcelsRes.json());
@@ -77,10 +82,10 @@ export function ClusterActions() {
   )).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).reverse();
 
   const stagedJava = parcels.filter(parcel => parcel.serviceType === 'JAVA' && parcel.status === 'DISTRIBUTED'
-    && cluster?.hosts?.some(host => host.hostId === parcel.hostId));
+    && javaClusterHosts.some(host => host.hostId === parcel.hostId));
   const javaArtifacts = Array.from(new Map(stagedJava.map(parcel => [parcel.artifactId, parcel])).values());
   const javaArtifact = javaArtifacts.find(artifact => artifact.artifactId === javaArtifactId);
-  const javaHosts = cluster?.hosts?.filter(host =>
+  const javaHosts = javaClusterHosts.filter(host =>
     stagedJava.some(parcel => parcel.artifactId === javaArtifactId && parcel.hostId === host.hostId)) || [];
 
   const triggerJavaUpgrade = async () => {
@@ -196,7 +201,7 @@ export function ClusterActions() {
         {locked && <span className="cluster-actions-lock">Operation in progress</span>}
       </header>
       <div className="cluster-actions-cards">
-        {canManage && cluster?.mode?.toLowerCase() === 'kraft' && (
+        {canManage && (cluster?.mode?.toLowerCase() === 'kraft' || cluster?.mode === 'EXTERNAL') && (
           <section className="cluster-action-card" aria-labelledby="java-action-title">
             <div className="cluster-action-heading"><span className="cluster-action-icon"><Coffee size={21} aria-hidden="true" /></span>
               <div><h3 id="java-action-title">Upgrade Java</h3><p>Upgrade the Java runtime on your selected Kafka hosts.</p></div>
@@ -252,7 +257,7 @@ export function ClusterActions() {
             {upgradeMsg && <p className={upgradeMsg.startsWith('Failed') ? 'cluster-action-error' : 'cluster-action-result'} role="status">{upgradeMsg}</p>}
           </section>
         )}
-        {canManage && (
+        {canManage && cluster?.mode !== 'EXTERNAL' && (
           <section className="cluster-action-card" aria-labelledby="monitoring-action-title">
             <div className="cluster-action-heading"><span className="cluster-action-icon"><Activity size={21} aria-hidden="true" /></span>
               <div><h3 id="monitoring-action-title">Monitoring Enablement</h3><p>Deploy Prometheus and Grafana through a tracked job.</p></div>

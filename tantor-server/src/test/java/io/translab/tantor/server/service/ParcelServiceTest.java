@@ -135,7 +135,7 @@ class ParcelServiceTest {
 
             service = new ParcelService(hostParcelRepository, hostRepository, taskRepository,
                     new ObjectMapper(), hostStatusService, auditService, artifactRepositoryProperties(),
-                    artifactCatalog);
+                    artifactCatalog, mock(ExternalJavaUpgradeService.class));
         }
 
         private io.translab.tantor.server.config.ArtifactRepositoryProperties artifactRepositoryProperties() {

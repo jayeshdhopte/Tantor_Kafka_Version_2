@@ -65,11 +65,21 @@ func managedTarget(t managedTask, records []DiscoveredCluster) (DiscoveredCluste
 func executeManagedTask(ctx context.Context, cfg RuntimeConfig, records []DiscoveredCluster, t managedTask) serviceResult {
 	managedMutationMu.Lock()
 	defer managedMutationMu.Unlock()
+	if t.Command == "JAVA_UPGRADE" || t.Command == "STAGE_JAVA" || t.Command == "REMOVE_JAVA" {
+		if err := validateJavaMode(cfg); err != nil {
+			return serviceResult{"FAILED", err.Error()}
+		}
+	}
 	r, err := managedTarget(t, records)
 	if err != nil {
 		return serviceResult{"FAILED", err.Error()}
 	}
-	output, err := runManagedTask(ctx, cfg, r, t)
+	var output string
+	if t.Command == "JAVA_UPGRADE" || t.Command == "STAGE_JAVA" || t.Command == "REMOVE_JAVA" {
+		output, err = runExternalJavaTask(ctx, cfg, r, records, t)
+	} else {
+		output, err = runManagedTask(ctx, cfg, r, t)
+	}
 	if err != nil {
 		return serviceResult{"FAILED", output + "\n" + err.Error()}
 	}
@@ -337,7 +347,11 @@ func runManagedPoller(ctx context.Context, client *APIClient, cfg RuntimeConfig,
 				continue
 			}
 			taskCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
-			result = executeManagedTask(taskCtx, cfg, records, t)
+			if t.Command == "STAGE_JAVA" {
+				result = executeExternalJavaStage(taskCtx, client, cfg, records, t)
+			} else {
+				result = executeManagedTask(taskCtx, cfg, records, t)
+			}
 			cancel()
 			b, _ = json.Marshal(result)
 			if os.WriteFile(path+".tmp", b, 0600) != nil {

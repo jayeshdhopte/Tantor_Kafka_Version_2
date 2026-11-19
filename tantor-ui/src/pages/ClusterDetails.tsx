@@ -8,6 +8,7 @@ import { clusterStatusTone } from '../utils/clusterStatusTone';
 import { isClusterDeploying } from '../utils/clusterDeploymentState';
 import { AnchoredMenu } from '../components/AnchoredMenu';
 import { useActiveClusterJobs, locksClusterView } from '../hooks/useActiveClusterJobs';
+import { usePermissions } from '../hooks/usePermissions';
 import './ClusterDetails.css';
 import './ClusterTabTheme.css';
 
@@ -35,6 +36,7 @@ interface ClusterInfo {
 }
 
 export function ClusterDetails() {
+  const { canManage } = usePermissions();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const activeJobs = useActiveClusterJobs();
@@ -255,7 +257,7 @@ export function ClusterDetails() {
   ];
 
   if (cluster.mode === 'EXTERNAL') {
-    tabs.push({ to: `/clusters/${id}/actions`, icon: Activity, label: 'Actions & Restarts', disabled: true });
+    tabs.push({ to: `/clusters/${id}/actions`, icon: Activity, label: 'Actions & Restarts', disabled: !canManage });
   } else {
     tabs.push({ to: `/clusters/${id}/actions`, icon: Activity, label: 'Actions & Restarts', disabled: cluster.status !== 'SUCCESS' });
     tabs.push({ to: `/clusters/${id}/logs`, icon: RefreshCw, label: 'Deployment Logs', disabled: false });

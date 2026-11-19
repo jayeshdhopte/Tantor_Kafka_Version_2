@@ -26,6 +26,7 @@ public class JavaUpgradeJobHandler implements JobHandler {
     private final ObjectMapper json;
     private final TransactionTemplate transaction;
     private final AgentTaskAwaiter taskAwaiter;
+    private final ExternalJavaUpgradeService externalJava;
 
     private record StepRequest(UUID clusterId, UUID artifactId, String hostId, String version, String kafkaVersion) {}
 
@@ -37,6 +38,7 @@ public class JavaUpgradeJobHandler implements JobHandler {
         }
         jobs.assertClusterMutable(clusterId);
         Cluster cluster = cluster(clusterId);
+        if (externalJava.external(clusterId)) externalJava.validateTargets(clusterId, hostIds);
         var steps = new ArrayList<JobStep>();
         for (String hostId : new LinkedHashSet<>(hostIds)) {
             var input = new StepRequest(clusterId, artifactId, hostId, version, cluster.getKafkaVersion());
@@ -66,10 +68,14 @@ public class JavaUpgradeJobHandler implements JobHandler {
             if (step.getStatus() == JobStepStatus.SUCCESS) continue;
             try {
                 UUID taskId = transaction.execute(status -> {
+                    if (step.getExternalKafkaTaskId() != null) return step.getExternalKafkaTaskId();
                     if (step.getAgentTaskId() != null) return step.getAgentTaskId();
                     Task task = prepareTask(read(step.getPayload(), StepRequest.class));
                     jobs.startStep(step.getId());
-                    UUID id = tasks.saveAndFlush(task).getId();
+                    StepRequest input = read(step.getPayload(), StepRequest.class);
+                    UUID id = externalJava.external(input.clusterId())
+                            ? externalJava.enqueue(input.clusterId(), input.hostId(), input.artifactId(), input.version())
+                            : tasks.saveAndFlush(task).getId();
                     jobs.attachAgentTask(step.getId(), id);
                     return id;
                 });
@@ -86,6 +92,11 @@ public class JavaUpgradeJobHandler implements JobHandler {
         Cluster cluster = cluster(input.clusterId());
         if (!Objects.equals(input.kafkaVersion(), cluster.getKafkaVersion())) {
             throw new IllegalArgumentException("Kafka version changed. Review Java compatibility and submit a new job.");
+        }
+        if (externalJava.external(input.clusterId())) {
+            var params = externalJava.prepare(input.clusterId(), input.hostId(), input.artifactId(), input.version());
+            Task task = new Task(); task.setCommand("JAVA_UPGRADE"); task.setClusterId(input.clusterId());task.setHostId(input.hostId());task.setParameters(write(params));
+            return task;
         }
         Host host = hosts.findById(input.hostId()).orElseThrow(() -> new IllegalArgumentException("Host not found."));
         if (!cluster.getId().equals(host.getClusterId()) || !"ONLINE".equalsIgnoreCase(hostStatus.agentConnectivityStatus(host))
@@ -140,6 +151,7 @@ public class JavaUpgradeJobHandler implements JobHandler {
     }
 
     private Cluster cluster(UUID id) {
+        if (externalJava.external(id)) return externalJava.cluster(id);
         return clusters.findById(id).filter(c -> "INTERNAL".equalsIgnoreCase(c.getOriginType())
                         && "kraft".equalsIgnoreCase(c.getMode()) && "SUCCESS".equalsIgnoreCase(c.getStatus())
                         && c.getServices() != null && !c.getServices().isEmpty())

@@ -25,6 +25,7 @@ class JavaUpgradeJobHandlerTest {
     private final AddNodeArtifactCatalog catalog = mock(AddNodeArtifactCatalog.class);
     private final HostStatusService hostStatus = mock(HostStatusService.class);
     private final AgentTaskAwaiter awaiter = mock(AgentTaskAwaiter.class);
+    private final ExternalJavaUpgradeService externalJava = mock(ExternalJavaUpgradeService.class);
     private final ObjectMapper json = new ObjectMapper();
     private final TransactionTemplate transactions = new TransactionTemplate() {
         @Override
@@ -33,7 +34,7 @@ class JavaUpgradeJobHandlerTest {
         }
     };
     private final JavaUpgradeJobHandler handler = new JavaUpgradeJobHandler(
-            jobs, clusters, hosts, assignments, tasks, parcels, catalog, hostStatus, json, transactions, awaiter);
+            jobs, clusters, hosts, assignments, tasks, parcels, catalog, hostStatus, json, transactions, awaiter, externalJava);
 
     @Test
     void submitsCatalogBoundTaskAndStopsAfterAgentFailure() {
@@ -84,6 +85,25 @@ class JavaUpgradeJobHandlerTest {
         assertThat(sent.getValue().getChecksum()).isEqualTo(checksum);
         UUID failedStep = jobs.getSteps(jobId).getFirst().getId();
         verify(jobs).failStep(failedStep, "Kafka verification failed");
+    }
+
+    @Test
+    void externalUpgradeUsesExternalTaskAndStopsOnFailure() {
+        UUID clusterId=UUID.randomUUID(),artifact=UUID.randomUUID(),jobId=UUID.randomUUID(),taskId=UUID.randomUUID();
+        String target="external:"+UUID.randomUUID();
+        Cluster cluster=new Cluster();cluster.setId(clusterId);cluster.setKafkaVersion("4.1.0");
+        when(externalJava.external(clusterId)).thenReturn(true);
+        when(externalJava.cluster(clusterId)).thenReturn(cluster);
+        when(externalJava.prepare(clusterId,target,artifact,"21.0.13")).thenReturn(java.util.Map.of("artifact_id",artifact.toString()));
+        when(externalJava.enqueue(clusterId,target,artifact,"21.0.13")).thenReturn(taskId);
+        when(jobs.createJob(any(),anyList())).thenAnswer(call->{Job j=call.getArgument(0);j.setId(jobId);List<JobStep> steps=call.getArgument(1);steps.forEach(s->s.setId(UUID.randomUUID()));when(jobs.getSteps(jobId)).thenReturn(steps);return j;});
+        assertThat(handler.schedule(clusterId,artifact,List.of(target),"21.0.13")).isEqualTo(jobId);
+        when(awaiter.await(taskId)).thenThrow(new IllegalStateException("External JVM verification failed"));
+        Job job=new Job();job.setId(jobId);
+        assertThatThrownBy(()->handler.execute(job)).hasMessage("External JVM verification failed");
+        verify(externalJava).validateTargets(clusterId,List.of(target));
+        verify(jobs).attachAgentTask(any(),eq(taskId));
+        verifyNoInteractions(tasks);
     }
 
     private ClusterServiceAssignment bindHost(Cluster cluster, String hostId, UUID artifactId, String version, String checksum) {

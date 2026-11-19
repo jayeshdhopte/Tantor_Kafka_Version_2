@@ -31,9 +31,12 @@ public class ParcelService {
     private final AuditService auditService;
     private final ArtifactRepositoryProperties artifactRepositoryProperties;
     private final AddNodeArtifactCatalog artifactCatalog;
+    private final ExternalJavaUpgradeService externalJava;
 
     public List<HostParcel> listStates() {
-        return hostParcelRepository.findLatestStates();
+        var states = new ArrayList<>(hostParcelRepository.findLatestStates());
+        states.addAll(externalJava.states());
+        return states;
     }
 
     @Transactional
@@ -125,6 +128,19 @@ public class ParcelService {
 
     private List<HostParcel> scheduleAction(String command, UUID artifactId, ParcelActionRequest request) {
         validateRequest(command, request);
+        var external = request.getHostIds().stream().filter(id -> id != null && id.startsWith("external:")).toList();
+        if (!external.isEmpty()) {
+            var externalRequest = copyRequest(request, external);
+            List<HostParcel> result = new ArrayList<>(switch (command) {
+                case "DISTRIBUTE_PARCEL" -> externalJava.distribute(artifactId, externalRequest);
+                case "REMOVE_PARCEL" -> externalJava.remove(artifactId, externalRequest);
+                default -> throw new IllegalArgumentException("External Java packages support distribution and removal only.");
+            });
+            var internal = request.getHostIds().stream().filter(id -> id == null || !id.startsWith("external:")).toList();
+            if (!internal.isEmpty()) result.addAll(scheduleAction(command, artifactId, copyRequest(request, internal)));
+            return result;
+        }
+
 
         boolean javaParcel = "JAVA".equalsIgnoreCase(request.getServiceType());
         AddNodeArtifactCatalog.Artifact approvedJdk = javaParcel && "DISTRIBUTE_PARCEL".equals(command)
@@ -183,6 +199,12 @@ public class ParcelService {
             auditParcel(saved, task, "REQUESTED");
         }
         return scheduled;
+    }
+
+    private ParcelActionRequest copyRequest(ParcelActionRequest original, List<String> hosts) {
+        ParcelActionRequest copy = new ParcelActionRequest();
+        copy.setHostIds(hosts);copy.setChecksum(original.getChecksum());copy.setServiceType(original.getServiceType());copy.setVersion(original.getVersion());
+        copy.setFileName(original.getFileName());copy.setParcelDir(original.getParcelDir());copy.setParcelDirs(original.getParcelDirs());return copy;
     }
 
     private Task createTask(String command, Host host, HostParcel parcel) {
