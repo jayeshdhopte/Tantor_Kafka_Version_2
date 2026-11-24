@@ -397,3 +397,17 @@
 .consumer-detail-summary article > span { font-size: var(--text-xs); font-weight: var(--font-medium); color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
 .consumer-detail-summary article > strong { font-size: 18px; font-weight: var(--font-semibold); color: var(--button-primary-active); overflow-wrap: anywhere; }
 @media (max-width: 600px) { .consumer-detail-summary { grid-template-columns: 1fr; } }
+.consumer-member-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+  gap: 12px 24px;
+  color: var(--button-primary-active);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.consumer-member-details > div > div {
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-weight: var(--font-medium);
+}

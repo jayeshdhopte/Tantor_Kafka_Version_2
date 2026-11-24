@@ -1,5 +1,5 @@
 import { RefreshButton } from '../components/RefreshButton';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
@@ -8,12 +8,13 @@ import {
   ShieldCheck, Users, X, Plus
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
+import { formatConsumerAddress } from '../utils/consumerAddress';
 import { CustomSelect } from '../components/CustomSelect';
 import { AnchoredMenu } from '../components/AnchoredMenu';
 import { TopicActionConfirmationModal } from '../components/TopicActionConfirmationModal';
 import './TopicDetails.css';
 
-type Tab = 'overview' | 'messages' | 'consumers' | 'settings' | 'statistics' | 'acls';
+type Tab = 'overview' | 'messages' | 'producers' | 'consumers' | 'settings' | 'statistics' | 'acls';
 
 interface PartitionDetail {
   partition: number;
@@ -74,6 +75,13 @@ interface ConsumerGroup {
   state: string;
 }
 
+interface TopicConsumerMember {
+  memberId: string;
+  clientId: string;
+  host: string | null;
+  partitions: Array<{ topic: string; partition: number }>;
+}
+
 interface TopicConfig {
   name: string;
   value: string | null;
@@ -125,6 +133,7 @@ interface TopicStatistics {
 const tabs: Array<{ id: Tab; label: string; icon: typeof Gauge }> = [
   { id: 'overview', label: 'Overview', icon: Gauge },
   { id: 'messages', label: 'Messages', icon: MessageSquare },
+  { id: 'producers', label: 'Producers', icon: Users },
   { id: 'consumers', label: 'Consumers', icon: Users },
   { id: 'settings', label: 'Settings', icon: Settings2 },
   { id: 'statistics', label: 'Statistics', icon: BarChart3 }
@@ -181,6 +190,7 @@ export function TopicDetails() {
 
   const [consumers, setConsumers] = useState<ConsumerGroup[]>([]);
   const [consumerSearch, setConsumerSearch] = useState('');
+  const [expandedConsumerGroup, setExpandedConsumerGroup] = useState<string | null>(null);
   const [configs, setConfigs] = useState<TopicConfig[]>([]);
   const [configSearch, setConfigSearch] = useState('');
   const [statistics, setStatistics] = useState<TopicStatistics | null>(null);
@@ -417,7 +427,7 @@ export function TopicDetails() {
 
       <nav className="topic-detail-tabs" aria-label="Topic sections">
         {tabs.map(tab => (
-          <button key={tab.id} className={activeTab === tab.id ? 'active' : ''} onClick={() => changeTab(tab.id)}>
+          <button key={tab.id} className={activeTab === tab.id ? 'active' : ''} aria-current={activeTab === tab.id ? 'page' : undefined} onClick={() => changeTab(tab.id)}>
             {tab.label}
           </button>
         ))}
@@ -490,11 +500,38 @@ export function TopicDetails() {
           </div>
         )}
 
+        {activeTab === 'producers' && (
+          <div className="detail-table-wrap">
+            <table className="detail-table" aria-label="Topic producers">
+              <thead><tr><th scope="col">Client IP</th><th scope="col">Client ID</th><th scope="col">Last seen</th></tr></thead>
+              <tbody><EmptyRow columns={3} text="Producer discovery data is unavailable for this topic." /></tbody>
+            </table>
+          </div>
+        )}
+
         {activeTab === 'consumers' && (
           <div>
             <div className="tab-toolbar"><label><Search size={16} /><input value={consumerSearch} onChange={event => setConsumerSearch(event.target.value)} placeholder="Search by consumer name" /></label><RefreshButton onClick={() => loadSimpleTab('consumers')} aria-label="Refresh consumers" title="Refresh"><RefreshCw size={15} /></RefreshButton></div>
             <div className="detail-table-wrap"><table className="detail-table consumers-table"><thead><tr><th>Consumer Group ID</th><th>Active Consumers</th><th>Consumer Lag</th><th>Coordinator</th><th>State</th></tr></thead>
-              <tbody>{tabLoading && consumers.length === 0 ? <LoadingRow columns={5} /> : filteredConsumers.length === 0 ? <EmptyRow columns={5} text="No consumer groups use this topic." /> : filteredConsumers.map(group => <tr key={group.groupId}><td>{group.groupId}</td><td>{group.activeConsumers}</td><td>{group.lag.toLocaleString()}</td><td>{group.coordinator || '-'}</td><td>{group.state.charAt(0).toUpperCase() + group.state.slice(1).toLowerCase()}</td></tr>)}</tbody>
+              <tbody>{tabLoading && consumers.length === 0 ? <LoadingRow columns={5} /> : filteredConsumers.length === 0 ? <EmptyRow columns={5} text="No consumer groups use this topic." /> : filteredConsumers.map(group => {
+                const key = JSON.stringify([id, topicName, group.groupId]);
+                const expanded = expandedConsumerGroup === key;
+                return <Fragment key={group.groupId}>
+                  <tr>
+                    <td><button type="button" className="topic-consumer-toggle" aria-expanded={expanded}
+                      aria-label={`${expanded ? 'Hide' : 'Show'} client IPs for ${group.groupId}`}
+                      onClick={() => setExpandedConsumerGroup(expanded ? null : key)}>
+                      {expanded ? <ChevronDown size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
+                      {group.groupId}
+                    </button></td>
+                    <td>{group.activeConsumers}</td><td>{group.lag.toLocaleString()}</td><td>{group.coordinator || '-'}</td>
+                    <td>{group.state.charAt(0).toUpperCase() + group.state.slice(1).toLowerCase()}</td>
+                  </tr>
+                  {expanded && id && <tr><td colSpan={5} className="topic-consumer-members">
+                    <TopicConsumerMembers key={key} clusterId={id} groupId={group.groupId} topic={topicName} />
+                  </td></tr>}
+                </Fragment>;
+              })}</tbody>
             </table></div>
           </div>
         )}
@@ -614,6 +651,58 @@ export function TopicDetails() {
       )}
     </section>
   );
+}
+
+function TopicConsumerMembers({ clusterId, groupId, topic }: { clusterId: string; groupId: string; topic: string }) {
+  const [members, setMembers] = useState<TopicConsumerMember[]>();
+  const [error, setError] = useState('');
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    async function load() {
+      try {
+        const response = await fetch(`/api/v1/clusters/${clusterId}/consumer-groups/${encodeURIComponent(groupId)}`, {
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error(await responseError(response));
+        const data: { members: TopicConsumerMember[] } = await response.json();
+        if (!controller.signal.aborted) setMembers(data.members);
+      } catch (requestError) {
+        if (!controller.signal.aborted) {
+          setError(requestError instanceof Error ? requestError.message : 'Could not load consumer members.');
+        }
+      }
+    }
+    void load();
+    return () => controller.abort();
+  }, [clusterId, groupId, attempt]);
+
+  if (error) return <div className="topic-consumer-message">
+    <span role="alert">Could not load client IPs. {error}</span>
+    <button type="button" className="topic-consumer-toggle" onClick={() => {
+      setError('');
+      setAttempt(value => value + 1);
+    }}>Retry</button>
+  </div>;
+
+  if (!members) return <p className="topic-consumer-message" role="status">Loading client IPs…</p>;
+
+  const assignedMembers = members.flatMap(member => {
+    const partitions = member.partitions.filter(partition => partition.topic === topic);
+    return partitions.length && member.memberId !== 'UNASSIGNED' ? [{ ...member, partitions }] : [];
+  });
+
+  if (!assignedMembers.length) return <p className="topic-consumer-message">No active members are assigned to this topic.</p>;
+
+  return <table className="topic-consumer-member-table" aria-label={`Members of ${groupId} assigned to ${topic}`}>
+    <thead><tr><th scope="col">Client IP / host</th><th scope="col">Client ID</th><th scope="col">Partitions</th></tr></thead>
+    <tbody>{assignedMembers.map(member => <tr key={member.memberId}>
+      <td>{formatConsumerAddress(member.host)}</td>
+      <td>{member.clientId || 'Unavailable'}</td>
+      <td>{member.partitions.map(partition => partition.partition).sort((a, b) => a - b).join(', ')}</td>
+    </tr>)}</tbody>
+  </table>;
 }
 
 function OverviewTab({ detail }: { detail: TopicDetail }) {

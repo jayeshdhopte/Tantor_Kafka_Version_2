@@ -5,6 +5,7 @@ import { Users, Search, ChevronLeft, ChevronRight, X, ArrowUp, RefreshCw } from 
 import './Consumers.css';
 import { LiveRefreshControl } from '../components/LiveRefreshControl';
 import { useLiveRefresh } from '../hooks/useLiveRefresh';
+import { formatConsumerAddress } from '../utils/consumerAddress';
 
 interface ConsumerGroupSummaryDto {
   groupId: string;
@@ -326,18 +327,18 @@ export function Consumers() {
                       detailData.members.map((m, i) => (
                         <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                           {/* Member Headers */}
-                          <div style={{ display: 'flex', gap: '48px', fontSize: 'var(--text-sm)', color: 'var(--button-primary-active)' }}>
+                          <div className="consumer-member-details">
                             <div>
-                              <div style={{ fontWeight: 'var(--font-medium)', color: 'var(--text-muted)', marginBottom: '4px' }}>Member ID</div>
-                              <div style={{ fontFamily: 'monospace' }}>{m.memberId}</div>
+                              <div>Client IP / host</div>
+                              <strong>{formatConsumerAddress(m.host)}</strong>
                             </div>
                             <div>
-                              <div style={{ fontWeight: 'var(--font-medium)', color: 'var(--text-muted)', marginBottom: '4px' }}>Client ID</div>
-                              <div>{m.clientId}</div>
+                              <div>Client ID</div>
+                              <span>{m.clientId}</span>
                             </div>
                             <div>
-                              <div style={{ fontWeight: 'var(--font-medium)', color: 'var(--text-muted)', marginBottom: '4px' }}>Host</div>
-                              <div>{m.host}</div>
+                              <div>Member ID</div>
+                              <code>{m.memberId}</code>
                             </div>
                           </div>
 

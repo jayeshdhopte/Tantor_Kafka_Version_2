@@ -1055,10 +1055,11 @@
   gap: 0px !important;
   padding: 0px !important;
   width: 613px !important;
+  max-width: 100%;
   height: 35px !important;
   border: 1px solid #CCCCCC !important;
   border-radius: 8px !important;
-  overflow: hidden !important;
+  overflow-x: auto !important;
   background: #FFFFFF !important;
   border-bottom: 1px solid #CCCCCC !important;
   margin: 16px 0 0 0 !important;
@@ -1088,6 +1089,31 @@
 .topic-detail-tabs button:last-child {
   border-right: none !important;
 }
+
+.topic-consumer-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  padding: 4px 2px;
+  background: transparent;
+  color: var(--button-primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.topic-consumer-toggle:hover { text-decoration: underline; }
+.topic-consumer-toggle svg { flex-shrink: 0; }
+
+.detail-table .topic-consumer-members {
+  padding: 12px 18px;
+  background: var(--bg-surface);
+}
+
+.topic-consumer-member-table { width: 100%; border-collapse: collapse; }
+.topic-consumer-member-table td { height: auto; white-space: normal; overflow-wrap: anywhere; }
+.topic-consumer-message { display: flex; align-items: center; gap: 12px; margin: 4px 0; white-space: normal; }
 
 .topic-detail-tabs button::after {
   display: none !important;
