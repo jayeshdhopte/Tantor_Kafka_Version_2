@@ -153,12 +153,11 @@ function AddNodeWizard({ clusterId }: { clusterId: string }) {
   };
   const evidence = (value: unknown) => value === '' || value === null || value === undefined ? 'Not reported' : typeof value === 'string' ? value : JSON.stringify(value) ?? 'Not reported';
   const checkTable = (checks: ReadinessCheck[]) => <div className="add-node-table-wrap"><table className="add-node-table">
-    <thead><tr><th scope="col">Check</th><th scope="col">Expected / observed</th><th scope="col">Status</th></tr></thead>
-    <tbody>{checks.map(check => <tr key={check.code}><th scope="row">{check.name}<small>{check.code} · {check.source}</small></th><td>
-      <small>Expected</small><div>{evidence(check.expected)}</div><small>Observed</small><div>{evidence(check.observed)}</div>
-      {check.remedy && check.status !== 'PASS' && <p className="add-node-remedy">{check.remedy}</p>}
-      <small>{new Date(check.observedAt).toLocaleString()}</small>
-    </td><td><span className={`add-node-badge ${check.status.toLowerCase()}`}>{check.status === 'PASS' ? 'Passed' : check.status === 'FAIL' ? 'Failed' : check.status === 'UNKNOWN' ? 'Unknown' : 'Blocked'}</span></td></tr>)}</tbody>
+    <thead><tr><th scope="col">Check</th><th scope="col">Status</th></tr></thead>
+    <tbody>{checks.map(check => <tr key={check.code}>
+      <th scope="row">{check.name}<small>{check.code} · {check.source}</small></th>
+      <td><span className={`add-node-badge ${check.status.toLowerCase()}`}>{check.status === 'PASS' ? 'Passed' : check.status === 'FAIL' ? 'Failed' : check.status === 'UNKNOWN' ? 'Unknown' : 'Blocked'}</span></td>
+    </tr>)}</tbody>
   </table></div>;
 
   return <section className="add-node-page animate-fade-in" aria-labelledby="add-node-title">

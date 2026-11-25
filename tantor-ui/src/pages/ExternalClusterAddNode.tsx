@@ -24,7 +24,6 @@ type BrokerReview = { previewId: string; contextHash: string; expiresAt: string;
 type Accepted = { operationId: string; jobId: string; state: string; inventoryPublished?: boolean; error?: string };
 type Readiness = { id: string; contextHash?: string; status: string; expiresAt: string; checks: ReadinessCheck[]; deploymentEnabled: false; controllerCommonPassed?: boolean };
 const initialSettings: DeploymentSettings = { installPath: '/opt/tantor/kafka', configDirectory: '/opt/tantor/kafka/config', javaHome: '/usr/lib/jvm/java-21-openjdk', runtimeUser: 'kafka', brokerDataPaths: ['/opt/tantor-broker-storage/data'], brokerMetadataPath: '', brokerLogPath: '/opt/tantor-broker-storage/logs', brokerHeapXmx: '1G', controllerDataPaths: ['/opt/tantor-controller-storage/data'], controllerMetadataPath: '/opt/tantor-controller-storage/metadata', controllerLogPath: '/opt/tantor-controller-storage/logs', controllerHeapXmx: '1G' };
-const display = (value: unknown) => typeof value === 'string' ? value : JSON.stringify(value);
 const pendingChecks = ['Connectivity and agent capabilities', 'Kafka package and approved checksum', 'Java and JVM profile', 'Listener ports', 'Storage and host resources', 'Live cluster identity and health', 'Conflicting operations and reservations'];
 
 async function read<T>(url: string, signal: AbortSignal): Promise<T> {
@@ -222,7 +221,15 @@ function ExternalWizard({ clusterId }: { clusterId: string }) {
                     {readinessError && <p role="alert" className="add-node-notice error">{readinessError}</p>}
                     <p role="status">{readiness ? `Readiness: ${Date.parse(readiness.expiresAt) <= now ? 'EXPIRED' : readiness.status}. Evidence expires ${new Date(readiness.expiresAt).toLocaleTimeString()}.` : 'Readiness not run. Required checks must pass before continuing.'}</p>
                     {commonFresh && !freshPass && <p role="status">Common checks passed for controller review. The broker profile has blockers and cannot be deployed.</p>}
-                    <div className="add-node-table-wrap"><table className="add-node-table"><thead><tr><th>Required check</th><th>Status</th><th>Observation and next step</th></tr></thead><tbody>{readiness ? readiness.checks.map(check => <tr key={check.code}><th scope="row">{check.code} · {check.name}</th><td><span className="add-node-badge">{Date.parse(readiness.expiresAt) <= now ? 'EXPIRED' : check.status}</span></td><td><div>{display(check.observed)}</div>{check.status !== 'PASS' && <small>{check.remedy}</small>}</td></tr>) : pendingChecks.map(check => <tr key={check}><th scope="row">{check}</th><td><span className="add-node-badge">Not run</span></td><td>Run readiness checks to collect evidence.</td></tr>)}</tbody></table></div>
+                    <div className="add-node-table-wrap"><table className="add-node-table">
+                      <thead><tr><th scope="col">Check</th><th scope="col">Status</th></tr></thead>
+                      <tbody>{readiness ? readiness.checks.map(check => <tr key={check.code}>
+                        <th scope="row">{check.code} · {check.name}</th>
+                        <td><span className="add-node-badge">{Date.parse(readiness.expiresAt) <= now ? 'EXPIRED' : check.status}</span></td>
+                      </tr>) : pendingChecks.map(check => <tr key={check}>
+                        <th scope="row">{check}</th><td><span className="add-node-badge">Not run</span></td>
+                      </tr>)}</tbody>
+                    </table></div>
                     <p>No job, host assignment, node ID reservation or deployment authorization is created by these checks.</p>
                   </>}
                   {step === 3 && <fieldset className="add-node-roles"><legend className="add-node-sr-only">Kafka process layout</legend>
