@@ -1113,7 +1113,7 @@
 
 .topic-consumer-member-table { width: 100%; border-collapse: collapse; }
 .topic-consumer-member-table td { height: auto; white-space: normal; overflow-wrap: anywhere; }
-.topic-consumer-message { display: flex; align-items: center; gap: 12px; margin: 4px 0; white-space: normal; }
+.topic-client-message { display: flex; align-items: center; gap: 12px; margin: 4px 0; white-space: normal; }
 
 .topic-detail-tabs button::after {
   display: none !important;

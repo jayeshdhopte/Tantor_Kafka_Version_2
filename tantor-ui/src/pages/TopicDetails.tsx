@@ -501,12 +501,7 @@ export function TopicDetails() {
         )}
 
         {activeTab === 'producers' && (
-          <div className="detail-table-wrap">
-            <table className="detail-table" aria-label="Topic producers">
-              <thead><tr><th scope="col">Client IP</th><th scope="col">Client ID</th><th scope="col">Last seen</th></tr></thead>
-              <tbody><EmptyRow columns={3} text="Producer discovery data is unavailable for this topic." /></tbody>
-            </table>
-          </div>
+          <TopicProducers key={baseUrl} baseUrl={baseUrl} />
         )}
 
         {activeTab === 'consumers' && (
@@ -653,6 +648,81 @@ export function TopicDetails() {
   );
 }
 
+interface ProducerSnapshot {
+  status: 'AVAILABLE' | 'PARTIAL' | 'STALE' | 'UNAVAILABLE';
+  capturedAt: string | null;
+  brokersAvailable: number | null;
+  brokersTotal: number | null;
+  producers: Array<{ clientIp: string; clientId: string; lastSeen: string }>;
+  truncated: boolean;
+}
+
+function TopicProducers({ baseUrl }: { baseUrl: string }) {
+  const [snapshot, setSnapshot] = useState<ProducerSnapshot>();
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [refresh, setRefresh] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    async function load() {
+      try {
+        const response = await fetch(baseUrl + '/producers', { signal: controller.signal, cache: 'no-store' });
+        if (!response.ok) throw new Error(await responseError(response));
+        const data: ProducerSnapshot = await response.json();
+        if (!controller.signal.aborted) setSnapshot(data);
+      } catch (requestError) {
+        if (!controller.signal.aborted) {
+          setError(requestError instanceof Error ? requestError.message : 'Could not load producer discovery.');
+        }
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    }
+    void load();
+    return () => controller.abort();
+  }, [baseUrl, refresh]);
+
+  const notices = [];
+  if (snapshot?.status === 'STALE') notices.push('This discovery snapshot is out of date.');
+  if (snapshot && snapshot.brokersAvailable !== snapshot.brokersTotal) {
+    notices.push(`Producer discovery covered ${snapshot.brokersAvailable} of ${snapshot.brokersTotal} brokers.`);
+  }
+  if (snapshot?.truncated) notices.push('Showing the 500 most recently observed producers.');
+  const emptyText = error || (!snapshot || snapshot.status === 'UNAVAILABLE'
+    ? 'Producer discovery data is unavailable for this topic.'
+    : snapshot.status === 'AVAILABLE' ? 'No producers were observed for this topic.'
+      : 'No producer observations in this snapshot.');
+
+  return <div>
+    <div className="tab-toolbar">
+      {snapshot?.capturedAt && <span>Last scan {formatDate(Date.parse(snapshot.capturedAt))}</span>}
+      <RefreshButton onClick={() => {
+        setError('');
+        setLoading(true);
+        setRefresh(value => value + 1);
+      }} aria-label="Refresh producers" disabled={loading}>
+        <RefreshCw className={loading ? 'spin' : ''} size={15} />
+      </RefreshButton>
+    </div>
+    {notices.length > 0 && <p className="topic-client-message" role="status">{notices.join(' ')}</p>}
+    {error && snapshot?.producers.length ? <p className="topic-client-message" role="alert">{error}</p> : null}
+    <div className="detail-table-wrap">
+      <table className="detail-table" aria-label="Topic producers">
+        <thead><tr><th scope="col">Client IP</th><th scope="col">Client ID</th><th scope="col">Last seen</th></tr></thead>
+        <tbody>{loading && !snapshot ? <LoadingRow columns={3} /> : !snapshot?.producers.length
+          ? <EmptyRow columns={3} text={emptyText} />
+          : snapshot.producers.map(producer => (
+            <tr key={JSON.stringify([producer.clientIp, producer.clientId])}>
+              <td>{producer.clientIp}</td><td>{producer.clientId}</td>
+              <td><time dateTime={producer.lastSeen}>{formatDate(Date.parse(producer.lastSeen))}</time></td>
+            </tr>
+          ))}</tbody>
+      </table>
+    </div>
+  </div>;
+}
+
 function TopicConsumerMembers({ clusterId, groupId, topic }: { clusterId: string; groupId: string; topic: string }) {
   const [members, setMembers] = useState<TopicConsumerMember[]>();
   const [error, setError] = useState('');
@@ -678,7 +748,7 @@ function TopicConsumerMembers({ clusterId, groupId, topic }: { clusterId: string
     return () => controller.abort();
   }, [clusterId, groupId, attempt]);
 
-  if (error) return <div className="topic-consumer-message">
+  if (error) return <div className="topic-client-message">
     <span role="alert">Could not load client IPs. {error}</span>
     <button type="button" className="topic-consumer-toggle" onClick={() => {
       setError('');
@@ -686,14 +756,14 @@ function TopicConsumerMembers({ clusterId, groupId, topic }: { clusterId: string
     }}>Retry</button>
   </div>;
 
-  if (!members) return <p className="topic-consumer-message" role="status">Loading client IPs…</p>;
+  if (!members) return <p className="topic-client-message" role="status">Loading client IPs…</p>;
 
   const assignedMembers = members.flatMap(member => {
     const partitions = member.partitions.filter(partition => partition.topic === topic);
     return partitions.length && member.memberId !== 'UNASSIGNED' ? [{ ...member, partitions }] : [];
   });
 
-  if (!assignedMembers.length) return <p className="topic-consumer-message">No active members are assigned to this topic.</p>;
+  if (!assignedMembers.length) return <p className="topic-client-message">No active members are assigned to this topic.</p>;
 
   return <table className="topic-consumer-member-table" aria-label={`Members of ${groupId} assigned to ${topic}`}>
     <thead><tr><th scope="col">Client IP / host</th><th scope="col">Client ID</th><th scope="col">Partitions</th></tr></thead>

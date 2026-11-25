@@ -1,0 +1,92 @@
+---
+- name: Verify the Kafka identity and look up topic IDs
+  hosts: kafka_admin
+  gather_facts: false
+  run_once: true
+  vars:
+    connection_args: >-
+      {{ ['--bootstrap-server', kafka_bootstrap_servers]
+         + (['--command-config', kafka_client_properties] if kafka_client_properties | default('') else []) }}
+  tasks:
+    - name: Read the live Kafka cluster ID
+      ansible.builtin.command:
+        argv: "{{ [kafka_bin ~ '/kafka-cluster.sh', 'cluster-id'] + connection_args }}"
+      register: discovery_cluster
+      changed_when: false
+      no_log: true
+
+    - name: Require the expected Kafka cluster ID
+      ansible.builtin.assert:
+        that:
+          - "('Cluster ID: ' ~ kafka_cluster_id) in discovery_cluster.stdout_lines"
+        fail_msg: "The connected Kafka cluster does not match the configured cluster ID."
+
+    - name: Describe topics for Produce requests that contain topic IDs
+      ansible.builtin.command:
+        argv: "{{ [kafka_bin ~ '/kafka-topics.sh', '--describe'] + connection_args }}"
+      register: discovery_topics
+      changed_when: false
+      no_log: true
+
+- name: Collect recent Produce request observations
+  hosts: kafka_brokers
+  gather_facts: false
+  become: "{{ discovery_become | default(false) | bool }}"
+  ignore_unreachable: true
+  tasks:
+    - name: Read the broker request log with bounded output
+      ansible.builtin.script:
+        cmd: >-
+          {{ (playbook_dir ~ '/producer_snapshot.py') | quote }} collect
+          --metadata {{ kafka_metadata_properties | quote }}
+          --request-log {{ kafka_request_log | quote }}
+          --kafka-cluster-id {{ kafka_cluster_id | quote }}
+          --timezone {{ kafka_log_timezone | quote }}
+          --lookback {{ discovery_lookback_minutes | default(15) | int }}
+        executable: python3
+      register: discovery_observation
+      failed_when: false
+      changed_when: false
+      no_log: true
+
+- name: Publish one cluster-scoped snapshot
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Require a completed metadata check
+      ansible.builtin.assert:
+        that:
+          - groups.get('kafka_brokers', []) | length > 0
+          - groups.get('kafka_admin', []) | length == 1
+          - hostvars[groups['kafka_admin'][0]].discovery_topics.rc | default(1) == 0
+
+    - name: Keep results from brokers whose collection succeeded
+      ansible.builtin.set_fact:
+        discovery_reports: "{{ discovery_reports | default([]) + [observation.stdout | from_json] }}"
+      vars:
+        observation: "{{ hostvars[item].discovery_observation | default({}) }}"
+      loop: "{{ groups['kafka_brokers'] }}"
+      when: observation.rc | default(1) == 0
+      no_log: true
+
+    - name: Atomically publish the snapshot for Tantor
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ playbook_dir }}/producer_snapshot.py"
+          - publish
+          - --cluster-id
+          - "{{ tantor_cluster_id }}"
+          - --kafka-cluster-id
+          - "{{ kafka_cluster_id }}"
+          - --captured-at
+          - "{{ now(utc=true, fmt='%Y-%m-%dT%H:%M:%SZ') }}"
+          - --brokers-total
+          - "{{ groups['kafka_brokers'] | length | string }}"
+          - --directory
+          - "{{ discovery_snapshot_dir }}"
+        stdin: >-
+          {{ {'reports': discovery_reports | default([]),
+              'topic_descriptions': hostvars[groups['kafka_admin'][0]].discovery_topics.stdout} | to_json }}
+      no_log: true
