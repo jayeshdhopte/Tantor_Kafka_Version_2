@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io.translab/tantor-agent/pkg/api"
@@ -37,7 +38,23 @@ func javaTargetParameters(cfg RuntimeConfig, r DiscoveredCluster, records []Disc
 		paths[canonicalPathOrClean(record.PropsFile)] = true
 	}
 	if len(paths) != 1 {
-		return nil, fmt.Errorf("VM-wide Java upgrade requires one discovered Kafka process on this dedicated host")
+		if len(paths) != 2 || len(records) != 2 || r.KafkaClusterID == "" {
+			return nil, fmt.Errorf("VM-wide Java upgrade requires one process or a separate broker/controller pair")
+		}
+		roles, units := map[string]bool{}, map[string]bool{}
+		for _, peer := range records {
+			role := ""
+			if roleContains(peer.ProcessRoles, "broker") && !roleContains(peer.ProcessRoles, "controller") {
+				role = "broker"
+			}
+			if roleContains(peer.ProcessRoles, "controller") && !roleContains(peer.ProcessRoles, "broker") {
+				role = "controller"
+			}
+			if role == "" || roles[role] || units[peer.SystemdService] || peer.SystemdService == "" || peer.KafkaClusterID != r.KafkaClusterID || !strings.EqualFold(peer.KafkaMode, "kraft") {
+				return nil, fmt.Errorf("separate Kafka services must have distinct roles and units in the same cluster")
+			}
+			roles[role], units[peer.SystemdService] = true, true
+		}
 	}
 	if err := validateDiscoveredService(t.Parameters["service_name"], r); err != nil {
 		return nil, err
@@ -72,38 +89,50 @@ func runExternalJavaTask(ctx context.Context, cfg RuntimeConfig, r DiscoveredClu
 	if !cfg.AllowServiceRestart {
 		return "", fmt.Errorf("service restart permission required")
 	}
-	if err := validateRestartServiceSafety(r.SystemdService, r, cfg); err != nil {
-		return "", err
-	}
-	binding, err := exec.CommandContext(ctx, "systemctl", "show", r.SystemdService, "--property=ExecStart", "--value").Output()
-	cwd, cwdErr := exec.CommandContext(ctx, "systemctl", "show", r.SystemdService, "--property=WorkingDirectory", "--value").Output()
-	if err != nil || cwdErr != nil || !serviceConfigBindingMatches(string(binding), strings.TrimSpace(string(cwd)), r.PropsFile) {
-		return "", fmt.Errorf("Kafka service binding changed; refresh discovery")
-	}
-	content, err := os.ReadFile(r.PropsFile)
-	if err != nil {
-		return "", err
-	}
-	props := parseProperties(string(content))
-	role := "controller"
-	if roleContains(r.ProcessRoles, "broker") {
-		role = "broker"
-		if roleContains(r.ProcessRoles, "controller") {
-			role = "broker_controller"
-		}
-	}
-	endpoint, err := javaHealthEndpoint(props, role)
-	if err != nil {
-		return "", err
-	}
 	params := map[string]string{}
 	for k, v := range p {
 		params[k] = v
 	}
-	params["service_name"] = strings.TrimSuffix(r.SystemdService, ".service")
-	params["service_role"] = role
-	params["kafka_home"] = r.InstallPath
-	params["health_endpoint"] = endpoint
+	// Resolve every unit from local discovery, not from caller-supplied unit lists.
+	targets := []javaupgrade.ServiceTarget{}
+	for _, peer := range records {
+		if err := validateRestartServiceSafety(peer.SystemdService, peer, cfg); err != nil {
+			return "", err
+		}
+		binding, bindErr := exec.CommandContext(ctx, "systemctl", "show", peer.SystemdService, "--property=ExecStart", "--value").Output()
+		cwd, cwdErr := exec.CommandContext(ctx, "systemctl", "show", peer.SystemdService, "--property=WorkingDirectory", "--value").Output()
+		if bindErr != nil || cwdErr != nil || !serviceConfigBindingMatches(string(binding), strings.TrimSpace(string(cwd)), peer.PropsFile) {
+			return "", fmt.Errorf("Kafka service binding changed for %s; refresh discovery", peer.SystemdService)
+		}
+		content, readErr := os.ReadFile(peer.PropsFile)
+		if readErr != nil {
+			return "", readErr
+		}
+		role := "controller"
+		if roleContains(peer.ProcessRoles, "broker") {
+			role = "broker"
+			if roleContains(peer.ProcessRoles, "controller") {
+				role = "broker_controller"
+			}
+		}
+		endpoint, endpointErr := javaHealthEndpoint(parseProperties(string(content)), role)
+		if endpointErr != nil {
+			return "", endpointErr
+		}
+		targets = append(targets, javaupgrade.ServiceTarget{Name: peer.SystemdService, Role: role, KafkaHome: peer.InstallPath, Endpoint: endpoint})
+		if peer.SystemdService == r.SystemdService {
+			params["service_name"] = strings.TrimSuffix(peer.SystemdService, ".service")
+			params["service_role"], params["kafka_home"], params["health_endpoint"] = role, peer.InstallPath, endpoint
+		}
+	}
+	delete(params, "separate_services")
+	if len(targets) == 2 {
+		encoded, encodeErr := json.Marshal(targets)
+		if encodeErr != nil {
+			return "", encodeErr
+		}
+		params["separate_services"] = string(encoded)
+	}
 	var logs strings.Builder
 	err = javaupgrade.RunDiscoveredService(ctx, serviceExecutor{}, &api.Task{TaskID: t.ID, Parameters: params, Checksum: p["checksum"]}, &logs, r.SystemdService)
 	return logs.String(), err

@@ -87,6 +87,24 @@ func TestExternalJavaRefusesMultipleKafkaProcesses(t *testing.T) {
 		t.Fatal("shared VM accepted")
 	}
 }
+
+func TestExternalJavaAcceptsOnlySameClusterSeparatePair(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("root-only capability")
+	}
+	cfg, r, task := javaFixture(t)
+	controller := r
+	controller.ProcessRoles = "controller"
+	controller.SystemdService = "controller.service"
+	controller.PropsFile = filepath.Join(filepath.Dir(r.PropsFile), "controller.properties")
+	if _, err := javaTargetParameters(cfg, r, []DiscoveredCluster{r, controller}, task); err != nil {
+		t.Fatal(err)
+	}
+	controller.KafkaClusterID = "other-cluster"
+	if _, err := javaTargetParameters(cfg, r, []DiscoveredCluster{r, controller}, task); err == nil {
+		t.Fatal("cross-cluster pair accepted")
+	}
+}
 func TestExternalJavaStagesVerifiedArchiveWithoutUpgrading(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("root-only capability")

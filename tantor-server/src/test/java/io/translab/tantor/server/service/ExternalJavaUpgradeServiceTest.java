@@ -34,6 +34,17 @@ class ExternalJavaUpgradeServiceTest {
  @Test void refusesWrongCluster() {
   node();assertThatThrownBy(()->service.requireTarget(UUID.randomUUID(),target,true)).hasMessageContaining("another cluster");
  }
+ @Test void acceptsSeparatePairOnlyWithMatchingAgentCapability() {
+  var broker=node();broker.setIsBroker(true);broker.setIsController(false);broker.setId(UUID.randomUUID());
+  var controller=new ExternalClusterNode();controller.setId(UUID.randomUUID());controller.setClusterId(clusterId);controller.setAgentId("agent-1");controller.setHost(broker.getHost());controller.setIsController(true);controller.setIsBroker(false);controller.setSystemdService("controller.service");controller.setConfigFile("/opt/kafka/config/controller.properties");
+  when(nodes.findByAgentId("agent-1")).thenReturn(List.of(broker,controller));
+  assertThatThrownBy(()->service.requireTarget(clusterId,target,true)).hasMessageContaining("separate-service Java upgrade agent");
+  when(management.agentVersion(target)).thenReturn("3.4.0.java-upgrade.1.java-separate.1");
+  assertThat(service.requireTarget(clusterId,target,true)).isSameAs(broker);
+  verify(management).require("external:"+controller.getId(),true,true);
+  controller.setClusterId(UUID.randomUUID());
+  assertThatThrownBy(()->service.requireTarget(clusterId,target,true)).hasMessageContaining("same cluster");
+ }
  @Test void refusesAuthenticatedHealthProbeUntilSupported() {
   ExternalCluster c=new ExternalCluster();c.setId(clusterId);c.setKafkaMode("kraft");c.setKafkaClusterId("kafka-1");c.setSecurityProtocol("SASL_SSL");when(clusters.findById(clusterId)).thenReturn(Optional.of(c));
   assertThatThrownBy(()->service.cluster(clusterId)).hasMessageContaining("PLAINTEXT");

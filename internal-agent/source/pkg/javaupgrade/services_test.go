@@ -1,0 +1,79 @@
+package javaupgrade
+
+import (
+	"context"
+	"errors"
+	"reflect"
+	"strings"
+	"testing"
+)
+
+func pair() []ServiceTarget {
+	return []ServiceTarget{
+		{Name: "broker.service", Role: "broker", KafkaHome: "/opt/kafka", Endpoint: "127.0.0.1:9092"},
+		{Name: "controller.service", Role: "controller", KafkaHome: "/opt/kafka", Endpoint: "127.0.0.1:9093"},
+	}
+}
+func TestSeparateServiceLayout(t *testing.T) {
+	services := pair()
+	if err := validateSeparateServices(services, "broker.service"); err != nil {
+		t.Fatal(err)
+	}
+	if services[0].Role != "controller" {
+		t.Fatal("controller must start first")
+	}
+	for _, change := range []func([]ServiceTarget){func(s []ServiceTarget) { s[1].Role = "broker" }, func(s []ServiceTarget) { s[1].Name = s[0].Name }, func(s []ServiceTarget) { s[1].Role = "broker_controller" }, func(s []ServiceTarget) { s[1].Name = "../../other.service" }} {
+		invalid := pair()
+		change(invalid)
+		if validateSeparateServices(invalid, "broker.service") == nil {
+			t.Fatal("invalid pair accepted")
+		}
+	}
+	if validateSeparateServices(pair(), "unrelated.service") == nil {
+		t.Fatal("unbound primary accepted")
+	}
+	if validateSeparateServices(pair()[:1], "broker.service") == nil {
+		t.Fatal("incomplete pair accepted")
+	}
+}
+func TestSeparateJavaGuardRetainsUnrelatedProcessBlock(t *testing.T) {
+	allowed := map[string]bool{"101": true, "102": true}
+	if err := rejectUnrelatedJava("101 java\n102 java\n9 bash", allowed); err != nil {
+		t.Fatal(err)
+	}
+	if err := rejectUnrelatedJava("101 java\n102 java\n1734 java", allowed); err == nil || !strings.Contains(err.Error(), "1734") {
+		t.Fatal("unrelated Elasticsearch JVM must remain blocked")
+	}
+}
+func TestSeparateTransitionOrderingAndOriginallyStoppedServices(t *testing.T) {
+	services := pair()
+	_ = validateSeparateServices(services, "broker.service")
+	var calls []string
+	run := func(_ context.Context, _ string, args ...string) (string, error) {
+		calls = append(calls, args[0]+" "+args[2])
+		return "", nil
+	}
+	_ = transitionServices(context.Background(), run, services, "stop")
+	_ = transitionServices(context.Background(), run, services, "start")
+	want := []string{"stop broker.service", "stop controller.service", "start controller.service", "start broker.service"}
+	if !reflect.DeepEqual(calls, want) {
+		t.Fatalf("%v", calls)
+	}
+	calls = nil
+	_ = transitionServices(context.Background(), run, services[:1], "start")
+	if !reflect.DeepEqual(calls, []string{"start controller.service"}) {
+		t.Fatal("inactive broker must not be started")
+	}
+}
+func TestSeparateStartFailureDoesNotStartBroker(t *testing.T) {
+	services := pair()
+	_ = validateSeparateServices(services, "broker.service")
+	calls := 0
+	err := transitionServices(context.Background(), func(context.Context, string, ...string) (string, error) {
+		calls++
+		return "", errors.New("start failed")
+	}, services, "start")
+	if err == nil || calls != 1 {
+		t.Fatal("controller start failure must prevent broker start")
+	}
+}

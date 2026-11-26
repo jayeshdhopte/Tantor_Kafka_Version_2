@@ -2,6 +2,7 @@ import { useEffect, useCallback, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { AlertTriangle, CheckCircle2, Download } from 'lucide-react';
 import './ClusterOverview.css';
+import { ClusterLoadingState } from '../components/ClusterLoadingState';
 
 interface OverviewSummary {
   brokerCount: number;
@@ -146,7 +147,7 @@ export function ClusterOverview() {
   };
 
   if (loading && !overview) {
-    return <div className="state-center">Loading cluster overview...</div>;
+    return <ClusterLoadingState overview />;
   }
 
   if (!overview) {

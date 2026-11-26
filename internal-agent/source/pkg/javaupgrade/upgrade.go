@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -79,63 +80,59 @@ func run(ctx context.Context, executor Executor, task *api.Task, log *strings.Bu
 		}
 		return strings.TrimSpace(out), nil
 	}
-	state, err := run(ctx, "systemctl", "show", "--property=ActiveState", "--value", "--", unit)
-	if err != nil || (state != "active" && state != "inactive") {
-		return fmt.Errorf("cannot establish stable Kafka service state for %s (%s): %v", unit, state, err)
+	services := []ServiceTarget{{Name: unit, Role: p["service_role"], KafkaHome: p["kafka_home"], Endpoint: p["health_endpoint"]}}
+	if raw := p["separate_services"]; raw != "" {
+		if err := json.Unmarshal([]byte(raw), &services); err != nil {
+			return fmt.Errorf("invalid separate Kafka services: %w", err)
+		}
+		if err := validateSeparateServices(services, unit); err != nil {
+			return err
+		}
 	}
-	loaded, err := run(ctx, "systemctl", "show", "--property=LoadState", "--value", "--", unit)
-	if err != nil || loaded != "loaded" {
-		return fmt.Errorf("Kafka service %s is not loaded", unit)
-	}
-	active := state == "active"
-	role := p["service_role"]
-	if role != "broker" && role != "controller" && role != "broker_controller" {
-		return fmt.Errorf("a supported KRaft service_role is required")
-	}
-	mainPID, err := run(ctx, "systemctl", "show", "--property=MainPID", "--value", "--", unit)
-	if err != nil {
-		return err
+	activeUnits := []ServiceTarget{}
+	allowedPIDs := map[string]bool{}
+	for _, service := range services {
+		if err := validateServiceTarget(service); err != nil {
+			return err
+		}
+		loaded, e := run(ctx, "systemctl", "show", "--property=LoadState", "--value", "--", service.Name)
+		if e != nil || loaded != "loaded" {
+			return fmt.Errorf("Kafka service %s is not loaded", service.Name)
+		}
+		state, e := run(ctx, "systemctl", "show", "--property=ActiveState", "--value", "--", service.Name)
+		if e != nil || (state != "active" && state != "inactive") {
+			return fmt.Errorf("cannot establish stable Kafka service state for %s", service.Name)
+		}
+		if state == "active" {
+			pid, e := run(ctx, "systemctl", "show", "--property=MainPID", "--value", "--", service.Name)
+			if e != nil || !regexp.MustCompile(`^[1-9][0-9]*$`).MatchString(pid) || allowedPIDs[pid] {
+				return fmt.Errorf("Kafka MainPID is unavailable or duplicated for %s", service.Name)
+			}
+			allowedPIDs[pid] = true
+			activeUnits = append(activeUnits, service)
+		}
 	}
 	processes, err := run(ctx, "ps", "-eo", "pid=,comm=")
 	if err != nil {
 		return err
 	}
-	for _, line := range strings.Split(processes, "\n") {
-		fields := strings.Fields(line)
-		if len(fields) == 2 && fields[1] == "java" && (!active || fields[0] != mainPID) {
-			return fmt.Errorf("another Java process is running on this VM (PID %s)", fields[0])
+	if err := rejectUnrelatedJava(processes, allowedPIDs); err != nil {
+		return err
+	}
+	active := len(activeUnits) > 0
+	probeService := func(c context.Context, service ServiceTarget) error { return probeKafkaService(c, executor, service) }
+	for _, service := range activeUnits {
+		if err := probeService(ctx, service); err != nil {
+			return fmt.Errorf("pre-upgrade health for %s: %w", service.Name, err)
 		}
 	}
-
-	probe := func(c context.Context) error {
-		kafkaHome, pathErr := taskvalidate.ApprovedPath(p["kafka_home"])
-		endpoint, endpointErr := taskvalidate.HostPort(p["health_endpoint"])
-		if pathErr != nil || endpointErr != nil {
-			return fmt.Errorf("validated Kafka home and health endpoint are required")
-		}
-		if p["service_role"] != "controller" {
-			out, _, probeErr := executor.Run(c, filepath.Join(kafkaHome, "bin", "kafka-topics.sh"), "--bootstrap-server", endpoint, "--describe", "--under-replicated-partitions")
-			if probeErr != nil || out != "" {
-				return fmt.Errorf("Kafka partition health was not verified: %v", probeErr)
+	waitAll := func(c context.Context, binary string) error {
+		for _, service := range activeUnits {
+			if err := waitForJavaService(c, run, service.Name, binary, func(pc context.Context) error { return probeService(pc, service) }); err != nil {
+				return fmt.Errorf("%s: %w", service.Name, err)
 			}
 		}
-		flag := "--bootstrap-server"
-		if p["service_role"] == "controller" {
-			flag = "--bootstrap-controller"
-		}
-		out, _, probeErr := executor.Run(c, filepath.Join(kafkaHome, "bin", "kafka-metadata-quorum.sh"), flag, endpoint, "describe", "--status")
-		if probeErr != nil || !regexp.MustCompile(`(?m)^LeaderId:\s+[0-9]+\s*$`).MatchString(out) || !strings.Contains(out, "CurrentVoters:") {
-			return fmt.Errorf("KRaft quorum health was not verified: %v", probeErr)
-		}
 		return nil
-	}
-	if active {
-		if !regexp.MustCompile(`^[1-9][0-9]*$`).MatchString(mainPID) {
-			return fmt.Errorf("Kafka MainPID is unavailable")
-		}
-		if err := probe(ctx); err != nil {
-			return fmt.Errorf("pre-upgrade health: %w", err)
-		}
 	}
 	const javaLink = "/usr/bin/java"
 	previous, err := run(ctx, "readlink", "--", javaLink)
@@ -154,9 +151,8 @@ func run(ctx context.Context, executor Executor, task *api.Task, log *strings.Bu
 	oldVersion := oldMatch[1]
 	if oldVersion == version {
 		if active {
-			exe, exeErr := run(ctx, "readlink", "-f", "--", "/proc/"+mainPID+"/exe")
-			if exeErr != nil || exe != previousReal {
-				return fmt.Errorf("default Java already matches, but Kafka is using a different JVM")
+			if err := waitAll(ctx, previousReal); err != nil {
+				return err
 			}
 		}
 		fmt.Fprintf(log, "VM default Java is already %s. Kafka service state preserved.\n", version)
@@ -233,7 +229,7 @@ func run(ctx context.Context, executor Executor, task *api.Task, log *strings.Bu
 		var recovery []string
 		if switched {
 			if active {
-				if _, x := run(recoverCtx, "systemctl", "stop", "--", unit); x != nil {
+				if x := transitionServices(recoverCtx, run, activeUnits, "stop"); x != nil {
 					recovery = append(recovery, x.Error())
 				}
 			}
@@ -243,12 +239,12 @@ func run(ctx context.Context, executor Executor, task *api.Task, log *strings.Bu
 			}
 		}
 		if stopped && len(recovery) == 0 {
-			if _, x := run(recoverCtx, "systemctl", "start", "--", unit); x != nil {
+			if x := transitionServices(recoverCtx, run, activeUnits, "start"); x != nil {
 				recovery = append(recovery, x.Error())
 			}
 			if len(recovery) == 0 {
 				verifyCtx, verifyDone := context.WithTimeout(recoverCtx, 90*time.Second)
-				if x := waitForJavaService(verifyCtx, run, unit, previousReal, probe); x != nil {
+				if x := waitAll(verifyCtx, previousReal); x != nil {
 					recovery = append(recovery, x.Error())
 				}
 				verifyDone()
@@ -262,9 +258,22 @@ func run(ctx context.Context, executor Executor, task *api.Task, log *strings.Bu
 	}()
 	if active {
 		stopped = true
-		if _, err = run(ctx, "systemctl", "stop", "--", unit); err != nil {
+		if err = transitionServices(ctx, run, activeUnits, "stop"); err != nil {
 			return err
 		}
+	}
+	for _, service := range services {
+		state, stateErr := run(ctx, "systemctl", "show", "--property=ActiveState", "--value", "--", service.Name)
+		if stateErr != nil || state != "inactive" {
+			return fmt.Errorf("Kafka service %s did not stop before switching Java", service.Name)
+		}
+	}
+	processes, err = run(ctx, "ps", "-eo", "pid=,comm=")
+	if err != nil {
+		return err
+	}
+	if err = rejectUnrelatedJava(processes, map[string]bool{}); err != nil {
+		return err
 	}
 	current, err := run(ctx, "readlink", "--", javaLink)
 	if err != nil || current != previous {
@@ -279,12 +288,12 @@ func run(ctx context.Context, executor Executor, task *api.Task, log *strings.Bu
 		return fmt.Errorf("Java default does not point to the target JDK")
 	}
 	if active {
-		if _, err = run(ctx, "systemctl", "start", "--", unit); err != nil {
+		if err = transitionServices(ctx, run, activeUnits, "start"); err != nil {
 			return err
 		}
 		verifyCtx, done := context.WithTimeout(ctx, 90*time.Second)
 		defer done()
-		if err = waitForJavaService(verifyCtx, run, unit, binary, probe); err != nil {
+		if err = waitAll(verifyCtx, binary); err != nil {
 			return fmt.Errorf("Kafka did not verify on target Java %s: %w", version, err)
 		}
 		fmt.Fprintf(log, "Kafka is running on Java %s and health checks passed\n", version)

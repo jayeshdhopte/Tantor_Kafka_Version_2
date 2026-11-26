@@ -107,7 +107,7 @@ export function ClusterNodes() {
         </div>
         {canManage && <button type="button"
           disabled={Boolean(error) || !cluster || cluster.mode !== 'KRAFT' || activeJobs.some(job => job.clusterId === id)}
-          title={cluster?.mode !== 'KRAFT' ? 'Add Node requires a KRaft cluster.' : cluster?.type === 'EXTERNAL' ? 'Preview external broker addition. Deployment remains disabled.' : 'Check readiness and review a broker, controller or separate-process addition.'}
+          title={cluster?.mode !== 'KRAFT' ? 'Add Node requires a KRaft cluster.' : cluster?.type === 'EXTERNAL' ? 'Check external-agent readiness and review node addition.' : 'Check readiness and review a broker, controller or separate-process addition.'}
           onClick={() => navigate(cluster?.type === 'EXTERNAL' ? `/external-clusters/${id}/add-node` : `/clusters/${id}/add-node`)}><Plus size={16} /> Add Node</button>}
       </header>
 

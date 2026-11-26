@@ -6,6 +6,7 @@ import { useActiveClusterJobs } from '../hooks/useActiveClusterJobs';
 import { useAddNodeReadiness, type ReadinessCheck } from '../hooks/useAddNodeReadiness';
 import './ClusterAddNode.css';
 import { AddNodeDeploymentSettings, type DeploymentSettings } from '../components/AddNodeDeploymentSettings';
+import { AgentConnectivityModal } from '../components/AgentConnectivityModal';
 import { BrokerAdditionPlanReview } from '../components/BrokerAdditionPlanReview';
 import { ControllerAdditionPlanReview } from '../components/ControllerAdditionPlanReview';
 import { SeparateProcessAdditionPlanReview } from '../components/SeparateProcessAdditionPlanReview';
@@ -92,6 +93,7 @@ function AddNodeWizard({ clusterId }: { clusterId: string }) {
   const [inventory, setInventory] = useState<Inventory | null>(null);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
+  const [enrollOpen, setEnrollOpen] = useState(false);
   const [hostId, setHostId] = useState('');
   const [brokerRack, setBrokerRack] = useState('');
   const [deploymentSettings, setDeploymentSettings] = useState<DeploymentSettings | null>(null);
@@ -114,7 +116,7 @@ function AddNodeWizard({ clusterId }: { clusterId: string }) {
           || !Array.isArray(hosts) || hosts.some(host => !host || typeof host.id !== 'string')) {
           throw new Error('The server returned an invalid cluster or host inventory.');
         }
-        if (!abort.signal.aborted) { setInventory({ cluster, hosts }); setDeploymentSettings(settings); }
+        if (!abort.signal.aborted) { setInventory({ cluster, hosts }); setDeploymentSettings(current => current ?? settings); }
       } catch (failure) {
         if (!abort.signal.aborted) setError(failure instanceof Error ? failure.message : 'Could not load inventory.');
       }
@@ -127,6 +129,7 @@ function AddNodeWizard({ clusterId }: { clusterId: string }) {
 
   const refreshInventory = () => {
     setInventory(null);
+    setDeploymentSettings(null);
     setError('');
     setHostId('');
     setRole('broker');
@@ -206,6 +209,7 @@ function AddNodeWizard({ clusterId }: { clusterId: string }) {
                     </select><small id="add-node-host-help">Only available hosts with a deployment agent can be selected. Run live readiness checks after selection.</small></label>
                     <label className="full">Broker rack<input aria-label="Broker rack" value={brokerRack} maxLength={128} placeholder="For example, rack1 or us-east-1d" disabled={Boolean(clusterBlocker || blockingJob)} onChange={event => setBrokerRack(event.target.value.trim())} /><small>Enter this host's actual rack or availability zone. Required for a rack-aware cluster; leave blank when racks are not configured. Changing it requires fresh checks.</small></label>
                   </div>
+                  <button type="button" className="add-node-button" disabled={Boolean(clusterBlocker || blockingJob)} onClick={() => setEnrollOpen(true)}>+ Add host</button>
                   {deploymentSettings && <AddNodeDeploymentSettings value={deploymentSettings} onChange={setDeploymentSettings} disabled={Boolean(clusterBlocker || blockingJob)} />}
                   {!inventory.hosts.some(host => !unavailableReason(host, cluster)) && <div className="add-node-notice warning">No eligible hosts are currently reported. Enroll or release a host in <Link to="/hosts">Hosts</Link>, then refresh inventory.</div>}
                   <details className="add-node-identity"><summary>Inherited Kafka identity</summary><code>{reported(cluster.kafkaClusterId)}</code><p>This is the Kafka cluster ID. Node IDs have not been allocated.</p></details>
@@ -281,5 +285,6 @@ function AddNodeWizard({ clusterId }: { clusterId: string }) {
                 </footer>
               </section>
             </>}
+    {enrollOpen && <AgentConnectivityModal onClose={() => { setEnrollOpen(false); setRevision(value => value + 1); }} />}
   </section>;
 }

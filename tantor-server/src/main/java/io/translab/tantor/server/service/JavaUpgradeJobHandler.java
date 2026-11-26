@@ -104,7 +104,10 @@ public class JavaUpgradeJobHandler implements JobHandler {
             throw new IllegalArgumentException("Host must belong to this cluster and report an online Java Upgrade agent.");
         }
         var matching = assignments.findLiveAssignmentsForHost(input.hostId());
-        if (matching.size() != 1 || !cluster.getId().equals(matching.getFirst().getCluster().getId())) throw new IllegalArgumentException("Java upgrade requires one Kafka service per dedicated host.");
+        if (matching.isEmpty() || matching.size() > 2 || matching.stream().anyMatch(a -> a.getCluster() == null || !cluster.getId().equals(a.getCluster().getId()))) throw new IllegalArgumentException("Java upgrade requires Kafka services from this cluster only.");
+        boolean separate = matching.size() == 2;
+        if (separate && (!matching.stream().map(a -> Objects.toString(a.getRole(), "").toLowerCase(Locale.ROOT)).collect(java.util.stream.Collectors.toSet()).equals(Set.of("broker", "controller")))) throw new IllegalArgumentException("Separate Java upgrade requires one broker and one controller on this host.");
+        if (separate && !host.getAgentVersion().contains(".java-separate.1")) throw new IllegalArgumentException("Install the separate-service Java upgrade agent first.");
         var service = matching.getFirst();
         String role = Objects.toString(service.getRole(), "").toLowerCase(Locale.ROOT);
         String defaultUnit = switch (role) {
@@ -143,10 +146,27 @@ public class JavaUpgradeJobHandler implements JobHandler {
         task.setCommand("JAVA_UPGRADE");
         task.setStatus("PENDING");
         task.setChecksum(artifact.checksum());
-        task.setParameters(write(Map.of(
+        var parameters = new LinkedHashMap<String, String>(Map.of(
                 "artifact_id", input.artifactId().toString(), "target_version", input.version(),
                 "parcel_dir", parcel.getParcelDir(), "service_name", unit, "service_role", role,
-                "kafka_home", path.substring(0, configAt), "health_endpoint", endpoint)));
+                "kafka_home", path.substring(0, configAt), "health_endpoint", endpoint));
+        if (separate) {
+            var serviceTargets = new ArrayList<Map<String,String>>();
+            var units = new HashSet<String>();
+            for (var assignment : matching) {
+                String targetRole = assignment.getRole().toLowerCase(Locale.ROOT);
+                JsonNode targetConfig = configuration(assignment.getConfigJson());
+                String targetUnit = targetConfig.path("service_name").asText(targetConfig.path("systemd_service").asText(targetRole));
+                if (targetUnit.endsWith(".service")) targetUnit = targetUnit.substring(0, targetUnit.length()-8);
+                if (!targetUnit.matches("[A-Za-z0-9_][A-Za-z0-9_.@:-]{0,191}") || !units.add(targetUnit)) throw new IllegalArgumentException("Separate Kafka services must have distinct valid systemd units.");
+                if (!"PLAINTEXT".equalsIgnoreCase(targetConfig.path("security_protocol").asText(clusterConfig.path("security_protocol").asText("PLAINTEXT")))) throw new IllegalArgumentException("A PLAINTEXT Kafka endpoint is required for both services.");
+                String targetEndpoint = targetRole.equals("controller") ? "127.0.0.1:" + targetConfig.path("controller_port").asInt(clusterConfig.path("controller_port").asInt(9093)) : Objects.toString(cluster.getBootstrapServers(), "").split(",", -1)[0].trim();
+                serviceTargets.add(Map.of("name",targetUnit+".service","role",targetRole,"kafka_home",path.substring(0,configAt),"health_endpoint",targetEndpoint));
+            }
+            parameters.put("service_name", unit.endsWith(".service") ? unit.substring(0,unit.length()-8) : unit);
+            parameters.put("separate_services",write(serviceTargets));
+        }
+        task.setParameters(write(parameters));
         return task;
     }
 

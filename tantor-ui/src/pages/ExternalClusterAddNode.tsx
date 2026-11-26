@@ -201,13 +201,19 @@ function ExternalWizard({ clusterId }: { clusterId: string }) {
                       </select><small>Only online, unlinked external agents can be selected. Run the checks after reviewing the candidate profile.</small></label>
                     </div>
                     {!inventory.hosts.some(candidate => !unavailable(candidate)) && <p className="add-node-notice warning" role="status">No eligible external host is currently enrolled. Enroll a host or restore its external-agent heartbeat, then refresh inventory.</p>}
+                    <details className="add-node-identity add-node-host-setup"><summary>+ Add host</summary>
+                      <p>Open external cluster setup and choose Discovery Agent setup. Start the agent on the new host, pointing to this Tantor backend. Its heartbeat registers the host automatically. Return here and refresh inventory to select the online, unlinked host.</p>
+                      <Link className="add-node-button" to="/external-clusters" target="_blank" rel="noopener noreferrer">Open external cluster setup</Link>
+                      <button type="button" className="add-node-button" disabled={Boolean(activeJob)} onClick={refresh}><RefreshCw size={16} /> Refresh registered hosts</button>
+                    </details>
                   </>}
                   {step === 2 && <>
                     <p>Selected host: {host?.hostname || hostId}. Review the intended profile before running checks. The approved package must already be cached on this host.</p>
-                    <AddNodeDeploymentSettings value={settings} disabled={checking || readiness?.status === 'CHECKING'} onChange={value => { invalidate(); setSettings(value); }} />
+                    <AddNodeDeploymentSettings value={settings} disabled={checking || readiness?.status === 'CHECKING'} onChange={value => { invalidate(); setSettings(value); }}>
+                      <label>Artifacts directory<input aria-label="Artifacts directory" value={parcelDir} disabled={checking} onChange={event => { invalidate(); setParcelDir(event.target.value); }} /><small>Directory containing the approved cached Kafka parcel on this host.</small></label>
+                    </AddNodeDeploymentSettings>
                     <div className="add-node-fields">
                       <label>Candidate IP<input aria-label="Candidate IP" value={hostIp} disabled={checking} onChange={event => { invalidate(); setHostIp(event.target.value); }} /></label>
-                      <label>Cached parcel directory<input aria-label="Cached parcel directory" value={parcelDir} disabled={checking} onChange={event => { invalidate(); setParcelDir(event.target.value); }} /></label>
                       <label>Approved artifact ID (optional)<input aria-label="Approved artifact ID" value={artifactId} disabled={checking} onChange={event => { invalidate(); setArtifactId(event.target.value); }} /></label>
                       <label>Broker listener port<input type="number" aria-label="Broker listener port" value={brokerPort} disabled={checking} onChange={event => { invalidate(); setBrokerPort(Number(event.target.value)); }} /></label>
                       <label>Broker rack<input aria-label="Broker rack" value={brokerRack} disabled={checking} onChange={event => { invalidate(); setBrokerRack(event.target.value); }} /><small>Use the rack confirmed by the live cluster policy. Leave empty only for a cluster without racks.</small></label>

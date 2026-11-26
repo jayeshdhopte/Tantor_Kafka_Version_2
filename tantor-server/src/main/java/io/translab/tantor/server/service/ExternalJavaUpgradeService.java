@@ -31,7 +31,17 @@ public class ExternalJavaUpgradeService {
   if(!cluster.equals(n.getClusterId())) throw new IllegalArgumentException("External host belongs to another cluster.");
   management.require(target,true,restart);
   if(!Objects.toString(management.agentVersion(target),"").contains(".java-upgrade.1")) throw new IllegalArgumentException("Install the Java-upgrade capable discovery agent first.");
-  if(nodes.findByAgentId(n.getAgentId()).size()!=1) throw new IllegalArgumentException("VM-wide Java upgrade requires one Kafka process per dedicated agent host.");
+  var peers=nodes.findByAgentId(n.getAgentId());
+  if(peers.size()!=1) {
+   boolean valid=peers.size()==2 && peers.stream().allMatch(peer->cluster.equals(peer.getClusterId()) && Objects.equals(n.getHost(),peer.getHost()) && peer.getSystemdService()!=null && peer.getConfigFile()!=null)
+    && peers.stream().filter(peer->Boolean.TRUE.equals(peer.getIsBroker())&&!Boolean.TRUE.equals(peer.getIsController())).count()==1
+    && peers.stream().filter(peer->Boolean.TRUE.equals(peer.getIsController())&&!Boolean.TRUE.equals(peer.getIsBroker())).count()==1
+    && peers.stream().map(ExternalClusterNode::getSystemdService).distinct().count()==2
+    && peers.stream().map(ExternalClusterNode::getConfigFile).distinct().count()==2;
+   if(!valid) throw new IllegalArgumentException("VM-wide Java upgrade requires one Kafka process or a separate broker/controller pair from the same cluster.");
+   if(!Objects.toString(management.agentVersion(target), "").contains(".java-separate.1")) throw new IllegalArgumentException("Install the separate-service Java upgrade agent first.");
+   for(var peer:peers) management.require("external:"+peer.getId(),true,restart);
+  }
   return n;
  }
  public void validateTargets(UUID cluster,List<String> targets) {
@@ -40,10 +50,12 @@ public class ExternalJavaUpgradeService {
  }
  public List<Map<String,Object>> hosts(UUID cluster) {
   List<Map<String,Object>> result=new ArrayList<>();
+  Set<String> seenAgents=new HashSet<>();
   for(var n:cluster==null?nodes.findAll():nodes.findByClusterId(cluster)) {
    String target="external:"+n.getId();
    try {
     cluster(n.getClusterId()); requireTarget(n.getClusterId(),target,true);
+    if(!seenAgents.add(n.getAgentId())) continue;
     result.add(Map.of("id",target,"hostId",target,"hostname",n.getHost(),"ipAddress",n.getHost(),"status","ONLINE","agentStatus","ONLINE","originType","EXTERNAL"));
    } catch(IllegalStateException|IllegalArgumentException ignored) { /* Ineligible agents cannot receive packages. */ }
   }

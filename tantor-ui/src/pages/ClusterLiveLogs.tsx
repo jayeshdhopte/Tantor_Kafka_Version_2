@@ -4,6 +4,7 @@ import { ArrowDownToLine, Download, Filter, Pause, Play, RefreshCw, Server, Term
 import { RefreshButton } from '../components/RefreshButton';
 import { LogDateTimePicker } from '../components/LogDateTimePicker';
 import { formatIstDateTime } from '../utils/istLogTime';
+import { relativeLogRange } from '../utils/logTimeRange';
 import { getValidToken } from '../services/KeycloakService';
 import './ClusterLiveLogs.css';
 
@@ -62,6 +63,7 @@ export function ClusterLiveLogs() {
   const [hours, setHours] = useState('1');
   const [from, setFrom] = useState(() => inputTime(-3600000));
   const [to, setTo] = useState(() => inputTime(0));
+  const [relativeAt, setRelativeAt] = useState(() => Date.now());
   const [group, setGroup] = useState(0);
   const [interval, setIntervalSeconds] = useState(15);
   const consoleRef = useRef<HTMLDivElement>(null);
@@ -74,7 +76,10 @@ export function ClusterLiveLogs() {
   const [inventoryError, setInventoryError] = useState('');
   const custom = hours === 'custom';
   const valid = !custom || (ist.test(from) && ist.test(to) && from <= to);
-  const key = JSON.stringify([base, source, hours, from, to, refresh]);
+  const relative = custom ? null : relativeLogRange(hours, relativeAt);
+  const displayedFrom = relative?.from ?? from;
+  const displayedTo = relative?.to ?? to;
+  const key = JSON.stringify([base, source, hours, custom ? from : '', custom ? to : '', refresh]);
   const rows = result?.key === key ? result.rows : undefined;
   const error = problem?.key === key ? problem.message : '';
 
@@ -96,7 +101,9 @@ export function ClusterLiveLogs() {
     const abort = new AbortController();
     let timer: number | undefined;
     async function read() {
-      const start = custom ? new Date(from + ':00+05:30') : new Date(Date.now() - Number(hours) * 3600000);
+      const now = Date.now();
+      if (!custom) setRelativeAt(now);
+      const start = custom ? new Date(from + ':00+05:30') : new Date(relativeLogRange(hours, now).fromIso);
       const query = new URLSearchParams({ source, from: start.toISOString() });
       if (custom) query.set('to', new Date(to + ':59.999+05:30').toISOString());
       try {
@@ -182,6 +189,9 @@ export function ClusterLiveLogs() {
         <option value="">All levels</option>{levels.map(value => <option key={value}>{value}</option>)}
       </select></label>
       <label>Time range<select value={hours} onChange={event => {
+        setFrom(displayedFrom);
+        setTo(displayedTo);
+        setRelativeAt(Date.now());
         setHours(event.target.value);
         if (event.target.value === 'custom') setFollowing(false);
       }}>
@@ -189,12 +199,14 @@ export function ClusterLiveLogs() {
         <option value="1">Last hour</option><option value="6">Last 6 hours</option>
         <option value="12">Last 12 hours</option><option value="24">Last 24 hours</option><option value="custom">Custom range</option>
       </select></label>
-      <LogDateTimePicker label="From (IST)" value={from} max={to} onApply={value => {
+      <LogDateTimePicker label="From (IST)" value={displayedFrom} max={displayedTo} onApply={value => {
         setFrom(value);
+        setTo(displayedTo);
         setHours('custom');
         setFollowing(false);
       }} />
-      <LogDateTimePicker label="To (IST)" value={to} min={from} onApply={value => {
+      <LogDateTimePicker label="To (IST)" value={displayedTo} min={displayedFrom} onApply={value => {
+        setFrom(displayedFrom);
         setTo(value);
         setHours('custom');
         setFollowing(false);

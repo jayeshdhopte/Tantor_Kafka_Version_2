@@ -33,7 +33,7 @@ public class DiscoveryAgent {
     @Column(name = "last_heartbeat")
     private OffsetDateTime lastHeartbeat;
 
-    @Column(name = "version")
+    @Column(name = "version", columnDefinition = "text")
     private String version;
 
     @Column(name = "can_execute_tasks")

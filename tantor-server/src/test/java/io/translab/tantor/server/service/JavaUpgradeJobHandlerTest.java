@@ -54,6 +54,9 @@ class JavaUpgradeJobHandlerTest {
         cluster.setConfigPath("/opt/kafka/config/server.properties");
         var broker = bindHost(cluster, "broker-1", artifactId, version, checksum);
         var second = bindHost(cluster, "broker-2", artifactId, version, checksum);
+        var controller = new ClusterServiceAssignment();
+        controller.setCluster(cluster); controller.setHostId("broker-1"); controller.setRole("controller");
+        when(assignments.findLiveAssignmentsForHost("broker-1")).thenReturn(List.of(broker, controller));
         cluster.setServices(List.of(broker, second));
         when(clusters.findById(clusterId)).thenReturn(Optional.of(cluster));
         when(catalog.resolveType("JAVA", version, artifactId.toString()))
@@ -83,6 +86,8 @@ class JavaUpgradeJobHandlerTest {
         assertThat(sent.getValue().getHostId()).isEqualTo("broker-1");
         assertThat(sent.getValue().getCommand()).isEqualTo("JAVA_UPGRADE");
         assertThat(sent.getValue().getChecksum()).isEqualTo(checksum);
+        var parameters = json.valueToTree(readParameters(sent.getValue().getParameters()));
+        assertThat(parameters.path("separate_services").asText()).contains("broker.service", "controller.service");
         UUID failedStep = jobs.getSteps(jobId).getFirst().getId();
         verify(jobs).failStep(failedStep, "Kafka verification failed");
     }
@@ -110,7 +115,7 @@ class JavaUpgradeJobHandlerTest {
         Host host = new Host();
         host.setId(hostId);
         host.setClusterId(cluster.getId());
-        host.setAgentVersion("addnode.9.java-upgrade.1");
+        host.setAgentVersion("addnode.9.java-upgrade.1.java-separate.1");
         when(hosts.findById(hostId)).thenReturn(Optional.of(host));
         when(hostStatus.agentConnectivityStatus(host)).thenReturn("ONLINE");
 
@@ -128,5 +133,10 @@ class JavaUpgradeJobHandlerTest {
         parcel.setParcelDir("/srv/apps/tantor/parcels");
         when(parcels.findFirstByHostIdAndArtifactIdOrderByCreatedAtDescIdDesc(hostId, artifactId)).thenReturn(Optional.of(parcel));
         return service;
+    }
+
+    private java.util.Map<?, ?> readParameters(String value) {
+        try { return json.readValue(value, java.util.Map.class); }
+        catch (Exception e) { throw new AssertionError(e); }
     }
 }

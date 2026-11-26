@@ -9,6 +9,26 @@
   color: #282f49;
 }
 .add-node-page * { box-sizing: border-box; }
+.add-node-settings-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.add-node-settings-heading p { margin: 0; }
+.add-node-process-settings { margin-top: 24px; padding-top: 20px; border-top: 1px solid #e4e7ec; }
+.add-node-process-settings h3 { margin: 0; color: #3e1363; font-size: 15px; }
+.add-node-config-derived { padding: 12px 14px; border-radius: 8px; background: #f4f0f9; font-size: 13px; overflow-wrap: anywhere; }
+.add-node-config-dialog { box-sizing: border-box; width: min(800px, calc(100vw - 32px)); max-height: 88vh; padding: 0; border: 1px solid #e4dced; border-radius: 16px; color: #282f49; box-shadow: 0 20px 60px #21143030; }
+.add-node-config-dialog::backdrop { background: #17102070; }
+.add-node-config-dialog *, .add-node-config-dialog *::before, .add-node-config-dialog *::after { box-sizing: border-box; }
+.add-node-config-dialog .add-node-fields label { min-width: 0; }
+.add-node-config-dialog form { display: flex; flex-direction: column; max-height: 85vh; }
+.add-node-config-dialog header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 22px 24px; border-bottom: 1px solid #e4e7ec; }
+.add-node-config-dialog h2 { margin: 0; font-size: 20px; }
+.add-node-config-dialog p { line-height: 1.6; color: #667085; font-size: 13px; }
+.add-node-config-content { overflow: auto; padding: 0 24px 16px; }
+.add-node-config-dialog small { color: #667085; font-weight: 400; line-height: 1.5; }
+.add-node-config-dialog .add-node-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 9px 16px; border: 1px solid #d0d5dd; border-radius: 8px; background: white; color: #3e1363; font: inherit; cursor: pointer; }
+.add-node-config-dialog .add-node-button.primary { background: #3e1363; border-color: #3e1363; color: white; }
+.add-node-config-dialog :is(button, input):focus-visible { outline: 2px solid #a572b5; outline-offset: 2px; }
+.add-node-config-dialog footer { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 24px; border-top: 1px solid #e4e7ec; }
+.add-node-host-setup .add-node-button { margin: 8px 10px 0 0; }
 .add-node-page p { color: #667085; line-height: 1.6; }
 .add-node-page a { color: var(--add-node-purple); }
 .add-node-breadcrumb { display: flex; flex-wrap: wrap; gap: 8px; font-size: 13px; color: #667085; margin-bottom: 20px; }

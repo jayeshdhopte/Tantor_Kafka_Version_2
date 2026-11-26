@@ -55,6 +55,13 @@
 .cluster-action-status span { overflow-wrap: anywhere; min-width: 0; }
 .cluster-action-status[data-failed="true"] { color: #f7a7b6; }
 .cluster-action-status[data-failed="true"] > svg { color: #f7a7b6; }
+.cluster-java-runtime-table { margin: 18px 0 10px; overflow-x: auto; border: 1px solid #e3dce9; border-radius: 10px; }
+.cluster-java-runtime-table table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
+.cluster-java-runtime-table th, .cluster-java-runtime-table td { padding: 13px 16px; border-bottom: 1px solid #e9e4ee; overflow-wrap: anywhere; }
+.cluster-java-runtime-table thead th { color: #401566; background: #f1eef5; font-weight: 600; }
+.cluster-java-runtime-table tbody th { font-weight: 500; }
+.cluster-java-runtime-table tbody tr:last-child > * { border-bottom: 0; }
+.cluster-java-runtime-table small { display: block; margin-top: 4px; color: #69758f; }
 @media (max-width: 1100px) { .cluster-action-monitoring { grid-template-columns: minmax(0, 1fr); } .cluster-action-monitoring > .cluster-action-field { max-width: none; } }
 @media (max-width: 640px) {
   .cluster-actions-page { padding: 20px 0; }

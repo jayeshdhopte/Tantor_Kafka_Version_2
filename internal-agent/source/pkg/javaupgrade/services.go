@@ -1,0 +1,107 @@
+package javaupgrade
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io.translab/tantor-agent/internal/taskvalidate"
+	"path/filepath"
+	"regexp"
+	"strings"
+)
+
+func rejectUnrelatedJava(processes string, allowedPIDs map[string]bool) error {
+	for _, line := range strings.Split(processes, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 2 && fields[1] == "java" && !allowedPIDs[fields[0]] {
+			return fmt.Errorf("another Java process is running on this VM (PID %s)", fields[0])
+		}
+	}
+	return nil
+}
+
+// Callers pass only services that were running before the upgrade. Inactive
+// services must never be started as a side effect of upgrade or recovery.
+func transitionServices(ctx context.Context, run func(context.Context, string, ...string) (string, error), services []ServiceTarget, action string) error {
+	var failures []error
+	for i := 0; i < len(services); i++ {
+		index := i
+		if action == "stop" {
+			index = len(services) - 1 - i
+		}
+		if _, err := run(ctx, "systemctl", action, "--", services[index].Name); err != nil {
+			failures = append(failures, fmt.Errorf("%s %s: %w", action, services[index].Name, err))
+			if action == "start" {
+				break
+			}
+		}
+	}
+	return errors.Join(failures...)
+}
+
+// ServiceTarget is a server-approved process on the same Kafka host.
+type ServiceTarget struct {
+	Name      string `json:"name"`
+	Role      string `json:"role"`
+	KafkaHome string `json:"kafka_home"`
+	Endpoint  string `json:"health_endpoint"`
+}
+
+func validateServiceTarget(s ServiceTarget) error {
+	if !regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.@:-]{0,199}\.service$`).MatchString(s.Name) {
+		return fmt.Errorf("invalid Kafka service name")
+	}
+	if s.Role != "broker" && s.Role != "controller" && s.Role != "broker_controller" {
+		return fmt.Errorf("unsupported Kafka service role")
+	}
+	if _, err := taskvalidate.ApprovedPath(s.KafkaHome); err != nil {
+		return err
+	}
+	if _, err := taskvalidate.HostPort(s.Endpoint); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateSeparateServices(services []ServiceTarget, primary string) error {
+	if len(services) != 2 {
+		return fmt.Errorf("separate mode requires exactly one broker and one controller")
+	}
+	found, roles, names := false, map[string]bool{}, map[string]bool{}
+	for _, s := range services {
+		if err := validateServiceTarget(s); err != nil {
+			return err
+		}
+		if (s.Role != "broker" && s.Role != "controller") || roles[s.Role] || names[s.Name] {
+			return fmt.Errorf("separate mode requires distinct broker and controller services")
+		}
+		found = found || s.Name == primary
+		roles[s.Role], names[s.Name] = true, true
+	}
+	if !found {
+		return fmt.Errorf("primary Kafka service is missing from separate layout")
+	}
+	// Controller starts first; the stop loop traverses this order in reverse.
+	if services[0].Role == "broker" {
+		services[0], services[1] = services[1], services[0]
+	}
+	return nil
+}
+
+func probeKafkaService(ctx context.Context, executor Executor, s ServiceTarget) error {
+	if s.Role != "controller" {
+		out, _, err := executor.Run(ctx, filepath.Join(s.KafkaHome, "bin", "kafka-topics.sh"), "--bootstrap-server", s.Endpoint, "--describe", "--under-replicated-partitions")
+		if err != nil || out != "" {
+			return fmt.Errorf("Kafka partition health was not verified: %v", err)
+		}
+	}
+	flag := "--bootstrap-server"
+	if s.Role == "controller" {
+		flag = "--bootstrap-controller"
+	}
+	out, _, err := executor.Run(ctx, filepath.Join(s.KafkaHome, "bin", "kafka-metadata-quorum.sh"), flag, s.Endpoint, "describe", "--status")
+	if err != nil || !regexp.MustCompile(`(?m)^LeaderId:\s+[0-9]+\s*$`).MatchString(out) || !strings.Contains(out, "CurrentVoters:") {
+		return fmt.Errorf("KRaft quorum health was not verified: %v", err)
+	}
+	return nil
+}

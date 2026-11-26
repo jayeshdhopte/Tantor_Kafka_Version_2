@@ -1,4 +1,5 @@
 import { RefreshButton } from '../components/RefreshButton';
+import { ClusterLoadingState } from '../components/ClusterLoadingState';
 import { useState, useEffect } from 'react';
 
 import { Network, Activity, Settings, RefreshCw, LayoutList, Users, Server, Database, LineChart, Shield, FileJson, Plug, ChevronLeft, ChevronRight, ChevronDown, Info } from 'lucide-react';
@@ -103,7 +104,7 @@ export function ClusterDetails() {
 
 
   if (!cluster) {
-    return <div className="state-center"><RefreshCw className="spin" /> Loading cluster...</div>;
+    return <ClusterLoadingState />;
   }
 
   if (blockingJob || isClusterDeploying(cluster, activeJobs)) {
@@ -265,6 +266,8 @@ export function ClusterDetails() {
   }
 
   // Keep the active Configuration tab visible without compressing the navigation.
+  tabs.push({ to: `/clusters/${id}/java-upgrade`, icon: Settings, label: 'Java Upgrade', disabled: !canManage || (cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL') });
+
   const isConfigurationPage = location.pathname === `/clusters/${id}/config-change`;
   const visibleTabs = isConfigurationPage ? tabs.slice(1, 10) : tabs.slice(0, 9);
   const dropdownTabs = isConfigurationPage ? [tabs[0], ...tabs.slice(10)] : tabs.slice(9);
@@ -368,7 +371,7 @@ export function ClusterDetails() {
                     className="cluster-tabs-dropdown-menu"
                     onClose={() => setIsDropdownOpen(false)}
                     minWidth={180}
-                    placement="above"
+                    placement="auto"
                   >
                     {dropdownTabs.map(tab => {
                       if (tab.disabled) {

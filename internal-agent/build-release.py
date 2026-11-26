@@ -47,10 +47,10 @@ with tarfile.open(fileobj=io.BytesIO(raw)) as archive:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(archive.extractfile(member).read())
 match = re.search(r'const Version = "([^"]+)"', (source / 'pkg/buildinfo/version.go').read_text())
-if not match or not re.search(r'-addnode\.\d+(?:\.java-upgrade\.\d+)?$', match.group(1)):
+if not match or not re.search(r'-addnode\.\d+(?:\.java-upgrade\.\d+)?(?:\.java-separate\.\d+)?$', match.group(1)):
     raise SystemExit('The source must identify an Add Node release.')
 version = match.group(1)
-suffix = re.search(r'addnode\.\d+(?:\.java-upgrade\.\d+)?$', version).group(0)
+suffix = re.search(r'addnode\.\d+(?:\.java-upgrade\.\d+)?(?:\.java-separate\.\d+)?$', version).group(0)
 stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 flags = '-s -w -X main.commit=' + commit + ' -X main.buildDate=' + stamp
 checksums = {}

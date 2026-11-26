@@ -24,6 +24,7 @@ const Consumers = React.lazy(() => import('./pages/Consumers').then(m => ({ defa
 const ConfigChange = React.lazy(() => import('./pages/ConfigChange').then(m => ({ default: m.ConfigChange })));
 const Partitions = React.lazy(() => import('./pages/Partitions').then(m => ({ default: m.Partitions })));
 const ClusterActions = React.lazy(() => import('./pages/ClusterActions').then(m => ({ default: m.ClusterActions })));
+const ClusterJavaUpgrade = React.lazy(() => import('./pages/ClusterJavaUpgrade').then(m => ({ default: m.ClusterJavaUpgrade })));
 const ClusterLiveLogs = React.lazy(() => import('./pages/ClusterLiveLogs').then(m => ({ default: m.ClusterLiveLogs })));
 const DeploymentLogs = React.lazy(() => import('./pages/DeploymentLogs').then(m => ({ default: m.DeploymentLogs })));
 const Brokers = React.lazy(() => import('./pages/Brokers').then(m => ({ default: m.Brokers })));
@@ -109,6 +110,7 @@ function App() {
                     <Route path="config" element={<Navigate to="../config-change" replace />} />
                     <Route path="config-change" element={<ConfigChange />} />
                     <Route path="actions" element={<ClusterActions />} />
+                    <Route path="java-upgrade" element={<ClusterJavaUpgrade />} />
                     <Route path="logs" element={<DeploymentLogsGuard />} />
                     <Route path="live-logs" element={<ClusterLiveLogs />} />
                     <Route path="security" element={<ClusterSecurity />} />

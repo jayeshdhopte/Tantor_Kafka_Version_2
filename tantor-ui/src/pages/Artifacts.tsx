@@ -123,6 +123,9 @@ const artifactServiceOptions = [
     directoryPlaceholder: 'custom/java (under configured repository root)',
     fileLabel: 'Linux JDK archive (.tar.gz)',
     fileAccept: '.tgz,.tar.gz',
+    // Windows file dialogs may filter compound extensions incorrectly. Validation
+    // below still requires a .tar.gz/.tgz archive rather than accepting any .gz.
+    filePickerAccept: '.tar.gz,.tgz,.gz,application/gzip,application/x-gzip',
     helper: 'Enter the exact Java version recorded in the JDK archive.',
   },
   {
@@ -904,7 +907,7 @@ export function Artifacts() {
                       ref={fileRef}
                       style={{ display: 'none' }}
                       onChange={e => setFile(e.target.files?.[0] ?? null)}
-                      accept={selectedServiceOption.fileAccept}
+                      accept={selectedServiceOption.filePickerAccept ?? selectedServiceOption.fileAccept}
                     />
                   </div>
                   {!fileMatchesServiceType && (
