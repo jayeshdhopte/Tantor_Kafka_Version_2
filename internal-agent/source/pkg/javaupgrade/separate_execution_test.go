@@ -110,6 +110,25 @@ func (f *separateExecutor) RunSudo(_ context.Context, cmd string, args ...string
 	return "", "", fmt.Errorf("unexpected privileged command %s %v", cmd, args)
 }
 
+func TestControllerPrecheckFailureDoesNotStopServicesOrSwitchJava(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("Linux task")
+	}
+	f := &separateExecutor{current: "/old/bin/java", active: map[string]bool{"broker.service": true, "controller.service": true}}
+	encoded, _ := json.Marshal(pair())
+	task := &api.Task{Checksum: strings.Repeat("a", 64), Parameters: map[string]string{
+		"artifact_id": "00000000-0000-4000-8000-000000000001", "target_version": "21.0.13", "parcel_dir": "/srv/tantor/parcels", "service_name": "broker", "separate_services": string(encoded),
+	}}
+	var logs strings.Builder
+	err := Run(context.Background(), failingControllerProbe{f}, task, &logs)
+	if err == nil || !strings.Contains(err.Error(), "pre-upgrade health for controller.service") || !strings.Contains(err.Error(), "Connection refused") {
+		t.Fatalf("unexpected failure: %v", err)
+	}
+	if len(f.calls) != 0 || f.current != "/old/bin/java" || !f.active["broker.service"] || !f.active["controller.service"] {
+		t.Fatal("precheck failure mutated services or Java")
+	}
+}
+
 func TestSeparateUpgradeExecutionAndRecovery(t *testing.T) {
 	if runtime.GOOS != "linux" || os.Geteuid() != 0 {
 		t.Skip("Linux isolated archive fixture requires root")

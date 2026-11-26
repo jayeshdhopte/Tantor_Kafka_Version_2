@@ -90,18 +90,29 @@ func validateSeparateServices(services []ServiceTarget, primary string) error {
 
 func probeKafkaService(ctx context.Context, executor Executor, s ServiceTarget) error {
 	if s.Role != "controller" {
-		out, _, err := executor.Run(ctx, filepath.Join(s.KafkaHome, "bin", "kafka-topics.sh"), "--bootstrap-server", s.Endpoint, "--describe", "--under-replicated-partitions")
-		if err != nil || out != "" {
-			return fmt.Errorf("Kafka partition health was not verified: %v", err)
+		out, stderr, err := executor.Run(ctx, filepath.Join(s.KafkaHome, "bin", "kafka-topics.sh"), "--bootstrap-server", s.Endpoint, "--describe", "--under-replicated-partitions")
+		if err != nil || strings.TrimSpace(out) != "" {
+			return probeFailure("Kafka partition", s.Endpoint, out, stderr, err)
 		}
 	}
 	flag := "--bootstrap-server"
 	if s.Role == "controller" {
 		flag = "--bootstrap-controller"
 	}
-	out, _, err := executor.Run(ctx, filepath.Join(s.KafkaHome, "bin", "kafka-metadata-quorum.sh"), flag, s.Endpoint, "describe", "--status")
+	out, stderr, err := executor.Run(ctx, filepath.Join(s.KafkaHome, "bin", "kafka-metadata-quorum.sh"), flag, s.Endpoint, "describe", "--status")
 	if err != nil || !regexp.MustCompile(`(?m)^LeaderId:\s+[0-9]+\s*$`).MatchString(out) || !strings.Contains(out, "CurrentVoters:") {
-		return fmt.Errorf("KRaft quorum health was not verified: %v", err)
+		return probeFailure("KRaft quorum", s.Endpoint, out, stderr, err)
 	}
 	return nil
+}
+
+func probeFailure(check, endpoint, out, stderr string, err error) error {
+	detail := strings.TrimSpace(stderr + "\n" + out)
+	if len(detail) > 2048 {
+		detail = detail[:2048] + " [truncated]"
+	}
+	if err == nil {
+		err = fmt.Errorf("unexpected health response")
+	}
+	return fmt.Errorf("%s health was not verified at %s: %w; output: %s", check, endpoint, err, detail)
 }

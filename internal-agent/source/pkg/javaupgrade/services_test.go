@@ -8,6 +8,26 @@ import (
 	"testing"
 )
 
+type failingControllerProbe struct{ *separateExecutor }
+
+func (f failingControllerProbe) Run(ctx context.Context, cmd string, args ...string) (string, string, error) {
+	if strings.HasSuffix(cmd, "kafka-metadata-quorum.sh") {
+		return "", "Connection refused at controller listener", errors.New("exit status 1")
+	}
+	return f.separateExecutor.Run(ctx, cmd, args...)
+}
+
+func TestControllerProbeRetainsEndpointAndCommandDiagnostic(t *testing.T) {
+	service := ServiceTarget{Name: "custom-controller.service", Role: "controller", KafkaHome: "/opt/kafka", Endpoint: "192.168.3.100:19093"}
+	err := probeKafkaService(context.Background(), failingControllerProbe{&separateExecutor{}}, service)
+	if err == nil || !strings.Contains(err.Error(), service.Endpoint) || !strings.Contains(err.Error(), "Connection refused") {
+		t.Fatalf("missing actionable diagnostic: %v", err)
+	}
+	if !strings.Contains(err.Error(), "exit status 1") {
+		t.Fatal(err)
+	}
+}
+
 func pair() []ServiceTarget {
 	return []ServiceTarget{
 		{Name: "broker.service", Role: "broker", KafkaHome: "/opt/kafka", Endpoint: "127.0.0.1:9092"},

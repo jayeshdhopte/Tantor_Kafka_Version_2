@@ -164,11 +164,19 @@ func javaHealthEndpoint(props map[string]string, role string) (string, error) {
 		if protocol != "PLAINTEXT" {
 			continue
 		}
-		_, port, err := net.SplitHostPort(address)
+		host, port, err := net.SplitHostPort(address)
 		if err != nil {
 			continue
 		}
-		return net.JoinHostPort("127.0.0.1", port), nil
+		// A listener bound to the node IP is not reachable on loopback.
+		// Only wildcard binds should be probed through a loopback address.
+		switch host {
+		case "", "0.0.0.0":
+			host = "127.0.0.1"
+		case "::":
+			host = "::1"
+		}
+		return net.JoinHostPort(host, port), nil
 	}
 	return "", fmt.Errorf("a local PLAINTEXT listener for the Kafka role is required")
 }

@@ -128,7 +128,7 @@ public class JavaUpgradeJobHandler implements JobHandler {
         JsonNode clusterConfig = configuration(cluster.getConfigJson());
         String unit = config.path("service_name").asText(config.path("systemd_service").asText(defaultUnit));
         String endpoint = role.equals("controller")
-                ? "127.0.0.1:" + config.path("controller_port").asInt(clusterConfig.path("controller_port").asInt(9093))
+                ? controllerEndpoint(host, config, clusterConfig)
                 : Objects.toString(cluster.getBootstrapServers(), "").split(",", -1)[0].trim();
         String protocol = config.path("security_protocol").asText(clusterConfig.path("security_protocol").asText("PLAINTEXT"));
         if (!"PLAINTEXT".equalsIgnoreCase(protocol) || endpoint.isBlank() || endpoint.contains("://")) {
@@ -160,7 +160,7 @@ public class JavaUpgradeJobHandler implements JobHandler {
                 if (targetUnit.endsWith(".service")) targetUnit = targetUnit.substring(0, targetUnit.length()-8);
                 if (!targetUnit.matches("[A-Za-z0-9_][A-Za-z0-9_.@:-]{0,191}") || !units.add(targetUnit)) throw new IllegalArgumentException("Separate Kafka services must have distinct valid systemd units.");
                 if (!"PLAINTEXT".equalsIgnoreCase(targetConfig.path("security_protocol").asText(clusterConfig.path("security_protocol").asText("PLAINTEXT")))) throw new IllegalArgumentException("A PLAINTEXT Kafka endpoint is required for both services.");
-                String targetEndpoint = targetRole.equals("controller") ? "127.0.0.1:" + targetConfig.path("controller_port").asInt(clusterConfig.path("controller_port").asInt(9093)) : Objects.toString(cluster.getBootstrapServers(), "").split(",", -1)[0].trim();
+                String targetEndpoint = targetRole.equals("controller") ? controllerEndpoint(host, targetConfig, clusterConfig) : Objects.toString(cluster.getBootstrapServers(), "").split(",", -1)[0].trim();
                 serviceTargets.add(Map.of("name",targetUnit+".service","role",targetRole,"kafka_home",path.substring(0,configAt),"health_endpoint",targetEndpoint));
             }
             parameters.put("service_name", unit.endsWith(".service") ? unit.substring(0,unit.length()-8) : unit);
@@ -168,6 +168,35 @@ public class JavaUpgradeJobHandler implements JobHandler {
         }
         task.setParameters(write(parameters));
         return task;
+    }
+
+    static String controllerEndpoint(Host host, JsonNode config, JsonNode clusterConfig) {
+        String names = config.path("controller.listener.names").asText(clusterConfig.path("controller.listener.names").asText("CONTROLLER"));
+        var controllerNames = new HashSet<>(Arrays.asList(names.toUpperCase(Locale.ROOT).split("\\s*,\\s*")));
+        String listeners = config.path("listeners").asText(clusterConfig.path("listeners").asText(""));
+        for (String listener : listeners.split(",")) {
+            String[] parts = listener.trim().split("://", 2);
+            if (parts.length != 2 || !controllerNames.contains(parts[0].toUpperCase(Locale.ROOT))) continue;
+            String address = parts[1];
+            int colon = address.lastIndexOf(':');
+            if (colon < 0) throw new IllegalArgumentException("Invalid controller listener endpoint.");
+            String bind = address.substring(0, colon);
+            String port = address.substring(colon + 1);
+            if (!port.matches("[0-9]{1,5}") || Integer.parseInt(port) < 1 || Integer.parseInt(port) > 65535)
+                throw new IllegalArgumentException("Invalid controller listener port.");
+            if (bind.isBlank() || bind.equals("0.0.0.0")) bind = "127.0.0.1";
+            if (bind.equals("[::]")) bind = "[::1]";
+            return bind + ":" + port;
+        }
+        // The deployment binds listeners to the enrolled node address, not
+        // necessarily loopback. Retain this address when no listener is stored.
+        String bind = Objects.toString(host.getHostIp(), "").trim();
+        if (bind.isEmpty()) bind = Objects.toString(host.getHostname(), "").trim();
+        if (bind.isEmpty()) throw new IllegalArgumentException("Controller host address is missing.");
+        if (bind.contains(":") && !bind.startsWith("[")) bind = "[" + bind + "]";
+        int port = config.path("controller_port").asInt(clusterConfig.path("controller_port").asInt(9093));
+        if (port < 1 || port > 65535) throw new IllegalArgumentException("Invalid controller port.");
+        return bind + ":" + port;
     }
 
     private Cluster cluster(UUID id) {

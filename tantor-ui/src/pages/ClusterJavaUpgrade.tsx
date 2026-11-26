@@ -6,6 +6,7 @@ import { confirmAction } from '../components/confirmUtils';
 import { ClusterLoadingState } from '../components/ClusterLoadingState';
 import { useActiveClusterJobs } from '../hooks/useActiveClusterJobs';
 import { reportedJavaRuntime, type ReportedJavaHost } from '../utils/reportedJavaRuntime';
+import { uniqueJavaUpgradeHosts } from '../utils/javaUpgradeHosts';
 import './ClusterActions.css';
 
 interface ClusterInfo {
@@ -66,7 +67,7 @@ export function ClusterJavaUpgrade() {
         setCluster(loaded);
         setParcels(available);
         setJavaInventory(Array.isArray(inventory) ? inventory : []);
-        setJavaClusterHosts(hosts);
+        setJavaClusterHosts(uniqueJavaUpgradeHosts(hosts));
       } catch (error) {
         if (!signal.aborted) setJavaError(error instanceof Error ? error.message : 'Unable to load Java upgrade information.');
       } finally {
@@ -141,7 +142,7 @@ export function ClusterJavaUpgrade() {
                       <label className="cluster-action-host" key={host.hostId} data-selected={javaHostIds.includes(host.hostId)}>
                         <input type="checkbox" checked={javaHostIds.includes(host.hostId)}
                           onChange={event => setJavaHostIds(current => event.target.checked
-                            ? [...current, host.hostId] : current.filter(id => id !== host.hostId))} />
+                            ? Array.from(new Set([...current, host.hostId])) : current.filter(id => id !== host.hostId))} />
                         <Server size={18} aria-hidden="true" /><span><strong>{host.hostname || host.hostId}</strong>{host.ipAddress && <small>{host.ipAddress}</small>}</span>
                       </label>
                     ))}

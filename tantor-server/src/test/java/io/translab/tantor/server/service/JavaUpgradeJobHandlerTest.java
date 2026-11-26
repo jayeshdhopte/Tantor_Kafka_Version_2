@@ -16,6 +16,23 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class JavaUpgradeJobHandlerTest {
+    @Test
+    void controllerProbeUsesActualBindAddressAndCustomPort() throws Exception {
+        Host host = new Host(); host.setHostIp("192.168.3.100"); host.setHostname("node.test");
+        ObjectMapper mapper = new ObjectMapper();
+        var empty = mapper.createObjectNode();
+        assertThat(JavaUpgradeJobHandler.controllerEndpoint(host, empty, empty)).isEqualTo("192.168.3.100:9093");
+        var config = mapper.readTree("{\"controller_port\":19093}");
+        assertThat(JavaUpgradeJobHandler.controllerEndpoint(host, config, empty)).isEqualTo("192.168.3.100:19093");
+        config = mapper.readTree("{\"listeners\":\"BROKER://node.test:9092,CONTROL://192.168.3.100:19093\",\"controller.listener.names\":\"CONTROL\"}");
+        assertThat(JavaUpgradeJobHandler.controllerEndpoint(host, config, empty)).isEqualTo("192.168.3.100:19093");
+        for (var entry : java.util.Map.of("0.0.0.0", "127.0.0.1", "", "127.0.0.1", "[::]", "[::1]", "[::1]", "[::1]").entrySet()) {
+            config = mapper.createObjectNode().put("listeners", "CONTROLLER://" + entry.getKey() + ":19093");
+            assertThat(JavaUpgradeJobHandler.controllerEndpoint(host, config, empty)).isEqualTo(entry.getValue()+":19093");
+        }
+        host.setHostIp(null);
+        assertThat(JavaUpgradeJobHandler.controllerEndpoint(host, empty, empty)).isEqualTo("node.test:9093");
+    }
     private final JobService jobs = mock(JobService.class);
     private final ClusterRepository clusters = mock(ClusterRepository.class);
     private final HostRepository hosts = mock(HostRepository.class);
@@ -114,6 +131,7 @@ class JavaUpgradeJobHandlerTest {
     private ClusterServiceAssignment bindHost(Cluster cluster, String hostId, UUID artifactId, String version, String checksum) {
         Host host = new Host();
         host.setId(hostId);
+        host.setHostIp("192.0.2.191");
         host.setClusterId(cluster.getId());
         host.setAgentVersion("addnode.9.java-upgrade.1.java-separate.1");
         when(hosts.findById(hostId)).thenReturn(Optional.of(host));

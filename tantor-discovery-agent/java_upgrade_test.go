@@ -69,6 +69,16 @@ func TestJavaListenerUsesLocalRoleAndRejectsSecureOnly(t *testing.T) {
 		t.Fatal("secure listener accepted by plaintext probe")
 	}
 }
+func TestJavaListenerPreservesExplicitBindAndMapsOnlyWildcards(t *testing.T) {
+	for bind, want := range map[string]string{"192.168.3.100": "192.168.3.100:19093", "node.test": "node.test:19093", "127.0.0.1": "127.0.0.1:19093", "0.0.0.0": "127.0.0.1:19093", "": "127.0.0.1:19093", "[::]": "[::1]:19093", "[2001:db8::1]": "[2001:db8::1]:19093"} {
+		props := map[string]string{"listeners": "CONTROL://" + bind + ":19093", "controller.listener.names": "CONTROL", "listener.security.protocol.map": "CONTROL:PLAINTEXT"}
+		got, err := javaHealthEndpoint(props, "controller")
+		if err != nil || got != want {
+			t.Fatalf("bind %q: got %s, %v; want %s", bind, got, err, want)
+		}
+	}
+}
+
 func TestExternalJavaRequiresExplicitCapabilities(t *testing.T) {
 	for _, cfg := range []RuntimeConfig{{}, {EnableTasks: true, AuthType: "bearer"}, {EnableTasks: true, AuthType: "none", AllowConfigWrite: true}} {
 		if validateJavaMode(cfg) == nil {
