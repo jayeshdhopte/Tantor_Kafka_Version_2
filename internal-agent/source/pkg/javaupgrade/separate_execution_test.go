@@ -140,6 +140,7 @@ func TestSeparateUpgradeExecutionAndRecovery(t *testing.T) {
 		{"both services", true, false, false}, {"controller originally stopped", false, false, false},
 		{"target startup failure restores both", true, true, false}, {"Elasticsearch remains blocked", true, false, true},
 		{"combined service regression", false, false, false},
+		{"broker only", false, false, false}, {"controller only", false, false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			work, err := os.MkdirTemp("/usr/lib/jvm", ".tantor-java-")
@@ -179,6 +180,19 @@ func TestSeparateUpgradeExecutionAndRecovery(t *testing.T) {
 				task.Parameters["service_name"] = "kafka"
 				task.Parameters["service_role"] = "broker_controller"
 			}
+			standalone := tc.name == "broker only" || tc.name == "controller only"
+			standaloneUnit := "broker.service"
+			if standalone {
+				role := "broker"
+				if tc.name == "controller only" {
+					role = "controller"
+					standaloneUnit = "controller.service"
+				}
+				f.active = map[string]bool{standaloneUnit: true}
+				delete(task.Parameters, "separate_services")
+				task.Parameters["service_name"] = role
+				task.Parameters["service_role"] = role
+			}
 			var log strings.Builder
 			err = Run(context.Background(), f, task, &log)
 			if tc.unrelated {
@@ -194,13 +208,16 @@ func TestSeparateUpgradeExecutionAndRecovery(t *testing.T) {
 			} else if err != nil || f.current != filepath.Join(work, "jdk", "bin", "java") {
 				t.Fatalf("upgrade failed: %v %s", err, log.String())
 			}
-			if combined && !f.active["kafka.service"] || !combined && (!f.active["broker.service"] || f.active["controller.service"] != tc.controller) {
+			if standalone && !f.active[standaloneUnit] || combined && !f.active["kafka.service"] || !standalone && !combined && (!f.active["broker.service"] || f.active["controller.service"] != tc.controller) {
 				t.Fatal("original service states were not preserved")
 			}
 			if !tc.fail {
 				want := []string{"stop broker.service", "start broker.service"}
 				if combined {
 					want = []string{"stop kafka.service", "start kafka.service"}
+				}
+				if standalone {
+					want = []string{"stop " + standaloneUnit, "start " + standaloneUnit}
 				}
 				if tc.controller {
 					want = []string{"stop broker.service", "stop controller.service", "start controller.service", "start broker.service"}

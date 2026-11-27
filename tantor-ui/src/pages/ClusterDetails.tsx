@@ -251,6 +251,7 @@ export function ClusterDetails() {
     { to: `/clusters/${id}/topics`, icon: LayoutList, label: 'Topics', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
     { to: `/clusters/${id}/partitions`, icon: Database, label: 'Partitions', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
     { to: `/clusters/${id}/consumers`, icon: Users, label: 'Consumers', disabled: false },
+    { to: `/clusters/${id}/producers`, icon: Users, label: 'Producers', disabled: false },
     { to: `/clusters/${id}/schema-registry`, icon: FileJson, label: 'Schema Registry', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
     { to: `/clusters/${id}/kafka-connect`, icon: Plug, label: 'Kafka Connect', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
     { to: `/clusters/${id}/security`, icon: Shield, label: 'ACLs', disabled: cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL' },
@@ -269,8 +270,8 @@ export function ClusterDetails() {
   tabs.push({ to: `/clusters/${id}/java-upgrade`, icon: Settings, label: 'Java Upgrade', disabled: !canManage || (cluster.status !== 'SUCCESS' && cluster.mode !== 'EXTERNAL') });
 
   const isConfigurationPage = location.pathname === `/clusters/${id}/config-change`;
-  const visibleTabs = isConfigurationPage ? tabs.slice(1, 10) : tabs.slice(0, 9);
-  const dropdownTabs = isConfigurationPage ? [tabs[0], ...tabs.slice(10)] : tabs.slice(9);
+  const visibleTabs = isConfigurationPage ? tabs.slice(1, 11) : tabs.slice(0, 10);
+  const dropdownTabs = isConfigurationPage ? [tabs[0], ...tabs.slice(11)] : tabs.slice(10);
   const isDropdownActive = dropdownTabs.some(tab => location.pathname === tab.to);
 
   return (

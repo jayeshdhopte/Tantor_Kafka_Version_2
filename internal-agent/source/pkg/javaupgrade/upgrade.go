@@ -263,9 +263,8 @@ func run(ctx context.Context, executor Executor, task *api.Task, log *strings.Bu
 		}
 	}
 	for _, service := range services {
-		state, stateErr := run(ctx, "systemctl", "show", "--property=ActiveState", "--value", "--", service.Name)
-		if stateErr != nil || state != "inactive" {
-			return fmt.Errorf("Kafka service %s did not stop before switching Java", service.Name)
+		if err = verifyStoppedService(ctx, run, service.Name); err != nil {
+			return err
 		}
 	}
 	processes, err = run(ctx, "ps", "-eo", "pid=,comm=")

@@ -116,3 +116,22 @@ func probeFailure(check, endpoint, out, stderr string, err error) error {
 	}
 	return fmt.Errorf("%s health was not verified at %s: %w; output: %s", check, endpoint, err, detail)
 }
+
+// Kafka launch scripts can report SIGTERM as exit 143: systemd marks the
+// unit failed even though its process stopped. Do not accept other failures.
+func verifyStoppedService(ctx context.Context, run func(context.Context, string, ...string) (string, error), name string) error {
+	state, err := run(ctx, "systemctl", "show", "--property=ActiveState", "--value", "--", name)
+	if err == nil && state == "inactive" {
+		return nil
+	}
+	if err == nil && state == "failed" {
+		pid, pe := run(ctx, "systemctl", "show", "--property=MainPID", "--value", "--", name)
+		result, re := run(ctx, "systemctl", "show", "--property=Result", "--value", "--", name)
+		code, ce := run(ctx, "systemctl", "show", "--property=ExecMainStatus", "--value", "--", name)
+		if pe == nil && re == nil && ce == nil && pid == "0" && result == "exit-code" && code == "143" {
+			return nil
+		}
+		return fmt.Errorf("Kafka service %s stop was not verified: state=%s MainPID=%s result=%s exit=%s", name, state, pid, result, code)
+	}
+	return fmt.Errorf("Kafka service %s did not stop before switching Java (state=%s, query error=%v)", name, state, err)
+}

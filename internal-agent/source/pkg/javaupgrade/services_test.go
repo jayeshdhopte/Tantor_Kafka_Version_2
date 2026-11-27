@@ -97,3 +97,28 @@ func TestSeparateStartFailureDoesNotStartBroker(t *testing.T) {
 		t.Fatal("controller start failure must prevent broker start")
 	}
 }
+
+func TestStoppedServiceRequiresStoppedProcessAndExpectedExit(t *testing.T) {
+	for _, tc := range []struct {
+		state, pid, result, code string
+		ok                       bool
+	}{
+		{"inactive", "0", "success", "0", true},
+		{"failed", "0", "exit-code", "143", true},
+		{"failed", "123", "exit-code", "143", false},
+		{"failed", "0", "timeout", "143", false},
+		{"failed", "0", "exit-code", "1", false},
+		{"deactivating", "0", "success", "0", false},
+		{"active", "123", "success", "0", false},
+	} {
+		t.Run(tc.state+tc.pid+tc.result+tc.code, func(t *testing.T) {
+			run := func(_ context.Context, _ string, args ...string) (string, error) {
+				values := map[string]string{"--property=ActiveState": tc.state, "--property=MainPID": tc.pid, "--property=Result": tc.result, "--property=ExecMainStatus": tc.code}
+				return values[args[1]], nil
+			}
+			if err := verifyStoppedService(context.Background(), run, "custom-controller.service"); (err == nil) != tc.ok {
+				t.Fatalf("unexpected verification: %v", err)
+			}
+		})
+	}
+}

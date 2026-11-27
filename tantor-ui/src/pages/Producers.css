@@ -1,0 +1,7 @@
+.producers-tab { width: 100%; padding: 1rem 0; }
+.producers-heading { display: flex; align-items: flex-start; gap: 12px; padding: 18px 20px; background: #f5f3f8; border-left: 3px solid #40166b; border-radius: 8px; color: #40166b; }
+.producers-heading h2 { margin: 0; font-size: 1.25rem; color: var(--text-primary); }
+.producers-heading p { margin: 6px 0 0; color: var(--text-secondary); }
+.producers-unavailable { display: flex; align-items: flex-start; gap: 12px; margin-top: 20px; padding: 20px; border: 1px solid #e4dcf0; border-radius: 8px; background: #faf8fd; color: var(--text-primary); }
+.producers-unavailable svg { flex-shrink: 0; color: #755098; }
+.producers-unavailable p { margin: 8px 0 0; color: var(--text-secondary); line-height: 1.6; }
