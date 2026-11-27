@@ -219,6 +219,11 @@ func run(ctx context.Context, executor Executor, task *api.Task, log *strings.Bu
 	fmt.Fprintf(log, "Verified and prepared Java %s from the staged package\n", version)
 	slog.Info("Java upgrade package verified", "taskId", task.TaskID, "version", version)
 
+	runtimeSaved, captureErr := captureRuntimeOverrides(services)
+	if captureErr != nil {
+		return captureErr
+	}
+	runtimeChanged := false
 	switched, stopped := false, false
 	defer func() {
 		if err == nil || (!switched && !stopped) {
@@ -234,6 +239,12 @@ func run(ctx context.Context, executor Executor, task *api.Task, log *strings.Bu
 				}
 			}
 			if x := switchJavaLink(recoverCtx, run, previous); x != nil {
+				recovery = append(recovery, x.Error())
+				keepWork = true
+			}
+		}
+		if runtimeChanged {
+			if x := restoreRuntimeOverrides(recoverCtx, run, runtimeSaved); x != nil {
 				recovery = append(recovery, x.Error())
 				keepWork = true
 			}
@@ -286,6 +297,10 @@ func run(ctx context.Context, executor Executor, task *api.Task, log *strings.Bu
 	if err != nil || resolved != binary {
 		return fmt.Errorf("Java default does not point to the target JDK")
 	}
+	runtimeChanged = true
+	if err = applyRuntimeOverrides(ctx, run, runtimeSaved, jdk); err != nil {
+		return fmt.Errorf("configure Kafka Java runtime: %w", err)
+	}
 	if active {
 		if err = transitionServices(ctx, run, activeUnits, "start"); err != nil {
 			return err
@@ -307,20 +322,34 @@ func run(ctx context.Context, executor Executor, task *api.Task, log *strings.Bu
 // systemctl start returns before Kafka finishes starting. Require both the
 // expected running JVM and Kafka health, including after restoring the old JDK.
 func waitForJavaService(ctx context.Context, run func(context.Context, string, ...string) (string, error), unit, binary string, probe func(context.Context) error) error {
+	last := "verification has not completed"
+	failure := func() error {
+		return fmt.Errorf("Kafka JVM and health verification: %w; last observation: %s", ctx.Err(), last)
+	}
 	for {
-		if err := ctx.Err(); err != nil {
-			return fmt.Errorf("Kafka JVM and health verification: %w", err)
+		if ctx.Err() != nil {
+			return failure()
 		}
 		pid, pidErr := run(ctx, "systemctl", "show", "--property=MainPID", "--value", "--", unit)
-		if pidErr == nil && regexp.MustCompile(`^[1-9][0-9]*$`).MatchString(pid) {
+		if pidErr != nil {
+			last = fmt.Sprintf("MainPID query failed: %v", pidErr)
+		} else if !regexp.MustCompile(`^[1-9][0-9]*$`).MatchString(pid) {
+			last = fmt.Sprintf("no running main process (MainPID=%q)", pid)
+		} else {
 			exe, exeErr := run(ctx, "readlink", "-f", "--", "/proc/"+pid+"/exe")
-			if exeErr == nil && exe == binary && probe(ctx) == nil {
+			if exeErr != nil {
+				last = fmt.Sprintf("cannot resolve JVM for PID %s: %v", pid, exeErr)
+			} else if exe != binary {
+				last = fmt.Sprintf("PID %s runs %s; expected %s; check service JAVA_HOME or explicit Java path", pid, exe, binary)
+			} else if probeErr := probe(ctx); probeErr != nil {
+				last = fmt.Sprintf("target JVM verified but Kafka health failed: %v", probeErr)
+			} else {
 				return nil
 			}
 		}
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("Kafka JVM and health verification: %w", ctx.Err())
+			return failure()
 		case <-time.After(2 * time.Second):
 		}
 	}

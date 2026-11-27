@@ -73,3 +73,27 @@ func TestServiceVerificationRejectsWrongJvm(t *testing.T) {
 		t.Fatalf("wrong JVM must not verify successfully: %v", err)
 	}
 }
+
+func TestVerificationTimeoutRetainsUnderlyingCause(t *testing.T) {
+	for _, healthFailure := range []bool{false, true} {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+		run := func(_ context.Context, cmd string, _ ...string) (string, error) {
+			if cmd == "systemctl" {
+				return "42", nil
+			}
+			if healthFailure {
+				return "/target/bin/java", nil
+			}
+			return "/pinned/jdk/bin/java", nil
+		}
+		err := waitForJavaService(ctx, run, "custom-controller.service", "/target/bin/java", func(context.Context) error { return errors.New("quorum connection refused") })
+		cancel()
+		expected := "/pinned/jdk/bin/java"
+		if healthFailure {
+			expected = "quorum connection refused"
+		}
+		if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), expected) {
+			t.Fatalf("lost verification cause: %v", err)
+		}
+	}
+}

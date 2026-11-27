@@ -149,6 +149,21 @@ class AgentServiceDeletionTest {
         verify(clusterRepository, never()).save(cluster);
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"PENDING", "RUNNING", "IN_PROGRESS", "VALIDATING", "SUCCESS", "FAILED"})
+    void javaMaintenanceCallbacksNeverRewriteClusterLifecycle(String status) {
+        UUID clusterId = UUID.randomUUID();
+        Cluster cluster = cluster(clusterId, "host-1");
+        cluster.setStatus("SUCCESS");
+        Task task = cleanupTask(clusterId, "host-1");
+        task.setCommand("JAVA_UPGRADE");
+        task.setStatus(status);
+        org.springframework.test.util.ReflectionTestUtils.invokeMethod(service, "updateClusterStatus", cluster, task);
+        assertThat(task.getStatus()).isEqualTo(status);
+        assertThat(cluster.getStatus()).isEqualTo("SUCCESS");
+        verify(clusterRepository, never()).save(cluster);
+    }
+
     private Cluster cluster(UUID id, String... hostIds) {
         Cluster cluster = new Cluster();
         cluster.setId(id);

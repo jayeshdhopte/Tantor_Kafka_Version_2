@@ -45,6 +45,9 @@ func (f *separateExecutor) Run(_ context.Context, cmd string, args ...string) (s
 func (f *separateExecutor) RunSudo(_ context.Context, cmd string, args ...string) (string, string, error) {
 	switch cmd {
 	case "systemctl":
+		if args[0] == "daemon-reload" {
+			return "", "", nil
+		}
 		unit := args[len(args)-1]
 		if args[0] == "show" {
 			switch args[1] {
@@ -95,6 +98,9 @@ func (f *separateExecutor) RunSudo(_ context.Context, cmd string, args ...string
 		}
 		return f.work, "", nil
 	case "install":
+		if strings.HasPrefix(args[len(args)-1], "/etc/systemd/") {
+			return "", "", nil
+		}
 		return "", "", os.WriteFile(args[len(args)-1], f.archive, 0600)
 	case "sha256sum":
 		return fmt.Sprintf("%x  jdk.tar.gz", sha256.Sum256(f.archive)), "", nil

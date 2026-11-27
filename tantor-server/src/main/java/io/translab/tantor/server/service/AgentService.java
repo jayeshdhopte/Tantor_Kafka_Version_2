@@ -433,6 +433,11 @@ public class AgentService {
 
     private void updateClusterStatus(io.translab.tantor.server.domain.Cluster cluster, Task currentTask) {
         String command = currentTask.getCommand();
+        if ("JAVA_UPGRADE".equals(command)) {
+            // Maintenance task status belongs to its job, not the deployment lifecycle.
+            // Runtime telemetry continues to report actual Kafka health independently.
+            return;
+        }
         if (java.util.Set.of("INSPECT_QUORUM_RUNTIME","EXECUTE_QUORUM_CANDIDATE","EXECUTE_QUORUM_PARTICIPANT","VALIDATE_QUORUM_EXPANSION","INSPECT_ADD_NODE_PROCESS","INSPECT_ADD_NODE","PROBE_ADD_NODE","VALIDATE_ADD_BROKER_PLAN",
                 "INSPECT_ADD_BROKER","PREPARE_ADD_BROKER","FORMAT_ADD_BROKER","START_ADD_BROKER").contains(command)) {
             // Candidate observations/actions never rewrite the existing cluster lifecycle.
